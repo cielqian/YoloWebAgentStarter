@@ -2,7 +2,7 @@
 
 [中文 README](README.md)
 
-The community edition of YoloWebAgent: a local, single-user YOLO dataset workspace for a lightweight end-to-end workflow covering image/video-frame import, manual annotation, data validation, YOLO/COCO exchange, local training, native YOLO evaluation, and managed model artifacts, with an assistant grounded in tool evidence.
+YoloWebAgentStarter is a local, single-user YOLO dataset workspace for a lightweight end-to-end workflow covering image/video-frame import, manual annotation, data validation, YOLO/COCO exchange, local training, native YOLO evaluation, and managed model artifacts, with an assistant grounded in tool evidence.
 
 ## Why use it
 
@@ -13,7 +13,7 @@ The community edition of YoloWebAgent: a local, single-user YOLO dataset workspa
 - Train on CPU, MPS, one CUDA GPU, or multiple CUDA GPUs; local multi-GPU training uses Ultralytics DDP.
 - View and filter local backend logs by tail length, level, and content; language preference is stored locally in the browser.
 - Admit only managed `best.pt`, `last.pt`, and static FP32 ONNX training artifacts into the model library.
-- Run upstream-compatible Ultralytics `val` in the background for managed PT models, retaining native metrics, logs, charts, and up to 200 reviewable error samples.
+- Run native Ultralytics `val` in the background for managed PT models, retaining metrics, logs, charts, and up to 200 reviewable error samples.
 - Start local auto-annotation jobs from a dataset card: by default, existing annotations are skipped; select a compatible managed PT model, explicitly confirm class mapping, adjust confidence/IoU, optionally clear old annotations, monitor progress, and cancel when needed. Training and auto-annotation are mutually exclusive on the same machine. Results are retained with the `auto` source and must be manually reviewed before training.
 - Agent MVP: four built-in assistant profiles for general, dataset, training, and model questions, with readiness, failure-diagnosis, and model-comparability reports. Write actions submit existing managed jobs after human confirmation. Sessions retain object bindings; runs support asynchronous progress, cancellation, and retries with their original mode and permissions. See the [Agent guide](docs/agent.md).
 - Load long conversations on demand, search sessions, inspect per-turn evidence and approval records, and see new-reply notifications while reading history.
@@ -53,10 +53,11 @@ Not included: login/RBAC, collaboration, Workflow, unattended Agent automation (
 The React frontend accesses FastAPI through API adapters. HTTP routes delegate to domain services. Local jobs use queues or background runners, and file access goes through managed-storage boundaries.
 
 ```mermaid
-flowchart TB
+flowchart LR
     UI["React + TypeScript<br/>Datasets / Annotation / Training / Models / Agent"]
 
     subgraph Starter["Local Starter backend"]
+        direction LR
         API["FastAPI HTTP routes"]
         Domain["Domain services<br/>Datasets / Annotation / Training / Models"]
         Agent["Agent Service<br/>Profiles / Tool policies / Human approval"]
@@ -284,7 +285,7 @@ This is local, single-user software. It does not provide authentication, authori
 
 ## Evaluation implementation and artifacts
 
-Evaluation accepts only managed Ultralytics PT models registered by Starter training jobs. An HTTP route creates the job and returns immediately; the local background runner then executes the same native `val` contract as upstream:
+Evaluation accepts only managed Ultralytics PT models registered by Starter training jobs. An HTTP route creates the job and returns immediately; the local background runner then executes native `val`:
 
 ```text
 yolo <detect|segment|obb|classify> val ... plots=True save_json=True exist_ok=True
@@ -298,11 +299,9 @@ yolo <detect|segment|obb|classify> val ... plots=True save_json=True exist_ok=Tr
 
 Charts appear only when Ultralytics actually generates them. For example, a tiny random model with no valid true positives may not create PR curves, while still producing metrics, logs, a confusion matrix, and prediction JSON.
 
-## Upstream alignment and standalone operation
+## License and provenance
 
-The fixed Community v2 alignment baseline is YoloWebAgent commit `701f6e5a63b73f39e35f48fb6de7d2414401875a`. The evaluation runner, artifact manager, error-sample analyzer, and details panel retain upstream module boundaries while being trimmed to detect, segment, OBB, and classify. The Ultralytics 8.4.115 filename and JSON adapters are compatibility extensions to that upstream contract.
-
-At runtime, Starter never imports, reads, or depends on the YoloWebAgent/Enterprise repository, and it does not include its Auth, RBAC, License, Workflow, unattended Agent automation, evaluation-automation callback, Deployment, or pose modules. The Community Agent MVP is a local read-only assistant with human-confirmed job submission; it does not migrate the Enterprise Agent/Workflow stack.
+See [LICENSE](LICENSE), [NOTICE](NOTICE), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licensing, provenance, and third-party dependency notices.
 
 ## Project layout
 
@@ -314,7 +313,7 @@ docs/              Quick start, Agent guide, dependency audit, and source/proven
 data/              Default runtime directory (ignored; do not commit)
 ```
 
-Backend routes only adapt HTTP. Dataset, annotation, training, and file access are handled by domain services and managed-storage boundaries. Starter does not import, read, or depend on upstream/Enterprise repositories at runtime.
+Backend routes only adapt HTTP. Dataset, annotation, training, and file access are handled by domain services and managed-storage boundaries.
 
 ## Development and verification
 
@@ -327,7 +326,7 @@ npm --prefix frontend run build
 PYTHONPATH=backend .venv/bin/python scripts/run_cpu_smoke.py
 ```
 
-The standard tests directly invoke the Ultralytics 8.4.115 detect, segment, and OBB validators to generate the real JSON contract, then validate it with the error-sample analyzer. The CPU smoke test actually runs one tiny training epoch for all four tasks, reuses upstream native parameters to run segment `val(save_json=True, plots=True)`, and verifies eight box/mask metrics, pycocotools RLE, the confusion matrix, prediction JSON, and detect ONNX export. The smoke test uses temporary directories and retains neither models nor datasets. The first run may wait for the Matplotlib font cache and ONNX export.
+The standard tests directly invoke the Ultralytics 8.4.115 detect, segment, and OBB validators to generate the real JSON contract, then validate it with the error-sample analyzer. The CPU smoke test actually runs one tiny training epoch for all four tasks, uses native parameters to run segment `val(save_json=True, plots=True)`, and verifies eight box/mask metrics, pycocotools RLE, the confusion matrix, prediction JSON, and detect ONNX export. The smoke test uses temporary directories and retains neither models nor datasets. The first run may wait for the Matplotlib font cache and ONNX export.
 
 Agent automated tests use the Mock Provider and require no real LLM API key. They cover tool policies, object binding, human approvals, run recovery, and history pagination. Real-provider connectivity and model tool-calling support require separate verification.
 
@@ -342,9 +341,9 @@ Email：fengzhizi715@126.com
 
 Contributions are welcome for in-scope bug fixes, tests, documentation, and local single-user experience improvements. Before submitting:
 
-1. Keep functionality within the [Community v2 scope](phase1_scope.md); discuss new task types, authentication, cloud services, or Enterprise workflows first.
+1. Keep functionality within the [Community v2 scope](phase1_scope.md); discuss new task types, authentication, cloud services, or workflow capabilities first.
 2. Add focused tests for behavior changes and run the verification commands above.
 3. Do not commit model weights, datasets, customer materials, credentials, build logs, or absolute paths.
-4. Preserve and update source records; do not introduce upstream/Enterprise runtime dependencies.
+4. Preserve and update source records, and keep the project independently runnable.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guidelines.

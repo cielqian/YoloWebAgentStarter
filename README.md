@@ -2,7 +2,7 @@
 
 [English README](README.en.md)
 
-YoloWebAgent 的社区版，面向本地单用户的 YOLO 数据集工作台：完成图片/视频帧导入、人工标注、数据校验、YOLO/COCO 交换、本地训练、原生 YOLO 评估和受管模型产物的一条轻量闭环，并提供基于工具证据的智能助手。
+YoloWebAgentStarter 是面向本地单用户的 YOLO 数据集工作台：完成图片/视频帧导入、人工标注、数据校验、YOLO/COCO 交换、本地训练、原生 YOLO 评估和受管模型产物的一条轻量闭环，并提供基于工具证据的智能助手。
 
 ## 为什么使用它
 
@@ -13,7 +13,7 @@ YoloWebAgent 的社区版，面向本地单用户的 YOLO 数据集工作台：�
 - 训练页可选择 CPU、MPS、单张 CUDA GPU 或多张 CUDA GPU；本地多 GPU 使用 Ultralytics DDP。
 - 提供本地后端运行日志页，支持尾部行数、级别和内容筛选；语言偏好保存在浏览器本地。
 - 训练结果只以受管的 `best.pt`、`last.pt` 和静态 FP32 ONNX 产物形式进入模型库。
-- 对受管 PT 后台运行上游同款 Ultralytics `val`，保存原生指标、日志、图表和最多 200 个可审阅错误样本。
+- 对受管 PT 后台运行原生 Ultralytics `val`，保存指标、日志、图表和最多 200 个可审阅错误样本。
 - 从数据集卡片启动本地自动标注任务：默认跳过已有标注的图片，选择匹配的受管 PT、显式确认类别映射、调整置信度/IoU、可选清理旧标注，实时查看进度并取消；训练与自动标注在本机互斥执行，结果保留为 `auto` 来源，必须人工审核后再训练。
 - Agent MVP：内置综合、数据集、训练、模型四种助手模式，共享执行器；提供训练准备、失败诊断与模型可比性报告。写操作须人工确认后才提交现有受管任务，不自动串联下一步。支持对象绑定会话、异步进度、取消及保留原模式与权限的重试，见 [Agent 运行说明](docs/agent.md)。
 - 长对话按需加载，支持会话搜索、逐轮查看工具证据与审批记录，以及阅读历史时的新回复提示。
@@ -53,10 +53,11 @@ YoloWebAgent 的社区版，面向本地单用户的 YOLO 数据集工作台：�
 React 前端通过 API 适配层访问 FastAPI。HTTP 路由将请求交给领域服务；本地任务由队列或后台 runner 执行，文件经受管存储边界访问。
 
 ```mermaid
-flowchart TB
+flowchart LR
     UI["React + TypeScript<br/>数据集 / 标注 / 训练 / 模型 / 智能体"]
 
     subgraph Starter["本地 Starter 后端"]
+        direction LR
         API["FastAPI HTTP 路由"]
         Domain["领域服务<br/>数据集 / 标注 / 训练 / 模型"]
         Agent["Agent Service<br/>Profiles / 工具策略 / 人工确认"]
@@ -294,7 +295,7 @@ npm --prefix frontend install
 
 ## 评估实现与产物
 
-评估仅接受 Starter 训练任务登记的受管 Ultralytics PT 模型。HTTP 路由创建任务后立即返回；本地后台 runner 执行与固定上游相同的原生 `val` 合约：
+评估仅接受 Starter 训练任务登记的受管 Ultralytics PT 模型。HTTP 路由创建任务后立即返回；本地后台 runner 执行原生 `val`：
 
 ```text
 yolo <detect|segment|obb|classify> val ... plots=True save_json=True exist_ok=True
@@ -308,11 +309,9 @@ yolo <detect|segment|obb|classify> val ... plots=True save_json=True exist_ok=Tr
 
 图表只有在 Ultralytics 实际生成时才会出现。例如没有有效 TP 的极小随机模型可能不会生成 PR 曲线，但仍会产生指标、日志、混淆矩阵和预测 JSON。
 
-## 上游对齐与独立运行
+## 许可与来源说明
 
-Community v2 的固定对齐基线是 YoloWebAgent commit `701f6e5a63b73f39e35f48fb6de7d2414401875a`。评估 runner、artifact manager、错误样本分析和详情面板沿用上游模块边界，并只裁剪到 detect、segment、OBB、classify；Ultralytics 8.4.115 文件名与 JSON 适配是该上游合约的兼容扩展。
-
-Starter 运行时不会 import、读取或依赖 YoloWebAgent/Enterprise 仓库，也不包含其 Auth、RBAC、License、Workflow、无人值守 Agent 自动化、Evaluation 自动化回调、Deployment 或 pose 模块。Community Agent MVP 为本地只读助手与人工确认提交，不迁移 Enterprise Agent/Workflow 栈。
+项目许可、来源及第三方依赖说明见 [LICENSE](LICENSE)、[NOTICE](NOTICE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 项目结构
 
@@ -324,7 +323,7 @@ docs/              快速开始、智能体运行说明、依赖审计和来源�
 data/              默认运行时目录（忽略，不提交）
 ```
 
-后端路由只适配 HTTP；数据集、标注、训练和文件访问均由领域服务与受管存储边界处理。Starter 不在运行时 import、读取或依赖上游/Enterprise 仓库。
+后端路由只适配 HTTP；数据集、标注、训练和文件访问均由领域服务与受管存储边界处理。
 
 ## 开发与验证
 
@@ -337,7 +336,7 @@ npm --prefix frontend run build
 PYTHONPATH=backend .venv/bin/python scripts/run_cpu_smoke.py
 ```
 
-标准测试会直接调用 Ultralytics 8.4.115 的 detect、segment、OBB validator 生成真实 JSON 合约，再交给错误样本分析器验证。CPU 冒烟会实际运行四任务的一轮微型训练，复用上游原生参数执行 segment `val(save_json=True, plots=True)`，并校验 box/mask 八项指标、pycocotools RLE、混淆矩阵、预测 JSON 和 detect ONNX 导出。整个冒烟使用临时目录且不保留模型或数据集；首次运行可能需要等待 Matplotlib 字体缓存和 ONNX 导出。
+标准测试会直接调用 Ultralytics 8.4.115 的 detect、segment、OBB validator 生成真实 JSON 合约，再交给错误样本分析器验证。CPU 冒烟会实际运行四任务的一轮微型训练，使用原生参数执行 segment `val(save_json=True, plots=True)`，并校验 box/mask 八项指标、pycocotools RLE、混淆矩阵、预测 JSON 和 detect ONNX 导出。整个冒烟使用临时目录且不保留模型或数据集；首次运行可能需要等待 Matplotlib 字体缓存和 ONNX 导出。
 
 智能体自动化测试使用 Mock Provider，无需配置真实 LLM 密钥，覆盖工具策略、对象绑定、人工确认、运行恢复及历史分页；真实 Provider 的网络连接和模型工具调用能力需另外验证。
 
@@ -353,9 +352,9 @@ Email：fengzhizi715@126.com
 
 欢迎提交范围内的缺陷修复、测试、文档和本地单用户体验改进。提交前请：
 
-1. 保持功能在 [Community v2 范围](phase1_scope.md) 内；新增任务类型、认证、云服务或 Enterprise 工作流请先讨论。
+1. 保持功能在 [Community v2 范围](phase1_scope.md) 内；新增任务类型、认证、云服务或工作流能力请先讨论。
 2. 为行为变化补充聚焦测试，并运行上述验证命令。
 3. 不提交模型权重、数据集、客户材料、凭据、构建日志或绝对路径。
-4. 保留并更新来源记录；不得引入上游/Enterprise 的运行时依赖。
+4. 保留并更新来源记录，保持项目可独立运行。
 
 完整规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。
