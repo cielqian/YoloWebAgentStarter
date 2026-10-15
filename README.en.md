@@ -4,6 +4,8 @@
 
 YoloWebAgentStarter is a local, single-user YOLO dataset workspace for a lightweight end-to-end workflow covering image/video-frame import, manual annotation, data validation, YOLO/COCO exchange, local training, native YOLO evaluation, and managed model artifacts, with an assistant grounded in tool evidence.
 
+A commercial edition is also available. For details, use the contact information below; the official website link will be added later.
+
 ## Why use it
 
 - Prepare and annotate `detect`, `segment`, `obb`, and `classify` datasets entirely on your machine.
