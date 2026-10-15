@@ -4,10 +4,6 @@
 
 YoloWebAgent 的社区版，面向本地单用户的 YOLO 数据集工作台：完成图片/视频帧导入、人工标注、数据校验、YOLO/COCO 交换、本地训练、原生 YOLO 评估和受管模型产物的一条轻量闭环，并提供基于工具证据的智能助手。
 
-```text
-图片 → 数据集 → 标注 → 校验 → YOLO 导入 / 导出 → 本地训练 → 受管 PT → split 评估 / FP32 ONNX
-```
-
 ## 为什么使用它
 
 - 在本机完成 detect、segment、OBB 和 classify 数据集的标注与训练准备。
@@ -49,6 +45,114 @@ YoloWebAgent 的社区版，面向本地单用户的 YOLO 数据集工作台：�
 | `classify` | 每张图片一个类别 | 标准 `split/class/image` 目录 | 支持 | top-1 / top-5 指标 |
 
 不包含：登录/RBAC、协作、Workflow、无人值守 Agent 自动化（定时、触发器、任务自动串联）、文本提示分割、Deployment、pose、云训练和远程分布式调度。Agent 不得执行任意路径、外部 PT 或 Shell 命令。自动标注仅支持本地受管 Ultralytics PT，并且结果必须人工审核。完整边界见 [Community v2 功能矩阵](phase1_scope.md)。
+
+## 系统架构
+
+### 应用分层与存储
+
+React 前端通过 API 适配层访问 FastAPI。HTTP 路由将请求交给领域服务；本地任务由队列或后台 runner 执行，文件经受管存储边界访问。
+
+```mermaid
+flowchart TB
+    UI["React + TypeScript<br/>数据集 / 标注 / 训练 / 模型 / 智能体"]
+
+    subgraph Starter["本地 Starter 后端"]
+        API["FastAPI HTTP 路由"]
+        Domain["领域服务<br/>数据集 / 标注 / 训练 / 模型"]
+        Agent["Agent Service<br/>Profiles / 工具策略 / 人工确认"]
+        Jobs["本地队列与后台 Runner<br/>训练 / 评估 / 自动标注 / 视频导入"]
+        Settings["Settings Service"]
+        DB[("SQLite<br/>业务数据 / 会话 / 运行与审批记录")]
+        Storage["Storage 与领域文件边界<br/>图片 / 权重 / 导出 / 日志"]
+        Config["settings.json<br/>SAM / LLM 配置"]
+
+        API --> Domain
+        API --> Agent
+        API --> Settings
+        Agent -->|受控工具调用| Domain
+        Agent -->|读取配置| Settings
+        Domain --> Jobs
+        Domain --> DB
+        Domain --> Storage
+        Jobs --> DB
+        Jobs --> Storage
+        Agent --> DB
+        Settings --> Config
+    end
+
+    UI -->|前端 API 适配层| API
+    Agent -.->|启用 LLM 时| LLM["Chat Completions 兼容服务<br/>本机或远端"]
+```
+
+默认 Agent 使用内置 Mock / 规则规划。四种助手模式共享执行器；LLM 配置由设置服务保存到 `settings.json`，会话和运行记录保存到 SQLite。Starter 可独立运行。
+
+### 数据集到模型的数据流
+
+标注按绝对像素持久化。校验、YOLO 导出与评估共享同一份图片 split，模型版本从本地训练的受管产物创建。
+
+```mermaid
+flowchart LR
+    Import["图片 / 视频抽帧<br/>YOLO / COCO 导入"] --> Dataset["数据集与人工标注"]
+    Dataset --> Validate["数据校验"]
+    Validate --> Export["YOLO 导出"]
+    Export --> Train["本地训练队列"]
+    Train --> PT["受管 PT<br/>best.pt / last.pt"]
+    PT --> Eval["原生 YOLO val<br/>指标 / 图表 / 错误样本"]
+    PT --> ONNX["静态 FP32 ONNX"]
+    Dataset --> Split["已持久化的图片 split"]
+    Split -.-> Validate
+    Split -.-> Export
+    Split -.-> Eval
+```
+
+各阶段由用户发起。自动标注也使用受管 PT，结果保存为 `auto` 来源，人工审核后用于训练。
+
+### 智能体查询与人工确认
+
+Agent 先绑定助手模式、对象和本轮权限，再向 Provider 提供可用工具。只读工具获取业务证据；写工具先生成待确认申请，人工确认后才提交现有任务。
+
+```mermaid
+sequenceDiagram
+    actor User as 用户
+    participant UI as 智能体页面
+    participant Agent as Agent Service / 执行器
+    participant Provider as LLM 或 Mock Provider
+    participant Domain as 现有领域服务
+
+    User->>UI: 选择模式与对象，发送问题
+    UI->>Agent: 提交消息与只读权限
+    Agent-->>UI: 202，返回排队运行
+    Note over Agent: 会话、运行、工具调用和审批持久化到 SQLite
+    Agent->>Provider: 有界历史、对象上下文与工具白名单
+    Provider-->>Agent: 回答或工具调用请求
+    Agent->>Agent: 校验模式、只读权限与对象范围
+
+    alt 只读工具
+        Agent->>Domain: 查询或校验
+        Domain-->>Agent: 业务证据
+        Agent->>Provider: 工具结果
+        Provider-->>Agent: 基于证据的回答
+        UI->>Agent: 轮询当前运行
+        Agent-->>UI: 回答、工具证据与推理记录
+    else 写操作申请
+        Note over Agent: 保存待确认申请
+        UI->>Agent: 轮询当前运行
+        Agent-->>UI: 对象、参数与预期产物预览
+        User->>UI: 审核并选择确认或拒绝
+        alt 确认执行
+            UI->>Agent: 确认申请，可附调整后的参数
+            Agent->>Agent: 再次校验策略、参数、有效期与执行状态
+            Agent->>Domain: 提交训练 / 评估 / 自动标注任务
+            Domain-->>Agent: 受管任务 ID
+            Agent-->>UI: 任务 ID 与审批结果，本轮结束
+        else 拒绝
+            UI->>Agent: 拒绝申请
+            Agent-->>UI: 记录拒绝并结束本轮
+        end
+    end
+```
+
+任务创建后的进度和控制位于对应任务页面。详细运行、取消、重试和历史分页行为见 [Agent 运行说明](docs/agent.md)。
 
 ## 快速开始
 

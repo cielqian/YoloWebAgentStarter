@@ -4,10 +4,6 @@
 
 The community edition of YoloWebAgent: a local, single-user YOLO dataset workspace for a lightweight end-to-end workflow covering image/video-frame import, manual annotation, data validation, YOLO/COCO exchange, local training, native YOLO evaluation, and managed model artifacts, with an assistant grounded in tool evidence.
 
-```text
-Images → Dataset → Annotations → Validation → YOLO Import / Export → Local Training → Managed PT → Split Evaluation / FP32 ONNX
-```
-
 ## Why use it
 
 - Prepare and annotate `detect`, `segment`, `obb`, and `classify` datasets entirely on your machine.
@@ -49,6 +45,114 @@ Images → Dataset → Annotations → Validation → YOLO Import / Export → L
 | `classify` | One class per image | Standard `split/class/image` layout | Supported | Top-1 / top-5 metrics |
 
 Not included: login/RBAC, collaboration, Workflow, unattended Agent automation (schedules, triggers, automatic job chaining), text-prompt segmentation, Deployment, pose, cloud training, or remote distributed scheduling. The Agent must not execute arbitrary paths, external PT files, or shell commands. Auto-annotation only supports locally managed Ultralytics PT models, and its results require manual review. See the complete boundary in the [Community v2 feature matrix](phase1_scope.md).
+
+## Architecture
+
+### Application layers and storage
+
+The React frontend accesses FastAPI through API adapters. HTTP routes delegate to domain services. Local jobs use queues or background runners, and file access goes through managed-storage boundaries.
+
+```mermaid
+flowchart TB
+    UI["React + TypeScript<br/>Datasets / Annotation / Training / Models / Agent"]
+
+    subgraph Starter["Local Starter backend"]
+        API["FastAPI HTTP routes"]
+        Domain["Domain services<br/>Datasets / Annotation / Training / Models"]
+        Agent["Agent Service<br/>Profiles / Tool policies / Human approval"]
+        Jobs["Local queues and background runners<br/>Training / Evaluation / Auto-annotation / Video import"]
+        Settings["Settings Service"]
+        DB[("SQLite<br/>Business data / Sessions / Runs and approvals")]
+        Storage["Storage and domain file boundaries<br/>Images / Weights / Exports / Logs"]
+        Config["settings.json<br/>SAM / LLM configuration"]
+
+        API --> Domain
+        API --> Agent
+        API --> Settings
+        Agent -->|Controlled tool calls| Domain
+        Agent -->|Read configuration| Settings
+        Domain --> Jobs
+        Domain --> DB
+        Domain --> Storage
+        Jobs --> DB
+        Jobs --> Storage
+        Agent --> DB
+        Settings --> Config
+    end
+
+    UI -->|Frontend API adapters| API
+    Agent -.->|When LLM is enabled| LLM["Chat Completions compatible service<br/>Local or remote"]
+```
+
+The Agent defaults to built-in Mock / rule planning. All four profiles share the executor. The settings service stores LLM configuration in `settings.json`; sessions and run records reside in SQLite. Starter runs independently.
+
+### Dataset-to-model data flow
+
+Annotations are persisted in absolute pixels. Validation, YOLO export, and evaluation reuse the same persisted image splits. Model versions originate from managed local-training artifacts.
+
+```mermaid
+flowchart LR
+    Import["Images / Video frames<br/>YOLO / COCO import"] --> Dataset["Dataset and manual annotations"]
+    Dataset --> Validate["Data validation"]
+    Validate --> Export["YOLO export"]
+    Export --> Train["Local training queue"]
+    Train --> PT["Managed PT<br/>best.pt / last.pt"]
+    PT --> Eval["Native YOLO val<br/>Metrics / Charts / Error samples"]
+    PT --> ONNX["Static FP32 ONNX"]
+    Dataset --> Split["Persisted image splits"]
+    Split -.-> Validate
+    Split -.-> Export
+    Split -.-> Eval
+```
+
+Each stage is user-initiated. Auto-annotation also uses managed PT models; results retain the `auto` source and require manual review before training.
+
+### Agent queries and human approval
+
+The Agent binds the profile, objects, and run permissions before exposing tools to the provider. Read tools gather business evidence. Write tools create approval requests, and existing jobs are submitted after human confirmation.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Agent page
+    participant Agent as Agent Service / Executor
+    participant Provider as LLM or Mock Provider
+    participant Domain as Existing domain services
+
+    User->>UI: Choose profile and objects, ask a question
+    UI->>Agent: Submit message and read-only permission
+    Agent-->>UI: 202, return queued run
+    Note over Agent: Persist sessions, runs, tool calls, and approvals in SQLite
+    Agent->>Provider: Bounded history, object context, and allowed tools
+    Provider-->>Agent: Answer or tool-call requests
+    Agent->>Agent: Validate profile, read-only permission, and object scope
+
+    alt Read tool
+        Agent->>Domain: Query or validate
+        Domain-->>Agent: Business evidence
+        Agent->>Provider: Tool results
+        Provider-->>Agent: Evidence-based answer
+        UI->>Agent: Poll current run
+        Agent-->>UI: Answer, tool evidence, and inference records
+    else Write proposal
+        Note over Agent: Persist pending approval
+        UI->>Agent: Poll current run
+        Agent-->>UI: Preview objects, parameters, and expected outputs
+        User->>UI: Review and confirm or reject
+        alt Confirm
+            UI->>Agent: Confirm approval with optional parameter changes
+            Agent->>Agent: Recheck policy, parameters, expiry, and execution state
+            Agent->>Domain: Submit training / evaluation / auto-annotation job
+            Domain-->>Agent: Managed job ID
+            Agent-->>UI: Job ID and approval result, end turn
+        else Reject
+            UI->>Agent: Reject approval
+            Agent-->>UI: Record rejection and end turn
+        end
+    end
+```
+
+Submitted jobs are monitored and controlled from their respective job pages. See the [Agent guide](docs/agent.md) for run behavior, cancellation, retries, and history pagination.
 
 ## Quick start
 
