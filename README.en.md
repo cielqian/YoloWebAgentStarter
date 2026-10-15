@@ -229,6 +229,11 @@ Agent automated tests use the Mock Provider and require no real LLM API key. The
 
 Tiny offline random models are not guaranteed to produce valid true positives, so the CPU smoke test does not require PR curves. The Ultralytics 8.4.115 naming contract for `BoxPR_curve.png` / `MaskPR_curve.png` is covered by focused tests. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md) for details.
 
+## Contact information
+wechat：fengzhizi715
+
+Email：fengzhizi715@126.com
+
 ## Contributing
 
 Contributions are welcome for in-scope bug fixes, tests, documentation, and local single-user experience improvements. Before submitting:

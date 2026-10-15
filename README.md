@@ -239,6 +239,12 @@ PYTHONPATH=backend .venv/bin/python scripts/run_cpu_smoke.py
 
 极小的离线随机模型不保证产生有效 TP，因此 CPU 冒烟不强制要求 PR 曲线存在；`BoxPR_curve.png` / `MaskPR_curve.png` 的 Ultralytics 8.4.115 命名契约由聚焦测试覆盖。详见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [CHANGELOG.md](CHANGELOG.md)。
 
+
+## 联系方式
+wechat：fengzhizi715
+
+Email：fengzhizi715@126.com
+
 ## 参与贡献
 
 欢迎提交范围内的缺陷修复、测试、文档和本地单用户体验改进。提交前请：
