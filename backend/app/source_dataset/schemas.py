@@ -58,6 +58,7 @@ class SourceImageOut(BaseModel):
     source_type: str
     tags: list[SourceTagOut]
     file_url: str
+    thumbnail_url: str
     created_at: datetime
 
 
@@ -73,9 +74,21 @@ class SourceUploadResult(BaseModel):
     invalid: int
 
 
+class SourceBatchTagsRequest(BaseModel):
+    image_ids: list[str] = Field(min_length=1)
+    tag_ids: list[str] = Field(min_length=1)
+    remove: bool = False
+
+
+class SourceBatchTagsResult(BaseModel):
+    updated: int
+
+
 class SourceFtpSyncRequest(BaseModel):
     path: str = Field(min_length=1, max_length=2048)
     recursive: bool = True
+    file_paths: list[str] | None = None
+    tag_ids: list[str] | None = None
 
 
 class SourceFtpSyncResult(BaseModel):

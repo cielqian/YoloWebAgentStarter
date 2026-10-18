@@ -41,9 +41,13 @@ const SNAP_CLOSE_RADIUS_PX = 12;
 
 type PanState = { origin: [number, number]; start: { x: number; y: number } };
 
-type DrawingTool = "bbox" | "polygon" | "obb" | "sam" | "sam_point";
+type DrawingTool = "select" | "bbox" | "polygon" | "obb" | "sam" | "sam_point";
 
 const taskTool = (taskType: TaskType): DrawingTool => ({ detect: "bbox", segment: "polygon", obb: "obb", classify: "bbox" } satisfies Record<TaskType, DrawingTool>)[taskType];
+
+function panModifierActive(event: { ctrlKey?: boolean; metaKey?: boolean }): boolean {
+  return Boolean(event.ctrlKey || event.metaKey);
+}
 
 export function AnnotationCanvas({ image, classes, annotations, activeClassId, selectedAnnotationId, onSelectAnnotation, taskType, onChange, onSamBox, onSamPoints, samBusy = false, samCapabilities, hiddenAnnotationIds }: Props) {
   const [imageElement, setImageElement] = useState<HTMLImageElement>();
@@ -61,6 +65,7 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState<PanState>();
+  const [panModifier, setPanModifier] = useState(false);
   const transformerRef = useRef<Konva.Transformer>(null);
   const obbRefs = useRef<Record<string, Konva.Rect | null>>({});
   const bboxRefs = useRef<Record<string, Konva.Rect | null>>({});
@@ -91,6 +96,20 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
   useEffect(() => {
     if (tool === "sam_point" && !samCapabilities?.point_prompt_available) setTool("polygon");
   }, [samCapabilities?.point_prompt_available, tool]);
+
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => { if (event.ctrlKey || event.metaKey) setPanModifier(true); };
+    const up = (event: KeyboardEvent) => { if (!event.ctrlKey && !event.metaKey) setPanModifier(false); };
+    const reset = () => setPanModifier(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", reset);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", reset);
+    };
+  }, []);
 
   const scale = useMemo(() => ({ x: displaySize.width / image.width, y: displaySize.height / image.height }), [displaySize, image]);
   const effectiveSelectedAnnotationId = selectedAnnotationId !== undefined ? selectedAnnotationId : selectedObbId ?? selectedBboxId ?? selectedPolygonId;
@@ -273,7 +292,7 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
           <button className="button danger" disabled={!annotations.length} onClick={clearAllDrafts}>清空全部草稿</button>
         </div>
       </div>
-      <p className="hint">Ctrl/⌘ + 滚轮缩放，Ctrl/⌘ + 拖动平移画布。当前类别：{classes.find((item) => item.id === activeClassId)?.name ?? "未选择"}。{samBusy ? `SAM 推理中，已用 ${samElapsed} 秒；远程 SAM3 单次推理一般需要 20~60 秒，完成后会自动生成多边形建议。` : !canAnnotate ? "请先在右侧新增一个类别，再开始绘制。" : taskType === "obb" ? selectedObb ? "已选中 OBB：拖动可移动，四角手柄可缩放，顶部圆形手柄可旋转。" : "拖拽创建 OBB；点击既有框即可选择、旋转、缩放或删除。" : taskType === "detect" && selectedBbox ? "已选中框：拖动可移动，四角手柄可调整大小；BBox 不支持旋转。" : selectedPolygon ? "已选中多边形：拖动顶点调整形状，双击边线添加顶点，双击顶点删除（至少保留 3 个点）；SAM 生成的密集轮廓可先“简化顶点”再微调。" : tool === "sam" ? samConfigured ? "拖拽一个提示框，SAM 会返回一个或多个可确认的多边形建议。" : "未配置 SAM：框选只会生成可审阅的矩形建议，不会运行模型推理。" : tool === "sam_point" ? "点击一个前景点，SAM 会返回一个或多个可确认的多边形建议。" : taskType === "segment" && !samConfigured ? "SAM 未配置；可使用 Polygon，或使用仅供审阅的框形建议。" : "坐标以原图像素保存。"}{tool === "polygon" && polygonPoints.length > 0 ? "已放置的顶点可直接拖动调整、双击删除；靠近第一个点点击可自动闭合多边形。" : ""}</p>
+      <p className="hint">Ctrl/⌘ + 滚轮缩放，Ctrl/⌘ + 拖动平移画布。当前类别：{classes.find((item) => item.id === activeClassId)?.name ?? "未选择"}。{samBusy ? `SAM 推理中，已用 ${samElapsed} 秒；远程 SAM3 单次推理一般需要 20~60 秒，完成后会自动生成多边形建议。` : !canAnnotate ? "请先在右侧新增一个类别，再开始绘制。" : taskType === "obb" ? selectedObb ? "已选中 OBB：拖动可移动，四角手柄可缩放，顶部圆形手柄可旋转。" : "拖拽创建 OBB；点击既有框即可选择、旋转、缩放或删除。" : taskType === "detect" && selectedBbox ? "已选中框：拖动可移动，四角手柄可调整大小；BBox 不支持旋转。" : selectedPolygon ? "已选中多边形：拖动顶点调整形状，双击边线添加顶点，双击顶点删除（至少保留 3 个点）；SAM 生成的密集轮廓可先“简化顶点”再微调。" : tool === "select" ? "已退出绘制：点击既有标注可选中并编辑，Ctrl/⌘ 拖动可平移；点选上方工具继续绘制。" : tool === "sam" ? samConfigured ? "拖拽一个提示框，SAM 会返回一个或多个可确认的多边形建议。" : "未配置 SAM：框选只会生成可审阅的矩形建议，不会运行模型推理。" : tool === "sam_point" ? "点击一个前景点，SAM 会返回一个或多个可确认的多边形建议。" : taskType === "segment" && !samConfigured ? "SAM 未配置；可使用 Polygon，或使用仅供审阅的框形建议。" : "坐标以原图像素保存。"}{tool === "polygon" && polygonPoints.length > 0 ? "已放置的顶点可直接拖动调整、双击删除；靠近第一个点点击可自动闭合多边形。" : ""}</p>
       <div className="stage-wrap">
         {imageElement ? (
           <Stage
@@ -291,12 +310,13 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
                 setDragEnd(undefined);
                 return;
               }
-              if (!activeClassId) return;
+              if (tool === "select" || !activeClassId) return;
               const point = pointer(event);
               if (!point) return;
               if (tool !== "polygon" && !["Stage", "Layer"].includes(event.target.getClassName())) return;
               if (tool === "sam_point" && onSamPoints) {
                 void onSamPoints([toOriginal(point)]);
+                setTool("select");
                 return;
               }
               if (tool !== "polygon") setDragStart(point);
@@ -347,7 +367,10 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
                   onChange([...annotations.map(toDraft), { id, class_id: activeClassId, type: "obb", obb: clampOBBToImage({ cx: box.x + box.width / 2, cy: box.y + box.height / 2, width: box.width, height: box.height, angle }, image.width, image.height), source: "manual" }]);
                   setSelectedObbId(id);
                 }
-                if (tool === "sam" && onSamBox) void onSamBox(box);
+                if (tool === "sam" && onSamBox) {
+                  void onSamBox(box);
+                  setTool("select");
+                }
               }
               setDragStart(undefined);
               setDragEnd(undefined);
@@ -363,7 +386,7 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
           >
             <Layer x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom}>
               <KonvaImage image={imageElement} width={displaySize.width} height={displaySize.height} listening={false} />
-              {annotations.filter((annotation) => !hiddenAnnotationIds?.has(annotation.id)).map((annotation) => annotation.type === "obb" && annotation.obb ? <EditableObb key={annotation.id} annotation={annotation} stageObb={toStageObb(annotation.obb)} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { obbRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedObbId(annotation.id); setSelectedBboxId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} onChange={(updated) => replaceObb(annotation.id, updated)} /> : annotation.type === "bbox" && annotation.bbox ? <EditableBbox key={annotation.id} annotation={annotation} scale={scale} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { bboxRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedBboxId(annotation.id); setSelectedObbId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} onChange={(updated) => replaceBbox(annotation.id, updated)} /> : annotation.type === "polygon" && annotation.polygon && annotation.id === selectedPolygon?.id ? <EditablePolygon key={annotation.id} annotation={annotation} scale={scale} zoom={zoom} onSelect={() => { setSelectedPolygonId(annotation.id); setSelectedObbId(undefined); setSelectedBboxId(undefined); onSelectAnnotation?.(annotation.id); }} onMoveVertex={(index, point) => movePolygonVertex(annotation.id, index, point)} onDeleteVertex={(index) => deletePolygonVertex(annotation.id, index)} onInsertVertex={(point) => insertPolygonVertex(annotation.id, point)} /> : <AnnotationShape key={annotation.id} annotation={annotation} scale={scale} onSelect={() => { setSelectedPolygonId(annotation.type === "polygon" ? annotation.id : undefined); onSelectAnnotation?.(annotation.id); }} />)}
+              {annotations.filter((annotation) => !hiddenAnnotationIds?.has(annotation.id)).map((annotation) => annotation.type === "obb" && annotation.obb ? <EditableObb key={annotation.id} annotation={annotation} stageObb={toStageObb(annotation.obb)} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { obbRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedObbId(annotation.id); setSelectedBboxId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier} onChange={(updated) => replaceObb(annotation.id, updated)} /> : annotation.type === "bbox" && annotation.bbox ? <EditableBbox key={annotation.id} annotation={annotation} scale={scale} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { bboxRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedBboxId(annotation.id); setSelectedObbId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier} onChange={(updated) => replaceBbox(annotation.id, updated)} /> : annotation.type === "polygon" && annotation.polygon && annotation.id === selectedPolygon?.id ? <EditablePolygon key={annotation.id} annotation={annotation} scale={scale} zoom={zoom} onSelect={() => { setSelectedPolygonId(annotation.id); setSelectedObbId(undefined); setSelectedBboxId(undefined); onSelectAnnotation?.(annotation.id); }} onMoveVertex={(index, point) => movePolygonVertex(annotation.id, index, point)} onDeleteVertex={(index) => deletePolygonVertex(annotation.id, index)} onInsertVertex={(point) => insertPolygonVertex(annotation.id, point)} panModifier={panModifier} /> : <AnnotationShape key={annotation.id} annotation={annotation} scale={scale} onSelect={() => { setSelectedPolygonId(annotation.type === "polygon" ? annotation.id : undefined); onSelectAnnotation?.(annotation.id); }} />)}
               {dragStart && dragEnd && tool !== "obb" && <Rect {...displayBox(normalizeBBox(dragStart, dragEnd))} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
               {draftObb && <Rect x={draftObb.x + draftObb.width / 2} y={draftObb.y + draftObb.height / 2} width={draftObb.width} height={draftObb.height} offsetX={draftObb.width / 2} offsetY={draftObb.height / 2} rotation={angle} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
               {polygonPoints.length > 0 && <Line points={polygonPoints.flat()} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} closed={false} dash={[6, 4]} />}
@@ -379,8 +402,9 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
                     stroke={snapped ? "#22c55e" : "#f97316"}
                     strokeWidth={1.5}
                     strokeScaleEnabled={false}
-                    draggable
+                    draggable={!panModifier}
                     onMouseDown={(event) => {
+                      if (panModifierActive(event.evt)) return;
                       event.cancelBubble = true;
                       if (index === 0 && polygonPoints.length >= 3) finishPolygon();
                     }}
@@ -409,15 +433,15 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
   );
 }
 
-function EditableObb({ annotation, stageObb, selected, setNodeRef, onSelect, onChange }: { annotation: Annotation; stageObb: OBB; selected: boolean; setNodeRef: (node: Konva.Rect | null) => void; onSelect: () => void; onChange: (obb: OBB) => void }) {
-  return <Rect ref={setNodeRef} x={stageObb.cx} y={stageObb.cy} width={stageObb.width} height={stageObb.height} offsetX={stageObb.width / 2} offsetY={stageObb.height / 2} rotation={stageObb.angle} stroke={annotation.color} strokeWidth={selected ? 3 : 2} strokeScaleEnabled={false} fill={selected ? `${annotation.color}22` : "transparent"} draggable onMouseDown={(event) => { event.cancelBubble = true; onSelect(); }} onClick={onSelect} onTap={onSelect} onDragEnd={(event) => onChange({ ...stageObb, cx: event.target.x(), cy: event.target.y() })} onTransformEnd={(event) => { const node = event.target; const scaleX = node.scaleX(); const scaleY = node.scaleY(); node.scaleX(1); node.scaleY(1); onChange({ cx: node.x(), cy: node.y(), width: Math.abs(node.width() * scaleX), height: Math.abs(node.height() * scaleY), angle: node.rotation() }); }} />;
+function EditableObb({ annotation, stageObb, selected, panModifier, setNodeRef, onSelect, onChange }: { annotation: Annotation; stageObb: OBB; selected: boolean; panModifier: boolean; setNodeRef: (node: Konva.Rect | null) => void; onSelect: () => void; onChange: (obb: OBB) => void }) {
+  return <Rect ref={setNodeRef} x={stageObb.cx} y={stageObb.cy} width={stageObb.width} height={stageObb.height} offsetX={stageObb.width / 2} offsetY={stageObb.height / 2} rotation={stageObb.angle} stroke={annotation.color} strokeWidth={selected ? 3 : 2} strokeScaleEnabled={false} fill={selected ? `${annotation.color}22` : "transparent"} draggable={!panModifier} onMouseDown={(event) => { if (panModifierActive(event.evt)) return; event.cancelBubble = true; onSelect(); }} onClick={onSelect} onTap={onSelect} onDragEnd={(event) => onChange({ ...stageObb, cx: event.target.x(), cy: event.target.y() })} onTransformEnd={(event) => { const node = event.target; const scaleX = node.scaleX(); const scaleY = node.scaleY(); node.scaleX(1); node.scaleY(1); onChange({ cx: node.x(), cy: node.y(), width: Math.abs(node.width() * scaleX), height: Math.abs(node.height() * scaleY), angle: node.rotation() }); }} />;
 }
 
-function EditableBbox({ annotation, scale, selected, setNodeRef, onSelect, onChange }: { annotation: Annotation; scale: { x: number; y: number }; selected: boolean; setNodeRef: (node: Konva.Rect | null) => void; onSelect: () => void; onChange: (bbox: BBox) => void }) {
+function EditableBbox({ annotation, scale, selected, panModifier, setNodeRef, onSelect, onChange }: { annotation: Annotation; scale: { x: number; y: number }; selected: boolean; panModifier: boolean; setNodeRef: (node: Konva.Rect | null) => void; onSelect: () => void; onChange: (bbox: BBox) => void }) {
   const bbox = annotation.bbox;
   if (!bbox) return null;
   const stageBox = { x: bbox.x * scale.x, y: bbox.y * scale.y, width: bbox.width * scale.x, height: bbox.height * scale.y };
-  return <Rect ref={setNodeRef} {...stageBox} stroke={annotation.color} strokeWidth={selected ? 3 : 2} strokeScaleEnabled={false} fill={selected ? `${annotation.color}22` : "transparent"} draggable onMouseDown={(event) => { event.cancelBubble = true; onSelect(); }} onClick={onSelect} onTap={onSelect} onDragEnd={(event) => onChange({ ...stageBox, x: event.target.x(), y: event.target.y() })} onTransformEnd={(event) => { const node = event.target; const scaleX = node.scaleX(); const scaleY = node.scaleY(); node.scaleX(1); node.scaleY(1); onChange({ x: node.x(), y: node.y(), width: Math.abs(node.width() * scaleX), height: Math.abs(node.height() * scaleY) }); }} />;
+  return <Rect ref={setNodeRef} {...stageBox} stroke={annotation.color} strokeWidth={selected ? 3 : 2} strokeScaleEnabled={false} fill={selected ? `${annotation.color}22` : "transparent"} draggable={!panModifier} onMouseDown={(event) => { if (panModifierActive(event.evt)) return; event.cancelBubble = true; onSelect(); }} onClick={onSelect} onTap={onSelect} onDragEnd={(event) => onChange({ ...stageBox, x: event.target.x(), y: event.target.y() })} onTransformEnd={(event) => { const node = event.target; const scaleX = node.scaleX(); const scaleY = node.scaleY(); node.scaleX(1); node.scaleY(1); onChange({ x: node.x(), y: node.y(), width: Math.abs(node.width() * scaleX), height: Math.abs(node.height() * scaleY) }); }} />;
 }
 
 function displayBox(box: BBox) {
@@ -433,12 +457,12 @@ function AnnotationShape({ annotation, scale, onSelect }: { annotation: Annotati
     return <Rect x={annotation.bbox.x * scale.x} y={annotation.bbox.y * scale.y} width={annotation.bbox.width * scale.x} height={annotation.bbox.height * scale.y} stroke={annotation.color} strokeWidth={2} strokeScaleEnabled={false} />;
   }
   if (annotation.polygon) {
-    return <Line points={annotation.polygon.flatMap(([x, y]) => [x * scale.x, y * scale.y])} closed stroke={annotation.color} fill={`${annotation.color}33`} strokeWidth={2} strokeScaleEnabled={false} onMouseDown={(event) => { event.cancelBubble = true; onSelect(); }} onClick={onSelect} onTap={onSelect} />;
+    return <Line points={annotation.polygon.flatMap(([x, y]) => [x * scale.x, y * scale.y])} closed stroke={annotation.color} fill={`${annotation.color}33`} strokeWidth={2} strokeScaleEnabled={false} onMouseDown={(event) => { if (panModifierActive(event.evt)) return; event.cancelBubble = true; onSelect(); }} onClick={onSelect} onTap={onSelect} />;
   }
   return null;
 }
 
-function EditablePolygon({ annotation, scale, zoom, onSelect, onMoveVertex, onDeleteVertex, onInsertVertex }: { annotation: Annotation; scale: { x: number; y: number }; zoom: number; onSelect: () => void; onMoveVertex: (index: number, point: [number, number]) => void; onDeleteVertex: (index: number) => void; onInsertVertex: (point: [number, number]) => void }) {
+function EditablePolygon({ annotation, scale, zoom, panModifier, onSelect, onMoveVertex, onDeleteVertex, onInsertVertex }: { annotation: Annotation; scale: { x: number; y: number }; zoom: number; panModifier: boolean; onSelect: () => void; onMoveVertex: (index: number, point: [number, number]) => void; onDeleteVertex: (index: number) => void; onInsertVertex: (point: [number, number]) => void }) {
   const polygon = annotation.polygon;
   if (!polygon) return null;
   return (
@@ -450,7 +474,7 @@ function EditablePolygon({ annotation, scale, zoom, onSelect, onMoveVertex, onDe
         fill={`${annotation.color}33`}
         strokeWidth={2}
         strokeScaleEnabled={false}
-        onMouseDown={(event) => { event.cancelBubble = true; onSelect(); }}
+        onMouseDown={(event) => { if (panModifierActive(event.evt)) return; event.cancelBubble = true; onSelect(); }}
         onClick={onSelect}
         onTap={onSelect}
         onDblClick={(event) => {
@@ -474,8 +498,8 @@ function EditablePolygon({ annotation, scale, zoom, onSelect, onMoveVertex, onDe
           stroke={annotation.color}
           strokeWidth={1.5}
           strokeScaleEnabled={false}
-          draggable
-          onMouseDown={(event) => { event.cancelBubble = true; onSelect(); }}
+          draggable={!panModifier}
+          onMouseDown={(event) => { if (panModifierActive(event.evt)) return; event.cancelBubble = true; onSelect(); }}
           onDblClick={() => onDeleteVertex(index)}
           onDblTap={() => onDeleteVertex(index)}
           onDragEnd={(event) => onMoveVertex(index, [event.target.x(), event.target.y()])}

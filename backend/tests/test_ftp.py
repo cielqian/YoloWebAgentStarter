@@ -51,7 +51,8 @@ class FakeFtp:
         return items
 
     def retrlines(self, command: str, callback) -> None:
-        target = self._resolve(command.split(None, 1)[1])
+        parts = command.split(None, 1)
+        target = self._resolve(parts[1]) if len(parts) > 1 else self._cwd
         if self.nodes.get(target, {}).get("kind") != "dir":
             raise error_perm("550 No such directory")
         for child in self._children(target):
@@ -258,3 +259,110 @@ def test_list_falls_back_to_list_command(client, fake_ftp, monkeypatch):
     assert entry["is_dir"] is False
     assert entry["size"] == 5
     assert entry["modified"] == "Jan 02 2026"
+
+
+def test_list_mlsd_lazy_501_falls_back(client, fake_ftp, monkeypatch):
+    """真实 ftplib.FTP.mlsd 是生成器，OPTS MLST 的 501 要到迭代时才抛出。"""
+    configure(client)
+
+    def mlsd_lazy_501(self, path, facts):
+        raise error_perm("501 Option not supported")
+        yield  # 使其成为生成器，复现 ftplib 的惰性语义
+
+    monkeypatch.setattr(FakeFtp, "mlsd", mlsd_lazy_501)
+    fake_ftp.storbinary("STOR /lazy.bin", io.BytesIO(b"abc"))
+
+    response = client.get("/api/ftp/list", params={"path": "/"})
+    assert response.status_code == 200, response.text
+    entry = next(item for item in response.json()["entries"] if item["name"] == "lazy.bin")
+    assert entry["size"] == 3
+
+
+def test_list_rejects_list_path_argument_falls_back_to_cwd(client, fake_ftp, monkeypatch):
+    """个别服务器同时拒绝 OPTS MLST 与带路径参数的 LIST，应退回 CWD + 无参 LIST。"""
+    configure(client)
+
+    def mlsd_lazy_501(self, path, facts):
+        raise error_perm("501 Option not supported")
+        yield
+
+    def retrlines(self, command: str, callback) -> None:
+        if len(command.split()) > 1:
+            raise error_perm("501 Option not supported")
+        for child in self._children(self._cwd):
+            node = self.nodes[child]
+            name = posixpath.basename(child)
+            if node["kind"] == "dir":
+                callback(f"drwxr-xr-x 1 owner group 4096 Jan 02 2026 {name}")
+            else:
+                callback(f"-rw-r--r-- 1 owner group {len(node['content'])} Jan 02 2026 {name}")
+
+    monkeypatch.setattr(FakeFtp, "mlsd", mlsd_lazy_501)
+    monkeypatch.setattr(FakeFtp, "retrlines", retrlines)
+    fake_ftp.storbinary("STOR /nested.bin", io.BytesIO(b"xy"))
+    fake_ftp.mkd("/docs")
+
+    response = client.get("/api/ftp/list", params={"path": "/"})
+    assert response.status_code == 200, response.text
+    entries = response.json()["entries"]
+    assert any(item["name"] == "nested.bin" and item["size"] == 2 for item in entries)
+    assert any(item["name"] == "docs" and item["is_dir"] for item in entries)
+
+
+def test_list_directory_missing_returns_404(client, fake_ftp, monkeypatch):
+    configure(client)
+
+    def mlsd_lazy_501(self, path, facts):
+        raise error_perm("501 Option not supported")
+        yield
+
+    monkeypatch.setattr(FakeFtp, "mlsd", mlsd_lazy_501)
+
+    response = client.get("/api/ftp/list", params={"path": "/missing"})
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "ftp_dir_not_found"
+
+
+def test_list_parses_windows_dos_listing(client, fake_ftp, monkeypatch):
+    """IIS（Microsoft FTP Service）的 MS-DOS 风格列表：日期 时间 <DIR>/大小 名称。"""
+    configure(client)
+
+    def mlsd_lazy_501(self, path, facts):
+        raise error_perm("501 Option not supported")
+        yield
+
+    def retrlines_dos(self, command, callback):
+        callback("10-14-26  10:37AM       <DIR>          AnalyseData")
+        callback("05-15-26  05:59PM          14072536064 ipp_inference_basic-runtime_V1.0.0_arm.tar.gz")
+        callback("04-17-26  03:54PM            407944192 vsftpd linux tar.tar")
+        callback("09-24-26  09:07AM       <DIR>          三峡算法备份")
+        callback("12-30-25  12:00AM                   0 midnight.log")
+
+    monkeypatch.setattr(FakeFtp, "mlsd", mlsd_lazy_501)
+    monkeypatch.setattr(FakeFtp, "retrlines", retrlines_dos)
+
+    response = client.get("/api/ftp/list", params={"path": "/"})
+    assert response.status_code == 200, response.text
+    entries = {item["name"]: item for item in response.json()["entries"]}
+    assert entries["AnalyseData"]["is_dir"] is True
+    assert entries["AnalyseData"]["size"] is None
+    assert entries["AnalyseData"]["modified"] == "2026-10-14 10:37"
+    assert entries["ipp_inference_basic-runtime_V1.0.0_arm.tar.gz"]["is_dir"] is False
+    assert entries["ipp_inference_basic-runtime_V1.0.0_arm.tar.gz"]["size"] == 14072536064
+    assert entries["ipp_inference_basic-runtime_V1.0.0_arm.tar.gz"]["modified"] == "2026-05-15 17:59"
+    assert entries["vsftpd linux tar.tar"]["size"] == 407944192
+    assert entries["三峡算法备份"]["is_dir"] is True
+    assert entries["midnight.log"]["modified"] == "2025-12-30 00:00"
+
+
+def test_fetch_files_filters_and_downloads(client, fake_ftp):
+    configure(client)
+    fake_ftp.storbinary("STOR /pic.png", io.BytesIO(b"pngdata"))
+    fake_ftp.storbinary("STOR /note.txt", io.BytesIO(b"text"))
+    fake_ftp.storbinary("STOR /big.png", io.BytesIO(b"x" * 100))
+
+    service = FtpService(client.app.state.settings)
+    files, skipped = service.fetch_files(["/pic.png", "/note.txt", "/big.png", "/missing.png"], max_bytes=50)
+
+    assert files == [("pic.png", b"pngdata")]
+    assert skipped == 3

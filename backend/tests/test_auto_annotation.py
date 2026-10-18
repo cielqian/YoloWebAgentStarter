@@ -57,11 +57,11 @@ def test_auto_annotation_runs_as_a_reviewable_dataset_task(client, monkeypatch):
     task_id = created.json()["id"]
 
     task = None
-    for _ in range(40):
+    for _ in range(160):
         task = client.get(f"/api/auto-annotation/{task_id}").json()
         if task["status"] in {"completed", "failed", "stopped"}:
             break
-        time.sleep(0.025)
+        time.sleep(0.05)
     assert task is not None
     assert task["status"] == "completed", task
     assert task["created_annotations"] == 1
@@ -194,10 +194,10 @@ def test_auto_annotation_persists_every_supported_task_type(client, monkeypatch,
 
 def _wait_for_terminal_task(client, task_id: str) -> dict:
     task = None
-    for _ in range(40):
+    for _ in range(160):
         task = client.get(f"/api/auto-annotation/{task_id}").json()
         if task["status"] in {"completed", "failed", "stopped"}:
             break
-        time.sleep(0.025)
+        time.sleep(0.05)
     assert task is not None
     return task

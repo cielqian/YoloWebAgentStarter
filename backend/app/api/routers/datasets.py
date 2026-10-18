@@ -31,6 +31,8 @@ from app.core.schemas import (
     ReplaceAnnotationsRequest,
     ScanImagesRequest,
     ScanImagesResponse,
+    SourceImportRequest,
+    SourceImportResponse,
     SplitOperationResponse,
     TileDatasetRequest,
     TileDatasetResponse,
@@ -47,6 +49,7 @@ from app.dataset.exchange.coco import export_coco, import_coco
 from app.dataset.quality.schemas import DatasetQualityReport
 from app.dataset.quality.service import DatasetQualityService
 from app.dataset.images import (
+    add_images_from_source,
     add_uploaded_images,
     auto_split_images,
     delete_image,
@@ -300,6 +303,26 @@ async def upload_images(
         uploads.append((file.filename or "image", content))
     items = add_uploaded_images(session, storage, dataset_id, uploads, split)
     return UploadImagesResponse(imported=len(items), items=[_image_response(item) for item in items])
+
+
+@router.post("/{dataset_id}/images/from-source", response_model=SourceImportResponse, status_code=201)
+def import_images_from_source(
+    dataset_id: str,
+    payload: SourceImportRequest,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+) -> SourceImportResponse:
+    items, skipped = add_images_from_source(
+        session,
+        storage,
+        dataset_id,
+        payload.source_dataset_id,
+        image_ids=payload.image_ids,
+        tag_ids=payload.tag_ids,
+        tag_match=payload.tag_match,
+        split=payload.split,
+    )
+    return SourceImportResponse(imported=len(items), skipped=skipped)
 
 
 @router.post("/{dataset_id}/images/scan", response_model=ScanImagesResponse)

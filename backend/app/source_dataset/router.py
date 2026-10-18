@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -12,6 +14,8 @@ from app.core.errors import ValidationError
 from app.core.storage import Storage
 from app.source_dataset import service
 from app.source_dataset.schemas import (
+    SourceBatchTagsRequest,
+    SourceBatchTagsResult,
     SourceDatasetCreate,
     SourceDatasetOut,
     SourceDatasetUpdate,
@@ -45,6 +49,7 @@ def _image_response(image) -> SourceImageOut:
         source_type=image.source_type,
         tags=[SourceTagOut(id=tag.id, name=tag.name, color=tag.color, image_count=0) for tag in image.tags],
         file_url=f"/api/source-datasets/{image.source_dataset_id}/images/{image.id}/file",
+        thumbnail_url=f"/api/source-datasets/{image.source_dataset_id}/images/{image.id}/thumbnail",
         created_at=image.created_at,
     )
 
@@ -81,11 +86,12 @@ def list_images(
     source_dataset_id: str,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=60, ge=1, le=500),
-    tag_id: str | None = None,
+    tag_ids: list[str] = Query(default=[]),
+    tag_match: Literal["all", "any"] = Query(default="all"),
     query: str | None = None,
     session: Session = Depends(get_session),
 ) -> SourceImagePage:
-    total, items = service.list_images(session, source_dataset_id, offset=offset, limit=limit, tag_id=tag_id, query=query)
+    total, items = service.list_images(session, source_dataset_id, offset=offset, limit=limit, tag_ids=tag_ids or None, tag_match=tag_match, query=query)
     return SourceImagePage(total=total, offset=offset, limit=limit, items=[_image_response(item) for item in items])
 
 
@@ -93,12 +99,23 @@ def list_images(
 async def upload_images(
     source_dataset_id: str,
     files: list[UploadFile] = File(...),
+    tag_ids: list[str] = Form(default=[]),
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
 ) -> SourceUploadResult:
     uploads = [(file.filename or "image", await _read_upload(file, settings.max_upload_bytes)) for file in files]
-    return service.add_images(session, storage, settings, source_dataset_id, uploads, "upload")
+    return service.add_images(session, storage, settings, source_dataset_id, uploads, "upload", tag_ids=tag_ids or None)
+
+
+@router.post("/{source_dataset_id}/images/batch-tags", response_model=SourceBatchTagsResult)
+def batch_add_tags(
+    source_dataset_id: str,
+    payload: SourceBatchTagsRequest,
+    session: Session = Depends(get_session),
+) -> SourceBatchTagsResult:
+    updated = service.apply_tags_to_images(session, source_dataset_id, payload.image_ids, payload.tag_ids, remove=payload.remove)
+    return SourceBatchTagsResult(updated=updated)
 
 
 @router.post("/{source_dataset_id}/images/ftp-sync", response_model=SourceFtpSyncResult)
@@ -129,6 +146,21 @@ def get_image_file(source_dataset_id: str, image_id: str, session: Session = Dep
     if not path.is_file():
         raise ValidationError("source_image_file_not_found", "图片文件不存在。")
     return FileResponse(path, media_type=_MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream"), filename=image.file_name)
+
+
+@router.get("/{source_dataset_id}/images/{image_id}/thumbnail")
+def get_image_thumbnail(source_dataset_id: str, image_id: str, session: Session = Depends(get_session), storage: Storage = Depends(get_storage)) -> FileResponse:
+    image = service.get_image(session, source_dataset_id, image_id)
+    try:
+        path = storage.ensure_source_thumbnail(source_dataset_id, image.storage_name)
+        media_type = "image/jpeg"
+    except ValidationError:
+        # 原图损坏等极端情况下退回原图，保证列表有图可显示。
+        path = storage.source_image_path(source_dataset_id, image.storage_name)
+        if not path.is_file():
+            raise
+        media_type = _MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @router.get("/{source_dataset_id}/tags", response_model=list[SourceTagOut])

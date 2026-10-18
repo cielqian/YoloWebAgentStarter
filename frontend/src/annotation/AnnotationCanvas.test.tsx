@@ -30,8 +30,9 @@ vi.mock("react-konva", async () => {
         </div>
       );
     },
-    Line: ({ onDblClick }: any) => (
+    Line: ({ onDblClick, onMouseDown }: any) => (
       <div data-testid="line">
+        {onMouseDown && <button aria-label="掩码按下" onClick={(event) => onMouseDown({ evt: { ctrlKey: event.ctrlKey }, target: {}, cancelBubble: false })}></button>}
         {onDblClick && <button aria-label="双击边线" onClick={() => onDblClick({ target: { getRelativePointerPosition: () => ({ x: 30, y: 15 }) }, cancelBubble: false })}></button>}
       </div>
     ),
@@ -364,5 +365,62 @@ describe("AnnotationCanvas OBB interactions", () => {
     const simplify = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "简化顶点");
     act(() => simplify?.click());
     expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ polygon: [[0, 0], [20, 0], [20, 20], [0, 20]] })]);
+  });
+});
+
+describe("AnnotationCanvas SAM tool reset and mask panning", () => {
+  const polygonAnnotation: Annotation = { ...annotation, id: "ann-mask", type: "polygon", bbox: null, obb: null, polygon: [[10, 10], [60, 10], [60, 50], [10, 50]] };
+  const capabilities = { model_configured: true, box_prompt_available: true, point_prompt_available: true, box_backend: "ultralytics_sam" } as const;
+
+  it("returns to the neutral tool after one SAM point request", async () => {
+    const onSamPoints = vi.fn(async () => undefined);
+    await act(async () => {
+      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[]} activeClassId="cls-1" taskType="segment" onChange={vi.fn()} onSamPoints={onSamPoints} samCapabilities={capabilities} />);
+    });
+
+    const samButton = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "SAM 点选");
+    expect(samButton).toBeTruthy();
+    act(() => samButton?.click());
+
+    const stage = container?.querySelector<HTMLDivElement>("[data-testid='stage']") as (HTMLDivElement & { getStage?: () => unknown; getClassName?: () => string; getPointerPosition?: () => { x: number; y: number } }) | null;
+    stage!.getStage = () => stage;
+    stage!.getClassName = () => "Stage";
+    stage!.getPointerPosition = () => ({ x: 30, y: 20 });
+
+    act(() => stage?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    expect(onSamPoints).toHaveBeenCalledOnce();
+    expect(container?.textContent).toContain("已退出绘制");
+
+    act(() => stage?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    act(() => stage?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })));
+    expect(onSamPoints).toHaveBeenCalledOnce();
+  });
+
+  it("pans with ctrl+drag started on a mask without selecting it", async () => {
+    const onChange = vi.fn();
+    await act(async () => {
+      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[polygonAnnotation]} activeClassId="cls-1" taskType="segment" onChange={onChange} />);
+    });
+
+    const stage = container?.querySelector<HTMLDivElement>("[data-testid='stage']") as (HTMLDivElement & { getStage?: () => unknown; getClassName?: () => string; getPointerPosition?: () => { x: number; y: number } }) | null;
+    let position = { x: 20, y: 10 };
+    stage!.getStage = () => stage;
+    stage!.getClassName = () => "Stage";
+    stage!.getPointerPosition = () => position;
+
+    // Ctrl+点击掩码：不选中（事件留给平移），随后 Ctrl 拖动产生平移且不产生新标注
+    act(() => container?.querySelector<HTMLButtonElement>("[aria-label='掩码按下']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })));
+    expect(container?.textContent).not.toContain("已选中多边形");
+
+    act(() => stage?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, ctrlKey: true })));
+    position = { x: 60, y: 40 };
+    act(() => stage?.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, ctrlKey: true })));
+    act(() => stage?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(container?.textContent).toContain("重置视图");
+
+    // 无修饰键点击掩码仍可正常选中
+    act(() => container?.querySelector<HTMLButtonElement>("[aria-label='掩码按下']")?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(container?.textContent).toContain("已选中多边形");
   });
 });

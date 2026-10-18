@@ -178,6 +178,19 @@ class UploadImagesResponse(BaseModel):
     items: list[ImageItemResponse]
 
 
+class SourceImportRequest(BaseModel):
+    source_dataset_id: str
+    image_ids: list[str] | None = None
+    tag_ids: list[str] | None = None
+    tag_match: Literal["all", "any"] = "all"
+    split: SplitName = "train"
+
+
+class SourceImportResponse(BaseModel):
+    imported: int
+    skipped: int
+
+
 class BBox(BaseModel):
     x: float
     y: float

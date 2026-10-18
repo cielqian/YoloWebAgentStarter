@@ -121,17 +121,17 @@ export function FtpView() {
           <h1>FTP 管理</h1>
           <p>浏览 FTP 服务器文件，支持上传、下载、移动与删除。连接凭据在“设置 → FTP 服务”中维护。</p>
         </div>
-        <div className="header-actions">
-          <input ref={fileInputRef} type="file" multiple hidden onChange={(event) => void upload(event.target.files)} />
-          <button className="button" disabled={busy || loading} onClick={() => fileInputRef.current?.click()}>上传文件</button>
-          <button className="button" disabled={busy || loading} onClick={() => { setMkdirName(""); setMkdirOpen(true); }}>新建文件夹</button>
-          <button className="button" disabled={busy || loading} onClick={() => void load(path)}>刷新</button>
-        </div>
       </header>
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <Toast kind="success" message={notice} onClose={() => setNotice("")} />
       <section className="panel ftp-browser">
         <div className="ftp-toolbar">
+          <div className="header-actions ftp-toolbar-actions">
+            <input ref={fileInputRef} type="file" multiple hidden onChange={(event) => void upload(event.target.files)} />
+            <button className="button" disabled={busy || loading} onClick={() => fileInputRef.current?.click()}>上传文件</button>
+            <button className="button" disabled={busy || loading} onClick={() => { setMkdirName(""); setMkdirOpen(true); }}>新建文件夹</button>
+            <button className="button" disabled={busy || loading} onClick={() => void load(path)}>刷新</button>
+          </div>
           <button className="button" disabled={busy || loading || path === "/"} onClick={() => void load(parentPath(path))}>返回上级</button>
           <nav className="ftp-breadcrumb" aria-label="FTP 路径">
             <button onClick={() => void load("/")}>/</button>

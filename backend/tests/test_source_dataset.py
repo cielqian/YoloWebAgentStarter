@@ -111,9 +111,29 @@ def test_tags_support_multiple_per_image(client: TestClient) -> None:
     assert all(tag["image_count"] == 1 for tag in tags)
 
     filtered = client.get(
-        f"/api/source-datasets/{dataset['id']}/images", params={"tag_id": tag_a["id"]}
+        f"/api/source-datasets/{dataset['id']}/images", params={"tag_ids": [tag_a["id"]]}
     ).json()
     assert filtered["total"] == 1
+
+    upload_image(client, dataset["id"], "night.png")
+    night_id = client.get(
+        f"/api/source-datasets/{dataset['id']}/images", params={"query": "night"}
+    ).json()["items"][0]["id"]
+    client.patch(f"/api/source-datasets/{dataset['id']}/images/{night_id}", json={"tag_ids": [tag_a["id"]]})
+    single = client.get(
+        f"/api/source-datasets/{dataset['id']}/images", params={"tag_ids": [tag_a["id"]]}
+    ).json()
+    assert single["total"] == 2
+    both = client.get(
+        f"/api/source-datasets/{dataset['id']}/images", params={"tag_ids": [tag_a["id"], tag_b["id"]]}
+    ).json()
+    assert both["total"] == 1
+    either = client.get(
+        f"/api/source-datasets/{dataset['id']}/images",
+        params={"tag_ids": [tag_a["id"], tag_b["id"]], "tag_match": "any"},
+    ).json()
+    assert either["total"] == 2
+
     untagged = client.patch(
         f"/api/source-datasets/{dataset['id']}/images/{image_id}", json={"tag_ids": []}
     ).json()
@@ -153,3 +173,144 @@ def test_ftp_sync_imports_images(client: TestClient, monkeypatch) -> None:
     images = client.get(f"/api/source-datasets/{dataset['id']}/images").json()["items"]
     assert images[0]["source_type"] == "ftp"
     assert images[0]["file_name"] == "frame1.png"
+
+
+def test_upload_with_tags_applies_to_imported_images(client: TestClient) -> None:
+    dataset = create_dataset(client)
+    tag = client.post(f"/api/source-datasets/{dataset['id']}/tags", json={"name": "白天"}).json()
+
+    response = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/upload",
+        files=[("files", ("one.png", png_bytes(), "image/png")), ("files", ("two.png", png_bytes(), "image/png"))],
+        data={"tag_ids": [tag["id"]]},
+    )
+    assert response.status_code == 201
+    page = client.get(f"/api/source-datasets/{dataset['id']}/images").json()
+    assert page["total"] == 2
+    assert [item["tags"][0]["name"] for item in page["items"]] == ["白天", "白天"]
+    assert client.get(f"/api/source-datasets/{dataset['id']}/tags").json()[0]["image_count"] == 2
+
+    other = create_dataset(client, "另一数据源")
+    foreign_tag = client.post(f"/api/source-datasets/{other['id']}/tags", json={"name": "外来"}).json()
+    rejected = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/upload",
+        files=[("files", ("three.png", png_bytes(), "image/png"))],
+        data={"tag_ids": [foreign_tag["id"]]},
+    )
+    assert rejected.status_code == 404
+    assert rejected.json()["error"]["code"] == "source_tag_not_found"
+
+
+def test_batch_add_tags(client: TestClient) -> None:
+    dataset = create_dataset(client)
+    ids = [upload_image(client, dataset["id"], f"img{i}.png") for i in range(3)]
+    image_ids = [
+        item["id"]
+        for item in client.get(f"/api/source-datasets/{dataset['id']}/images").json()["items"]
+    ]
+    day = client.post(f"/api/source-datasets/{dataset['id']}/tags", json={"name": "白天"}).json()
+    night = client.post(f"/api/source-datasets/{dataset['id']}/tags", json={"name": "夜间"}).json()
+
+    response = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/batch-tags",
+        json={"image_ids": image_ids, "tag_ids": [day["id"], night["id"]]},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"updated": 3}
+
+    page = client.get(f"/api/source-datasets/{dataset['id']}/images").json()
+    for item in page["items"]:
+        assert [tag["name"] for tag in item["tags"]] == ["夜间", "白天"]
+
+    # 重复应用同一标签不应产生重复关联。
+    again = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/batch-tags",
+        json={"image_ids": image_ids, "tag_ids": [day["id"]]},
+    )
+    assert again.status_code == 200
+    tags = client.get(f"/api/source-datasets/{dataset['id']}/tags").json()
+    assert {item["name"]: item["image_count"] for item in tags} == {"白天": 3, "夜间": 3}
+
+    removed = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/batch-tags",
+        json={"image_ids": image_ids[:2], "tag_ids": [day["id"]], "remove": True},
+    )
+    assert removed.status_code == 200
+    assert removed.json() == {"updated": 2}
+    counts = {item["name"]: item["image_count"] for item in client.get(f"/api/source-datasets/{dataset['id']}/tags").json()}
+    assert counts == {"白天": 1, "夜间": 3}
+
+    missing_image = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/batch-tags",
+        json={"image_ids": ["simg_missing"], "tag_ids": [day["id"]]},
+    )
+    assert missing_image.status_code == 404
+    assert missing_image.json()["error"]["code"] == "source_image_not_found"
+
+    missing_tag = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/batch-tags",
+        json={"image_ids": image_ids, "tag_ids": ["stag_missing"]},
+    )
+    assert missing_tag.status_code == 404
+    assert missing_tag.json()["error"]["code"] == "source_tag_not_found"
+    assert len(ids) == 3
+
+
+def test_ftp_sync_with_selected_files(client: TestClient, monkeypatch) -> None:
+    dataset = create_dataset(client)
+    captured: dict = {}
+
+    def fake_fetch_files(self, paths, *, max_bytes):
+        captured["paths"] = paths
+        captured["max_bytes"] = max_bytes
+        return [("one.png", png_bytes()), ("two.png", png_bytes())], 1
+
+    monkeypatch.setattr(ftp_service.FtpService, "fetch_files", fake_fetch_files)
+
+    response = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/ftp-sync",
+        json={"path": "/remote", "recursive": False, "file_paths": ["/remote/one.png", "/remote/two.png", "/remote/skip.txt"]},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"synced": 2, "skipped": 1}
+    assert captured["paths"] == ["/remote/one.png", "/remote/two.png", "/remote/skip.txt"]
+
+    images = client.get(f"/api/source-datasets/{dataset['id']}/images").json()["items"]
+    assert sorted(item["file_name"] for item in images) == ["one.png", "two.png"]
+    assert all(item["source_type"] == "ftp" for item in images)
+
+
+def test_image_thumbnail_generated_and_cached(client: TestClient) -> None:
+    dataset = create_dataset(client)
+    upload_image(client, dataset["id"], "shot.png")
+    item = client.get(f"/api/source-datasets/{dataset['id']}/images").json()["items"][0]
+    assert item["thumbnail_url"].endswith("/thumbnail")
+
+    first = client.get(item["thumbnail_url"])
+    assert first.status_code == 200, first.text
+    assert first.headers["content-type"] == "image/jpeg"
+    assert "max-age=31536000" in first.headers["cache-control"]
+    assert len(first.content) > 0
+
+    second = client.get(item["thumbnail_url"])
+    assert second.status_code == 200
+    assert second.content == first.content
+
+
+def test_ftp_sync_with_tags(client: TestClient, monkeypatch) -> None:
+    dataset = create_dataset(client, "FTP 带标签")
+    tag = client.post(f"/api/source-datasets/{dataset['id']}/tags", json={"name": "夜间"}).json()
+
+    monkeypatch.setattr(
+        ftp_service.FtpService,
+        "fetch_directory_images",
+        lambda self, path, *, recursive, max_bytes: [("frame1.png", png_bytes())],
+    )
+
+    response = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/ftp-sync",
+        json={"path": "/remote", "recursive": False, "tag_ids": [tag["id"]]},
+    )
+    assert response.status_code == 200, response.text
+    item = client.get(f"/api/source-datasets/{dataset['id']}/images").json()["items"][0]
+    assert [entry["name"] for entry in item["tags"]] == ["夜间"]

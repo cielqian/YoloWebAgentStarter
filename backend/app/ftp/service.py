@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import posixpath
+import re
 from datetime import datetime
 from ftplib import FTP, error_perm, error_temp
 
@@ -14,6 +15,13 @@ from app.settings.service import SettingsService
 
 # FTP 命令是行协议，路径里出现控制字符（尤其 \r\n）会被当作新命令注入。
 _PATH_FORBIDDEN = set("\x00\r\n\t")
+
+# IIS/MS-DOS 目录列表行，例如：
+# 10-14-26  10:37AM       <DIR>          AnalyseData
+# 05-15-26  05:59PM          14072536064 name with spaces.tar.gz
+_DOS_LIST_LINE = re.compile(
+    r"^(?P<date>\d{2}-\d{2}-\d{2,4})\s+(?P<time>\d{1,2}:\d{2})(?P<ampm>AM|PM)?\s+(?P<size><DIR>|\d+)\s+(?P<name>\S.*?)\s*$"
+)
 
 
 def normalize_ftp_path(path: str | None, *, allow_root: bool = True) -> str:
@@ -115,6 +123,23 @@ class FtpService:
                         collected.append((display, data))
         return collected
 
+    def fetch_files(self, paths: list[str], *, max_bytes: int) -> tuple[list[tuple[str, bytes]], int]:
+        """按给定路径清单下载图片文件，返回 (文件名, 内容) 列表和跳过数量（非图片/超限/不可读）。"""
+        collected: list[tuple[str, bytes]] = []
+        skipped = 0
+        with self._managed_client() as client:
+            for raw in paths:
+                path = normalize_ftp_path(raw, allow_root=False)
+                if posixpath.splitext(path)[1].lower() not in SUPPORTED_IMAGE_SUFFIXES:
+                    skipped += 1
+                    continue
+                data = self._download_limited(client, path, max_bytes)
+                if data is None:
+                    skipped += 1
+                    continue
+                collected.append((posixpath.basename(path), data))
+        return collected, skipped
+
     @staticmethod
     def _download_limited(client: FTP, path: str, max_bytes: int) -> bytes | None:
         class _TooLarge(Exception):
@@ -208,7 +233,8 @@ class FtpService:
 
     def _entries_mlsd(self, client: FTP, path: str) -> list[FtpEntry] | None:
         try:
-            facts = client.mlsd(path=path, facts=["type", "size", "modify"])
+            # ftplib.FTP.mlsd 是生成器：OPTS MLST 的 501 等错误要到迭代时才抛出，必须在这里物化。
+            facts = list(client.mlsd(path=path, facts=["type", "size", "modify"]))
         except error_perm:
             return None
         entries: list[FtpEntry] = []
@@ -237,28 +263,77 @@ class FtpService:
             return None
 
     def _entries_list(self, client: FTP, path: str) -> list[FtpEntry]:
-        """MLSD 不可用时的兜底：解析 Unix 风格 LIST 输出。"""
+        """MLSD 不可用时的兜底：解析 Unix 或 Windows(IIS/DOS) 风格 LIST 输出。"""
+        lines = self._list_directory(client, path)
+        entries: list[FtpEntry] = []
+        for line in lines:
+            if line.startswith(("d", "-", "l")):
+                parts = line.split(None, 8)
+                if len(parts) < 9:
+                    continue
+                name = parts[8].split(" -> ")[0]
+                if name in (".", ".."):
+                    continue
+                entries.append(FtpEntry(
+                    name=name,
+                    path=join_ftp_path(path, name),
+                    is_dir=line.startswith("d"),
+                    size=None if line.startswith("d") else _safe_int(parts[4]),
+                    modified=" ".join(parts[5:8]) or None,
+                ))
+                continue
+            match = _DOS_LIST_LINE.match(line)
+            if match is None or match.group("name") in (".", ".."):
+                continue
+            is_dir = match.group("size") == "<DIR>"
+            entries.append(FtpEntry(
+                name=match.group("name"),
+                path=join_ftp_path(path, match.group("name")),
+                is_dir=is_dir,
+                size=None if is_dir else _safe_int(match.group("size")),
+                modified=self._parse_dos_time(match.group("date"), match.group("time"), match.group("ampm")),
+            ))
+        return entries
+
+    @staticmethod
+    def _parse_dos_time(date_text: str, time_text: str, ampm: str | None) -> str | None:
+        try:
+            month, day, year = (int(part) for part in date_text.split("-"))
+            hour, minute = (int(part) for part in time_text.split(":"))
+            if year < 100:
+                year += 2000
+            if ampm == "PM" and hour != 12:
+                hour += 12
+            elif ampm == "AM" and hour == 12:
+                hour = 0
+            return datetime(year, month, day, hour, minute).strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            return None
+
+    def _list_directory(self, client: FTP, path: str) -> list[str]:
         lines: list[str] = []
         try:
             client.retrlines(f"LIST {path}", lines.append)
+            return lines
         except error_perm as exc:
-            raise NotFoundError("ftp_dir_not_found", "FTP 目录不存在或无权限访问。") from exc
-        entries: list[FtpEntry] = []
-        for line in lines:
-            parts = line.split(None, 8)
-            if len(parts) < 9 or not line.startswith(("d", "-", "l")):
-                continue
-            name = parts[8].split(" -> ")[0]
-            if name in (".", ".."):
-                continue
-            entries.append(FtpEntry(
-                name=name,
-                path=join_ftp_path(path, name),
-                is_dir=line.startswith("d"),
-                size=None if line.startswith("d") else _safe_int(parts[4]),
-                modified=" ".join(parts[5:8]) or None,
-            ))
-        return entries
+            if _perm_code(exc) == "550":
+                raise NotFoundError("ftp_dir_not_found", "FTP 目录不存在或无权限访问。") from exc
+            return self._list_directory_via_cwd(client, path)
+
+    def _list_directory_via_cwd(self, client: FTP, path: str) -> list[str]:
+        """个别服务器不接受带路径参数的 LIST，退回 CWD + 无参 LIST。"""
+        saved = client.pwd()
+        try:
+            client.cwd(path)
+            lines: list[str] = []
+            client.retrlines("LIST", lines.append)
+            return lines
+        except error_perm as exc:
+            if _perm_code(exc) == "550":
+                raise NotFoundError("ftp_dir_not_found", "FTP 目录不存在或无权限访问。") from exc
+            raise ConflictError("ftp_list_failed", f"读取目录失败：{exc}") from exc
+        finally:
+            client.cwd(saved)
 
     def _delete_recursive(self, client: FTP, path: str) -> None:
         saved = client.pwd()

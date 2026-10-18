@@ -553,6 +553,7 @@ export interface SourceImage {
   source_type: "upload" | "ftp";
   tags: SourceTag[];
   file_url: string;
+  thumbnail_url: string;
   created_at: string;
 }
 

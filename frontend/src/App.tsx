@@ -16,7 +16,7 @@ import { ClassLibraryPicker } from "./components/ClassLibraryPicker";
 import { ImportCenterModal } from "./components/ImportCenterModal";
 import { Toast } from "./components/Toast";
 import { readLocale, saveLocale, type AppLocale } from "./locale";
-import type { Annotation, BBox, ClassLabel, Dataset, DatasetQualityReport, DuplicateReport, ImageItem, SamCapabilities, SamPrediction, SplitName, TaskType, ValidationReport } from "./types";
+import type { Annotation, BBox, ClassLabel, Dataset, DatasetQualityReport, DuplicateReport, ImageItem, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
 
 type View = "workspace" | "classes" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-language" | "logs" | "ftp" | "datasources";
 type CardReportKind = "validation" | "quality" | "duplicates";
@@ -398,6 +398,15 @@ export default function App() {
             }
             setNotice(`已添加 ${result.imported} 张图片到 ${split}`);
           })}
+          onSourceSync={(dataset, sourceDatasetId, tagIds, tagMatch, split) => run(async () => {
+            const result = await api.syncDatasetFromSource(dataset.id, { sourceDatasetId, tagIds, tagMatch, split });
+            await refreshDatasets();
+            if (selected?.id === dataset.id) {
+              const nextImages = await api.listImages(dataset.id);
+              setImages(nextImages.items);
+            }
+            setNotice(`已从数据源同步 ${result.imported} 张图片${result.skipped ? `，跳过 ${result.skipped} 张` : ""}`);
+          })}
           onTrain={(dataset) => void run(() => loadDataset(dataset, "training"))}
           onDuplicates={(dataset) => runResult(() => api.duplicateReport(dataset.id))}
           onDelete={(dataset) => run(async () => {
@@ -432,6 +441,7 @@ export function DatasetHome(props: {
   onVideoImportComplete?: (task: import("./types").VideoImportTask) => Promise<void> | void;
   onContinueAnnotation: (dataset: Dataset) => void;
   onUpload: (dataset: Dataset, files: File[], split: SplitName) => void;
+  onSourceSync: (dataset: Dataset, sourceDatasetId: string, tagIds: string[], tagMatch: "all" | "any", split: SplitName) => void;
   onTrain: (dataset: Dataset) => void;
   onDuplicates: (dataset: Dataset) => Promise<DuplicateReport | undefined>;
   onDelete: (dataset: Dataset) => void;
@@ -443,6 +453,14 @@ export function DatasetHome(props: {
   const [uploadTarget, setUploadTarget] = useState<Dataset>();
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadSplit, setUploadSplit] = useState<SplitName>("train");
+  const [uploadMode, setUploadMode] = useState<"local" | "source">("local");
+  const [sourceDatasets, setSourceDatasets] = useState<SourceDataset[]>([]);
+  const [sourceId, setSourceId] = useState("");
+  const [sourceTags, setSourceTags] = useState<SourceTag[]>([]);
+  const [sourceTagIds, setSourceTagIds] = useState<string[]>([]);
+  const [sourceTagMatch, setSourceTagMatch] = useState<"all" | "any">("all");
+  const [sourceTotal, setSourceTotal] = useState<number>();
+  const [sourceLoading, setSourceLoading] = useState(false);
   const [name, setName] = useState("");
   const [taskType, setTaskType] = useState<TaskType>("detect");
   const [validationReports, setValidationReports] = useState<Record<string, ValidationReport>>({});
@@ -468,6 +486,10 @@ export function DatasetHome(props: {
     setUploadFiles([]);
     setUploadSplit("train");
     setDraggingImages(false);
+    setUploadMode("local");
+    setSourceTagIds([]);
+    setSourceTagMatch("all");
+    setSourceTotal(undefined);
   };
   const chooseImages = (files?: FileList | File[]) => {
     if (files) setUploadFiles(Array.from(files));
@@ -475,6 +497,25 @@ export function DatasetHome(props: {
   const startUpload = () => {
     if (!uploadTarget || !uploadFiles.length) return;
     props.onUpload(uploadTarget, uploadFiles, uploadSplit);
+    closeUpload();
+  };
+  const openSourceMode = async () => {
+    setUploadMode("source");
+    if (sourceDatasets.length) return;
+    setSourceLoading(true);
+    try {
+      const list = await api.listSourceDatasets();
+      setSourceDatasets(list);
+      setSourceId(list[0]?.id ?? "");
+    } catch {
+      setSourceDatasets([]);
+    } finally {
+      setSourceLoading(false);
+    }
+  };
+  const startSourceSync = () => {
+    if (!uploadTarget || !sourceId) return;
+    props.onSourceSync(uploadTarget, sourceId, sourceTagIds, sourceTagMatch, uploadSplit);
     closeUpload();
   };
   const openExport = (dataset: Dataset) => {
@@ -503,6 +544,28 @@ export function DatasetHome(props: {
     const report = await props.onDuplicates(dataset);
     if (report) { setDuplicateReports((items) => ({ ...items, [dataset.id]: report })); openReport(dataset.id, "duplicates"); }
   };
+
+  useEffect(() => {
+    if (uploadMode !== "source" || !sourceId) return;
+    let cancelled = false;
+    setSourceLoading(true);
+    api.listSourceTags(sourceId)
+      .then((tags) => { if (!cancelled) { setSourceTags(tags); setSourceTagIds([]); } })
+      .catch(() => { if (!cancelled) setSourceTags([]); })
+      .finally(() => { if (!cancelled) setSourceLoading(false); });
+    return () => { cancelled = true; };
+  }, [uploadMode, sourceId]);
+
+  useEffect(() => {
+    if (uploadMode !== "source" || !sourceId) return;
+    let cancelled = false;
+    setSourceLoading(true);
+    api.listSourceImages(sourceId, { tagIds: sourceTagIds.length ? sourceTagIds : undefined, tagMatch: sourceTagMatch, limit: 1 })
+      .then((page) => { if (!cancelled) setSourceTotal(page.total); })
+      .catch(() => { if (!cancelled) setSourceTotal(undefined); })
+      .finally(() => { if (!cancelled) setSourceLoading(false); });
+    return () => { cancelled = true; };
+  }, [uploadMode, sourceId, sourceTagIds, sourceTagMatch]);
 
   return <main className="dataset-home-page">
     <header className="dataset-home-header">
@@ -546,11 +609,39 @@ export function DatasetHome(props: {
     </div>}
     {uploadTarget && <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={closeUpload}>
       <section className="dataset-dialog data-exchange-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-upload-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="data-exchange-header"><div><span className="eyebrow">ADD IMAGES</span><h2 id="dataset-upload-dialog-title">添加图片到“{uploadTarget.name}”</h2><p>选择多张图片并指定 split，图片会进入当前本地标注任务。</p></div><button className="icon-button" onClick={closeUpload} aria-label="关闭">×</button></header>
-        <div className="upload-options"><label>导入到 split<select value={uploadSplit} onChange={(event) => setUploadSplit(event.target.value as SplitName)}><option value="train">train · 训练集</option><option value="val">val · 验证集</option><option value="test">test · 测试集</option></select></label></div>
-        <input ref={uploadFileRef} type="file" accept="image/*" multiple hidden onChange={(event) => { chooseImages(event.target.files ?? undefined); event.currentTarget.value = ""; }} />
-        <button className={draggingImages ? "exchange-dropzone dragging" : "exchange-dropzone"} onClick={() => uploadFileRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDraggingImages(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDraggingImages(false)} onDrop={(event) => { event.preventDefault(); setDraggingImages(false); chooseImages(event.dataTransfer.files); }}><span className="exchange-dropzone-icon">⇧</span><strong>{uploadFiles.length ? `已选择 ${uploadFiles.length} 张图片` : "拖放或选择图片"}</strong><small>{uploadFiles.length ? uploadFiles.slice(0, 3).map((file) => file.name).join("、") + (uploadFiles.length > 3 ? ` 等 ${uploadFiles.length} 张` : "") : "支持 JPG、PNG、WEBP 等常见图片格式，可多选"}</small></button>
-        <footer className="data-exchange-footer"><span>原图会复制到受管数据目录，现有标注不会受影响。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !uploadFiles.length} onClick={startUpload}>添加 {uploadFiles.length || ""} 张图片</button></div></footer>
+        <header className="data-exchange-header"><div><span className="eyebrow">ADD IMAGES</span><h2 id="dataset-upload-dialog-title">添加图片到“{uploadTarget.name}”</h2><p>从本地上传或数据源同步，图片会复制进当前标注任务。</p></div><button className="icon-button" onClick={closeUpload} aria-label="关闭">×</button></header>
+        <div className="upload-mode-switch" role="tablist" aria-label="图片来源">
+          <button role="tab" aria-selected={uploadMode === "local"} className={uploadMode === "local" ? "active" : ""} onClick={() => setUploadMode("local")}>本地上传</button>
+          <button role="tab" aria-selected={uploadMode === "source"} className={uploadMode === "source" ? "active" : ""} onClick={() => void openSourceMode()}>从数据源同步</button>
+        </div>
+        {uploadMode === "local" ? <>
+          <div className="upload-options"><label>导入到 split<select value={uploadSplit} onChange={(event) => setUploadSplit(event.target.value as SplitName)}><option value="train">train · 训练集</option><option value="val">val · 验证集</option><option value="test">test · 测试集</option></select></label></div>
+          <input ref={uploadFileRef} type="file" accept="image/*" multiple hidden onChange={(event) => { chooseImages(event.target.files ?? undefined); event.currentTarget.value = ""; }} />
+          <button className={draggingImages ? "exchange-dropzone dragging" : "exchange-dropzone"} onClick={() => uploadFileRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDraggingImages(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDraggingImages(false)} onDrop={(event) => { event.preventDefault(); setDraggingImages(false); chooseImages(event.dataTransfer.files); }}><span className="exchange-dropzone-icon">⇧</span><strong>{uploadFiles.length ? `已选择 ${uploadFiles.length} 张图片` : "拖放或选择图片"}</strong><small>{uploadFiles.length ? uploadFiles.slice(0, 3).map((file) => file.name).join("、") + (uploadFiles.length > 3 ? ` 等 ${uploadFiles.length} 张` : "") : "支持 JPG、PNG、WEBP 等常见图片格式，可多选"}</small></button>
+          <footer className="data-exchange-footer"><span>原图会复制到受管数据目录，现有标注不会受影响。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !uploadFiles.length} onClick={startUpload}>添加 {uploadFiles.length || ""} 张图片</button></div></footer>
+        </> : <>
+          <div className="exchange-fields"><label>选择数据源<select value={sourceId} disabled={!sourceDatasets.length} onChange={(event) => setSourceId(event.target.value)}>{sourceDatasets.map((item) => <option key={item.id} value={item.id}>{item.name}（{item.image_count} 张）</option>)}</select></label></div>
+          {!sourceDatasets.length && <p className="muted">{sourceLoading ? "正在加载数据源…" : "还没有数据源，可先在“数据源”页创建并导入图片。"}</p>}
+          {sourceDatasets.length > 0 && <>
+            {sourceTags.length > 0 && <div className="source-tag-bar upload-tag-bar" role="group" aria-label="按标签筛选">
+              <button className={`source-tag-chip${sourceTagIds.length ? "" : " active"}`} onClick={() => setSourceTagIds([])}>全部</button>
+              {sourceTags.map((tag) => (
+                <span key={tag.id} className={`source-tag-chip${sourceTagIds.includes(tag.id) ? " active" : ""}`} style={{ borderColor: tag.color }}>
+                  <button onClick={() => setSourceTagIds(sourceTagIds.includes(tag.id) ? sourceTagIds.filter((id) => id !== tag.id) : [...sourceTagIds, tag.id])}>{tag.name} · {tag.image_count}</button>
+                </span>
+              ))}
+              {sourceTagIds.length > 1 && (
+                <span className="tag-match-switch" role="group" aria-label="标签匹配逻辑">
+                  <button className={sourceTagMatch === "all" ? "active" : ""} title="需同时包含所有所选标签" onClick={() => setSourceTagMatch("all")}>并</button>
+                  <button className={sourceTagMatch === "any" ? "active" : ""} title="包含任一所选标签即可" onClick={() => setSourceTagMatch("any")}>或</button>
+                </span>
+              )}
+            </div>}
+            <div className="upload-options"><label>导入到 split<select value={uploadSplit} onChange={(event) => setUploadSplit(event.target.value as SplitName)}><option value="train">train · 训练集</option><option value="val">val · 验证集</option><option value="test">test · 测试集</option></select></label></div>
+            <p className="muted upload-source-count">{sourceLoading ? "正在统计匹配图片…" : sourceTotal !== undefined ? `将同步 ${sourceTotal} 张图片${sourceTagIds.length ? (sourceTagMatch === "any" ? "（含任一所选标签）" : "（含所选全部标签）") : "（数据源全部图片）"}，文件会复制进标注任务。` : ""}</p>
+          </>}
+          <footer className="data-exchange-footer"><span>同步不影响数据源中的原图。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !sourceId || !sourceTotal} onClick={startSourceSync}>同步 {sourceTotal ?? ""} 张图片</button></div></footer>
+        </>}
       </section>
     </div>}
     {exportTarget && <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={() => setExportTarget(undefined)}>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from app.core.models import ImageItem
 from app.core.schemas import AutoSplitRequest, BulkImageSplitUpdate, ScanImagesResponse, SplitName, SplitOperationResponse
 from app.core.storage import SUPPORTED_IMAGE_SUFFIXES, Storage
 from app.dataset.service import get_dataset, refresh_dataset_counts
+from app.source_dataset.service import list_images as list_source_images
 
 
 def get_image(session: Session, image_id: str) -> ImageItem:
@@ -75,6 +77,38 @@ def add_uploaded_images(
     for image in staged:
         session.refresh(image)
     return staged
+
+
+def add_images_from_source(
+    session: Session,
+    storage: Storage,
+    dataset_id: str,
+    source_dataset_id: str,
+    *,
+    image_ids: list[str] | None = None,
+    tag_ids: list[str] | None = None,
+    tag_match: Literal["all", "any"] = "all",
+    split: SplitName,
+) -> tuple[list[ImageItem], int]:
+    _, source_images = list_source_images(session, source_dataset_id, limit=None, tag_ids=tag_ids, tag_match=tag_match)
+    if image_ids:
+        wanted = set(image_ids)
+        source_images = [image for image in source_images if image.id in wanted]
+        if len(source_images) != len(wanted):
+            raise NotFoundError("source_image_not_found", "One or more source images were not found.")
+    imported: list[ImageItem] = []
+    skipped = 0
+    for image in source_images:
+        try:
+            content = storage.source_image_path(source_dataset_id, image.storage_name).read_bytes()
+        except OSError:
+            skipped += 1
+            continue
+        try:
+            imported.append(add_uploaded_images(session, storage, dataset_id, [(image.file_name, content)], split)[0])
+        except ValidationError:
+            skipped += 1
+    return imported, skipped
 
 
 def scan_images(

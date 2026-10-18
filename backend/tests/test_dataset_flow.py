@@ -512,3 +512,62 @@ def test_scan_does_not_follow_file_symlink_outside_import_root(client, tmp_path)
     assert response.status_code == 200, response.text
     assert response.json() == {"total_found": 1, "imported": 0, "skipped": 0, "invalid": 1}
     assert client.get(f"/api/datasets/{dataset_id}/images").json()["total"] == 0
+
+
+def test_import_images_from_source_dataset(client):
+    source = client.post("/api/source-datasets", json={"name": "白天抓拍"}).json()
+    uploaded = client.post(
+        f"/api/source-datasets/{source['id']}/images/upload",
+        files=[
+            ("files", ("day1.png", png_bytes("#eeeeee"), "image/png")),
+            ("files", ("night1.png", png_bytes("#222222"), "image/png")),
+        ],
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    tag = client.post(f"/api/source-datasets/{source['id']}/tags", json={"name": "白天"}).json()
+    items = client.get(f"/api/source-datasets/{source['id']}/images").json()["items"]
+    day = next(item for item in items if item["file_name"] == "day1.png")
+    patched = client.patch(f"/api/source-datasets/{source['id']}/images/{day['id']}", json={"tag_ids": [tag["id"]]})
+    assert patched.status_code == 200, patched.text
+
+    dataset_id = create_dataset(client)
+    filtered = client.post(
+        f"/api/datasets/{dataset_id}/images/from-source",
+        json={"source_dataset_id": source["id"], "tag_ids": [tag["id"]], "split": "val"},
+    )
+    assert filtered.status_code == 201, filtered.text
+    assert filtered.json() == {"imported": 1, "skipped": 0}
+    imported = client.get(f"/api/datasets/{dataset_id}/images").json()
+    assert imported["total"] == 1
+    assert imported["items"][0]["file_name"] == "day1.png"
+    assert imported["items"][0]["split"] == "val"
+    assert client.get(f"/api/source-datasets/{source['id']}/images").json()["total"] == 2
+
+    missing = client.post(
+        f"/api/datasets/{dataset_id}/images/from-source",
+        json={"source_dataset_id": source["id"], "image_ids": ["simg_missing"]},
+    )
+    assert missing.status_code == 404
+
+    night_tag = client.post(f"/api/source-datasets/{source['id']}/tags", json={"name": "夜间"}).json()
+    night = next(item for item in items if item["file_name"] == "night1.png")
+    client.patch(f"/api/source-datasets/{source['id']}/images/{night['id']}", json={"tag_ids": [night_tag["id"]]})
+    any_import = client.post(
+        f"/api/datasets/{dataset_id}/images/from-source",
+        json={"source_dataset_id": source["id"], "tag_ids": [tag["id"], night_tag["id"]], "tag_match": "any"},
+    )
+    assert any_import.status_code == 201, any_import.text
+    assert any_import.json() == {"imported": 2, "skipped": 0}
+    all_import = client.post(
+        f"/api/datasets/{dataset_id}/images/from-source",
+        json={"source_dataset_id": source["id"], "tag_ids": [tag["id"], night_tag["id"]], "tag_match": "all"},
+    )
+    assert all_import.status_code == 201, all_import.text
+    assert all_import.json() == {"imported": 0, "skipped": 0}
+
+    everything = client.post(
+        f"/api/datasets/{dataset_id}/images/from-source",
+        json={"source_dataset_id": source["id"]},
+    )
+    assert everything.status_code == 201, everything.text
+    assert everything.json() == {"imported": 2, "skipped": 0}

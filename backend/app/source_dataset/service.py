@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -21,6 +22,19 @@ from app.source_dataset.schemas import (
     SourceTagUpdate,
     SourceUploadResult,
 )
+
+
+def _owned_tags(session: Session, source_dataset_id: str, tag_ids: list[str]) -> list[SourceTag]:
+    tags = list(
+        session.scalars(
+            select(SourceTag).where(
+                SourceTag.source_dataset_id == source_dataset_id, SourceTag.id.in_(tag_ids)
+            )
+        )
+    )
+    if len(tags) != len(set(tag_ids)):
+        raise NotFoundError("source_tag_not_found", "标签不存在或不属于该数据源数据集。")
+    return sorted(tags, key=lambda tag: tag.name)
 
 
 def get_source_dataset(session: Session, source_dataset_id: str) -> SourceDataset:
@@ -103,8 +117,10 @@ def add_images(
     source_dataset_id: str,
     uploads: list[tuple[str, bytes]],
     source_type: str,
+    tag_ids: list[str] | None = None,
 ) -> SourceUploadResult:
     get_source_dataset(session, source_dataset_id)
+    tags = _owned_tags(session, source_dataset_id, tag_ids) if tag_ids else []
     staged: list[SourceImage] = []
     invalid = 0
     for file_name, content in uploads:
@@ -112,6 +128,8 @@ def add_images(
             staged.append(_stage_image(session, storage, source_dataset_id, file_name, content, source_type, settings.max_upload_bytes))
         except ValidationError:
             invalid += 1
+    for image in staged:
+        image.tags = list(tags)
     try:
         session.flush()
         _refresh_counts(session, source_dataset_id)
@@ -133,10 +151,15 @@ def sync_from_ftp(
     source_dataset_id: str,
     payload: SourceFtpSyncRequest,
 ) -> SourceFtpSyncResult:
+    tag_ids = payload.tag_ids or None
+    if payload.file_paths:
+        files, skipped = FtpService(settings).fetch_files(payload.file_paths, max_bytes=settings.max_upload_bytes)
+        result = add_images(session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids)
+        return SourceFtpSyncResult(synced=result.imported, skipped=result.invalid + skipped)
     files = FtpService(settings).fetch_directory_images(
         payload.path, recursive=payload.recursive, max_bytes=settings.max_upload_bytes
     )
-    result = add_images(session, storage, settings, source_dataset_id, files, "ftp")
+    result = add_images(session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids)
     return SourceFtpSyncResult(synced=result.imported, skipped=result.invalid)
 
 
@@ -145,14 +168,18 @@ def list_images(
     source_dataset_id: str,
     *,
     offset: int = 0,
-    limit: int = 60,
-    tag_id: str | None = None,
+    limit: int | None = 60,
+    tag_ids: list[str] | None = None,
+    tag_match: Literal["all", "any"] = "all",
     query: str | None = None,
 ) -> tuple[int, list[SourceImage]]:
     get_source_dataset(session, source_dataset_id)
     conditions = [SourceImage.source_dataset_id == source_dataset_id]
-    if tag_id:
-        conditions.append(SourceImage.id.in_(select(SourceImageTag.image_id).where(SourceImageTag.tag_id == tag_id)))
+    if tag_ids and tag_match == "any":
+        conditions.append(SourceImage.id.in_(select(SourceImageTag.image_id).where(SourceImageTag.tag_id.in_(tag_ids))))
+    else:
+        for tag_id in dict.fromkeys(tag_ids or []):
+            conditions.append(SourceImage.id.in_(select(SourceImageTag.image_id).where(SourceImageTag.tag_id == tag_id)))
     if query:
         conditions.append(SourceImage.file_name.ilike(f"%{query}%"))
     total = session.scalar(select(func.count()).select_from(SourceImage).where(*conditions)) or 0
@@ -180,19 +207,37 @@ def update_image(session: Session, source_dataset_id: str, image_id: str, file_n
     if file_name is not None:
         image.file_name = Path(file_name).name
     if tag_ids is not None:
-        tags = list(
-            session.scalars(
-                select(SourceTag).where(
-                    SourceTag.source_dataset_id == source_dataset_id, SourceTag.id.in_(tag_ids)
-                )
-            )
-        )
-        if len(tags) != len(set(tag_ids)):
-            raise NotFoundError("source_tag_not_found", "标签不存在或不属于该数据源数据集。")
-        image.tags = sorted(tags, key=lambda tag: tag.name)
+        image.tags = _owned_tags(session, source_dataset_id, tag_ids)
     session.commit()
     session.refresh(image)
     return image
+
+
+def apply_tags_to_images(session: Session, source_dataset_id: str, image_ids: list[str], tag_ids: list[str], *, remove: bool) -> int:
+    """批量为多张图片关联或取消关联标签；关联时保留已有标签，重复关联自动跳过。"""
+    get_source_dataset(session, source_dataset_id)
+    tags = _owned_tags(session, source_dataset_id, tag_ids)
+    images = list(
+        session.scalars(
+            select(SourceImage).where(
+                SourceImage.source_dataset_id == source_dataset_id, SourceImage.id.in_(image_ids)
+            )
+        )
+    )
+    if len(images) != len(set(image_ids)):
+        raise NotFoundError("source_image_not_found", "图片不存在或不属于该数据源数据集。")
+    for image in images:
+        if remove:
+            for tag in tags:
+                if tag in image.tags:
+                    image.tags.remove(tag)
+        else:
+            existing = {tag.id for tag in image.tags}
+            for tag in tags:
+                if tag.id not in existing:
+                    image.tags.append(tag)
+    session.commit()
+    return len(images)
 
 
 def delete_image(session: Session, storage: Storage, source_dataset_id: str, image_id: str) -> None:

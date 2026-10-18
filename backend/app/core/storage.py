@@ -7,7 +7,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import BinaryIO
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.errors import ValidationError
 
@@ -165,6 +165,27 @@ class Storage:
             destination.unlink(missing_ok=True)
             raise
         return self._verify_image(destination)
+
+    def ensure_source_thumbnail(self, source_dataset_id: str, storage_name: str) -> Path:
+        """返回缓存好的 JPEG 缩略图路径；首次访问时从原图生成。"""
+        thumbnail = self.source_dataset_dir(source_dataset_id) / "thumbs" / f"{Path(storage_name).stem}.jpg"
+        thumbnail.parent.mkdir(parents=True, exist_ok=True)
+        if thumbnail.is_file():
+            return thumbnail
+        original = self.source_image_path(source_dataset_id, storage_name)
+        if not original.is_file():
+            raise ValidationError("source_image_file_not_found", "图片文件不存在。")
+        try:
+            with Image.open(original) as image:
+                image = ImageOps.exif_transpose(image)
+                if image.mode != "RGB":
+                    image = image.convert("RGB")
+                image.thumbnail((320, 320))
+                image.save(thumbnail, format="JPEG", quality=80)
+        except (OSError, UnidentifiedImageError) as exc:
+            thumbnail.unlink(missing_ok=True)
+            raise ValidationError("thumbnail_failed", f"生成缩略图失败：{exc}") from exc
+        return thumbnail
 
     def remove_source_dataset(self, source_dataset_id: str) -> None:
         directory = self.source_dataset_dir(source_dataset_id).resolve()

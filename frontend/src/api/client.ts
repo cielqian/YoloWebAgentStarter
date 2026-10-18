@@ -101,22 +101,34 @@ export const api = {
   updateSourceDataset: (datasetId: string, payload: { name?: string; description?: string | null }) =>
     request<SourceDataset>(`/api/source-datasets/${datasetId}`, json(payload, "PATCH")),
   deleteSourceDataset: (datasetId: string) => request<void>(`/api/source-datasets/${datasetId}`, { method: "DELETE" }),
-  listSourceImages: (datasetId: string, options: { offset?: number; limit?: number; tagId?: string; query?: string } = {}) => {
+  listSourceImages: (datasetId: string, options: { offset?: number; limit?: number; tagIds?: string[]; tagMatch?: "all" | "any"; query?: string } = {}) => {
     const params = new URLSearchParams();
     if (options.offset) params.set("offset", String(options.offset));
     if (options.limit) params.set("limit", String(options.limit));
-    if (options.tagId) params.set("tag_id", options.tagId);
+    options.tagIds?.forEach((id) => params.append("tag_ids", id));
+    if (options.tagMatch) params.set("tag_match", options.tagMatch);
     if (options.query) params.set("query", options.query);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<SourceImagePage>(`/api/source-datasets/${datasetId}/images${suffix}`);
   },
-  uploadSourceImages: async (datasetId: string, files: File[]) => {
+  uploadSourceImages: async (datasetId: string, files: File[], tagIds: string[] = []) => {
     const form = new FormData();
     files.forEach((file) => form.append("files", file));
+    tagIds.forEach((tagId) => form.append("tag_ids", tagId));
     return request<{ imported: number; invalid: number }>(`/api/source-datasets/${datasetId}/images/upload`, { method: "POST", body: form });
   },
-  syncSourceFromFtp: (datasetId: string, path: string, recursive: boolean) =>
-    request<{ synced: number; skipped: number }>(`/api/source-datasets/${datasetId}/images/ftp-sync`, json({ path, recursive })),
+  batchUpdateSourceImageTags: (datasetId: string, imageIds: string[], tagIds: string[], remove = false) =>
+    request<{ updated: number }>(`/api/source-datasets/${datasetId}/images/batch-tags`, json({ image_ids: imageIds, tag_ids: tagIds, remove })),
+  syncSourceFromFtp: (datasetId: string, payload: { path: string; recursive: boolean; filePaths?: string[]; tagIds?: string[] }) =>
+    request<{ synced: number; skipped: number }>(
+      `/api/source-datasets/${datasetId}/images/ftp-sync`,
+      json({
+        path: payload.path,
+        recursive: payload.recursive,
+        ...(payload.filePaths?.length ? { file_paths: payload.filePaths } : {}),
+        ...(payload.tagIds?.length ? { tag_ids: payload.tagIds } : {}),
+      })
+    ),
   updateSourceImage: (datasetId: string, imageId: string, payload: { file_name?: string; tag_ids?: string[] }) =>
     request<SourceImagePage["items"][number]>(`/api/source-datasets/${datasetId}/images/${imageId}`, json(payload, "PATCH")),
   deleteSourceImage: (datasetId: string, imageId: string) =>
@@ -167,6 +179,14 @@ export const api = {
   },
   updateImageSplit: (datasetId: string, imageId: string, split: SplitName) =>
     request<ImageItem>(`/api/datasets/${datasetId}/images/${imageId}`, json({ split }, "PATCH")),
+  syncDatasetFromSource: (datasetId: string, payload: { sourceDatasetId: string; tagIds?: string[]; tagMatch?: "all" | "any"; imageIds?: string[]; split: SplitName }) =>
+    request<{ imported: number; skipped: number }>(`/api/datasets/${datasetId}/images/from-source`, json({
+      source_dataset_id: payload.sourceDatasetId,
+      tag_ids: payload.tagIds?.length ? payload.tagIds : null,
+      tag_match: payload.tagMatch ?? "all",
+      image_ids: payload.imageIds?.length ? payload.imageIds : null,
+      split: payload.split,
+    })),
   updateImageSplits: (datasetId: string, imageIds: string[], split: SplitName) => request<{ updated: number; split_counts: Record<SplitName, number> }>(`/api/datasets/${datasetId}/images/bulk-split`, json({ image_ids: imageIds, split })),
   autoSplitImages: (datasetId: string, data: { train_ratio: number; val_ratio: number; test_ratio: number; seed: number }) => request<{ updated: number; split_counts: Record<SplitName, number> }>(`/api/datasets/${datasetId}/images/auto-split`, json(data)),
   scanImages: (datasetId: string, path: string, split: SplitName) =>
