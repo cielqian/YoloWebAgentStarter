@@ -972,7 +972,7 @@ class AgentService:
             )
             task = training.create_task(session, create_payload, task_id=task_id)
             summary = (
-                f"已确认并创建训练任务 `{task.id}`（数据集 {task.dataset_id}）。"
+                f"已确认并创建训练任务 `{task.id}`（标注任务 {task.dataset_id}）。"
                 f"可在训练页查看进度。本轮结束，不会自动等待训练完成。"
             )
             return task.id, summary
@@ -1010,7 +1010,7 @@ class AgentService:
             )
             task = auto.create_task(session, dataset_id, request, task_id=task_id)
             summary = (
-                f"已确认并创建自动标注任务 `{task.id}`（数据集 {dataset_id}，模型 {task.model_id}）。"
+                f"已确认并创建自动标注任务 `{task.id}`（标注任务 {dataset_id}，模型 {task.model_id}）。"
                 f"结果须人工审核。本轮结束，不会自动串联下一步。"
             )
             return task.id, summary

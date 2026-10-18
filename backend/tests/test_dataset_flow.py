@@ -415,11 +415,11 @@ def test_sam_box_assist_returns_a_reviewable_polygon(client):
     assert suggestion.status_code == 200, suggestion.text
     payload = suggestion.json()
     assert payload["backend_used"] == "box_stub"
-    assert payload["polygon"] == [[10.0, 12.0], [40.0, 12.0], [40.0, 37.0], [10.0, 37.0]]
+    assert payload["polygons"] == [[[10.0, 12.0], [40.0, 12.0], [40.0, 37.0], [10.0, 37.0]]]
 
     saved = client.put(
         f"/api/datasets/{dataset_id}/images/{image['id']}/annotations",
-        json={"annotations": [{"type": "polygon", "class_id": class_id, "polygon": payload["polygon"], "source": "sam"}]},
+        json={"annotations": [{"type": "polygon", "class_id": class_id, "polygon": payload["polygons"][0], "source": "sam"}]},
     )
     assert saved.status_code == 200, saved.text
     assert saved.json()[0]["source"] == "sam"
@@ -481,7 +481,7 @@ def test_sam_uses_configured_ultralytics_model(client, monkeypatch):
     )
     assert suggestion.status_code == 200, suggestion.text
     assert suggestion.json()["backend_used"] == "ultralytics_sam"
-    assert suggestion.json()["polygon"] == [[12.0, 12.0], [40.0, 12.0], [40.0, 35.0], [12.0, 35.0]]
+    assert suggestion.json()["polygons"] == [[[12.0, 12.0], [40.0, 12.0], [40.0, 35.0], [12.0, 35.0]]]
     assert suggestion.json()["device"] == "mps"
 
 

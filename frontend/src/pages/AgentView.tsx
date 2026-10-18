@@ -28,7 +28,7 @@ const copy = {
   zh: {
     eyebrow: "AGENT",
     title: "智能体",
-    subtitle: "可查询数据集、训练与模型；写操作需人工确认后才会创建任务。",
+    subtitle: "可查询标注任务、训练与模型；写操作需人工确认后才会创建任务。",
     newChat: "新会话",
     rename: "重命名",
     saveName: "保存名称",
@@ -63,10 +63,10 @@ const copy = {
     status: "状态",
     emptyChat: "选择或新建会话后开始提问。",
     quickPrompts: "快捷提问",
-    contextDataset: "当前数据集上下文",
+    contextDataset: "当前标注任务上下文",
     contextTraining: "当前训练任务",
     contextModel: "当前模型",
-    openDataset: "数据集",
+    openDataset: "标注任务",
     openTraining: "训练任务",
     openModel: "模型",
     user: "你",
@@ -79,7 +79,7 @@ const copy = {
   en: {
     eyebrow: "AGENT",
     title: "Agent",
-    subtitle: "Query datasets, training, and models. Write actions run only after you confirm.",
+    subtitle: "Query annotation tasks, training, and models. Write actions run only after you confirm.",
     newChat: "New chat",
     rename: "Rename",
     saveName: "Save name",
@@ -114,10 +114,10 @@ const copy = {
     status: "Status",
     emptyChat: "Select or create a session to start.",
     quickPrompts: "Quick prompts",
-    contextDataset: "Current dataset context",
+    contextDataset: "Current annotation task context",
     contextTraining: "Current training task",
     contextModel: "Current model",
-    openDataset: "Dataset",
+    openDataset: "Annotation task",
     openTraining: "Training task",
     openModel: "Model",
     user: "You",
@@ -925,38 +925,38 @@ function buildQuickPrompts(locale: AppLocale, context?: AgentPageContext, profil
       ? [
           { label: "模型与评估", prompt: `请总结模型 ${id} 的指标和最近评估结果。` },
           { label: "模型详情", prompt: `请查看模型 ${id} 的详情和使用边界。` },
-          { label: "模型比较准备", prompt: `我想比较模型 ${id}，请列出同数据集候选让我选择，再检查评估可比性。` },
+          { label: "模型比较准备", prompt: `我想比较模型 ${id}，请列出同标注任务候选让我选择，再检查评估可比性。` },
         ]
       : [
           { label: "Model evaluation", prompt: `Summarize metrics and recent evaluations for model ${id}.` },
           { label: "Model details", prompt: `Review model ${id} and its limitations.` },
-          { label: "Prepare comparison", prompt: `I want to compare model ${id}. List candidates from the same dataset for me to choose, then check evaluation comparability.` },
+          { label: "Prepare comparison", prompt: `I want to compare model ${id}. List candidates from the same annotation task for me to choose, then check evaluation comparability.` },
         ];
   }
   const dataset = context?.dataset;
   if (dataset) {
     return locale === "zh"
       ? [
-          { label: "数据集质量报告", prompt: `请给出数据集 ${dataset.name}（${dataset.id}）的质量报告。` },
-          { label: "校验数据集", prompt: `请校验数据集 ${dataset.id}，并总结阻断训练的问题。` },
-          { label: "训练建议", prompt: `请基于数据集 ${dataset.id} 给出训练建议，不要创建任务。` },
-          { label: "查看最新模型", prompt: `请列出数据集 ${dataset.id} 的最新受管模型和评估结果。` },
+          { label: "标注任务质量报告", prompt: `请给出标注任务 ${dataset.name}（${dataset.id}）的质量报告。` },
+          { label: "校验标注任务", prompt: `请校验标注任务 ${dataset.id}，并总结阻断训练的问题。` },
+          { label: "训练建议", prompt: `请基于标注任务 ${dataset.id} 给出训练建议，不要创建任务。` },
+          { label: "查看最新模型", prompt: `请列出标注任务 ${dataset.id} 的最新受管模型和评估结果。` },
         ]
       : [
-          { label: "Dataset quality", prompt: `Give a quality report for dataset ${dataset.name} (${dataset.id}).` },
-          { label: "Validate dataset", prompt: `Validate dataset ${dataset.id} and summarize blockers for training.` },
-          { label: "Training advice", prompt: `Give training advice for dataset ${dataset.id}; do not create a task.` },
-          { label: "Latest model", prompt: `List the latest managed models and evaluations for dataset ${dataset.id}.` },
+          { label: "Annotation task quality", prompt: `Give a quality report for annotation task ${dataset.name} (${dataset.id}).` },
+          { label: "Validate annotation task", prompt: `Validate annotation task ${dataset.id} and summarize blockers for training.` },
+          { label: "Training advice", prompt: `Give training advice for annotation task ${dataset.id}; do not create a task.` },
+          { label: "Latest model", prompt: `List the latest managed models and evaluations for annotation task ${dataset.id}.` },
         ];
   }
   return locale === "zh"
     ? [
-        { label: "列出数据集", prompt: "列出当前数据集并给出概览。" },
+        { label: "列出标注任务", prompt: "列出当前标注任务并给出概览。" },
         { label: "查看训练", prompt: "总结最近训练任务的状态和失败原因。" },
         { label: "查看模型", prompt: "列出当前受管模型和最近评估结果。" },
       ]
     : [
-        { label: "List datasets", prompt: "List the current datasets with a brief overview." },
+        { label: "List annotation tasks", prompt: "List the current annotation tasks with a brief overview." },
         { label: "Review training", prompt: "Summarize recent training status and failures." },
         { label: "Review models", prompt: "List managed models and recent evaluation results." },
       ];

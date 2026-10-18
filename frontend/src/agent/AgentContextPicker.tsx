@@ -40,7 +40,7 @@ export function AgentContextPicker({ locale, profile, context, disabled, onChang
         <span><strong>{profileTitle(id, locale)}</strong><small>{profileMeta[id][locale]}</small></span>
       </button>; })}</div>
     <div className="agent-context-selectors">
-      <label>{locale === "zh" ? "数据集" : "Dataset"}<select disabled={disabled} value={context.dataset_id ?? ""}
+      <label>{locale === "zh" ? "标注任务" : "Dataset"}<select disabled={disabled} value={context.dataset_id ?? ""}
         onChange={(event) => onChange(profile === "global" && event.target.value ? "dataset" : profile, event.target.value ? { dataset_id: event.target.value } : {})}>
         <option value="">{none}</option>
         {context.dataset_id && !datasets.some((d) => d.id === context.dataset_id) ? <option value={context.dataset_id}>{context.dataset_id}</option> : null}

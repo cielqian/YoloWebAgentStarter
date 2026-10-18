@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__codegraph__codegraph_explore",
+      "Bash(docker compose *)",
+      "Bash(docker run *)",
+      "Bash(docker info *)",
+      "Bash(curl -s https://pypi.org/pypi/torch-npu/2.1.0.post6/json)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(sorted\\({u['python_version'] for u in d['urls']}\\)\\)\")",
+      "Bash(curl -sS --max-time 30 https://pypi.org/pypi/torch-npu/2.1.0.post6/json -o /tmp/tnpu.json)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -sS --max-time 40 -x http://127.0.0.1:7890 https://pypi.org/pypi/torch-npu/2.1.0.post6/json -o /tmp/tnpu.json)",
+      "WebSearch",
+      "WebFetch(domain:docs.ultralytics.com)",
+      "Bash(.venv/bin/python -m pytest backend/tests -q)",
+      "Bash(PYTHONPATH=. ../../.venv/bin/python -c \"import app.main; print\\('sam3-service import OK, routes:', [r.path for r in app.main.app.routes]\\)\")",
+      "Bash(../.venv/bin/python -m pytest -q)",
+      "Bash(../.venv/bin/python -m pytest tests/test_training.py::test_completed_task_rejects_epoch_state_resume -q)",
+      "Bash(../.venv/bin/python -m pytest tests/test_training.py -q)",
+      "Bash(../.venv/bin/python -m pytest tests/test_runtime_settings.py tests/test_agent_mvp.py -q)",
+      "Bash(../.venv/bin/python -m pytest tests/test_runtime_settings.py -q)",
+      "Bash(../.venv/bin/python -m pytest tests/test_training.py tests/test_runtime_settings.py)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(../.venv/bin/python -m pytest)",
+      "Read(//tmp/**)",
+      "Bash(../.venv/bin/pip list *)",
+      "Bash(git stash *)",
+      "Bash(PYTHONPATH=backend .venv/bin/python *)",
+      "Bash(curl -sS --max-time 8 http://10.12.42.125:7860/health)",
+      "Bash(curl -sS --max-time 8 http://10.12.42.125:7860/openapi.json)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('paths', {}\\), indent=1, ensure_ascii=False\\)[:1500]\\); print\\('title:', d.get\\('info', {}\\).get\\('title'\\), d.get\\('info', {}\\).get\\('version'\\)\\)\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(m.upper\\(\\), p\\) for p, ops in d.get\\('paths', {}\\).items\\(\\) for m in ops]\")",
+      "Bash(curl -sS --max-time 5 http://10.12.42.125:8001/health)",
+      "Bash(curl -sS --max-time 5 http://10.12.42.125:7860/gradio_api/info)",
+      "Bash(curl -sS --max-time 8 http://10.12.42.125:7860/gradio_api/info)",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(curl -sS -N --max-time 320 http://10.12.42.125:7860/gradio_api/call/run_inference/3f5d74c7a2134229bb118ef41608d5d3)",
+      "Bash(curl -sS --max-time 60 -o /tmp/sam3_result_test.jpg \"http://10.12.42.125:7860/gradio_api/file=/tmp/gradio/a82993471bed7a31e481bbeb374431f0e87c9ad370c3dcb93a96bb7a248b631a/sam3_result.jpg\")",
+      "Bash(curl -s -m 8 http://10.12.42.125:7860/health)"
+    ]
+  }
+}

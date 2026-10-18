@@ -297,7 +297,7 @@ export function TrainingView({ datasets, dataset, onDatasetChange, onOpenModels,
             <p className="muted">复用已保存的 train / val / test split，在本机运行 Ultralytics YOLO。</p>
           </div>
         </div>
-        <div className="training-page-header-meta" aria-label="当前数据集摘要">
+        <div className="training-page-header-meta" aria-label="当前标注任务摘要">
           <span className="training-chip"><strong>{dataset.name}</strong></span>
           <span className="training-chip">{dataset.image_count} 张图片</span>
           <span className="training-chip">{dataset.class_count} 类</span>
@@ -312,7 +312,7 @@ export function TrainingView({ datasets, dataset, onDatasetChange, onOpenModels,
           <span>{error}</span>
           {splitRecovery && (
             <div className="training-split-recovery">
-              <small>这会重新分配该数据集全部图片的持久化 split；请确认当前 split 不需要保留。</small>
+              <small>这会重新分配该标注任务全部图片的持久化 split；请确认当前 split 不需要保留。</small>
               <button className="button" disabled={busy || dataset.image_count < 2} onClick={() => void autoSplitForTraining()}>
                 自动分配 train / val
               </button>

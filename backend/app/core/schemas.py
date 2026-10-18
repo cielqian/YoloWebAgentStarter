@@ -53,6 +53,7 @@ class DatasetResponse(ORMModel):
 class ClassLabelCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     color: str = Field(default="#22c55e", pattern=r"^#[0-9a-fA-F]{6}$")
+    sam3_prompt: str | None = Field(default=None, max_length=255)
 
     @field_validator("name")
     @classmethod
@@ -71,6 +72,7 @@ class ClassLabelResponse(ORMModel):
     class_index: int
     name: str
     color: str
+    sam3_prompt: str | None = None
     created_at: datetime
     updated_at: datetime
 

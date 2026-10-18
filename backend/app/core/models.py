@@ -46,9 +46,23 @@ class ClassLabel(Base, TimestampMixin):
     class_index: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#22c55e", nullable=False)
+    sam3_prompt: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     dataset: Mapped[Dataset] = relationship(back_populates="classes")
     annotations: Mapped[list["Annotation"]] = relationship(back_populates="class_label")
+
+
+class ClassTemplate(Base, TimestampMixin):
+    """Reusable class library shared across datasets; sam3_prompt is the English
+    concept prompt consumed by the remote SAM3 service for text-prompted segmentation."""
+
+    __tablename__ = "class_templates"
+    __table_args__ = (UniqueConstraint("name", name="uq_class_template_name"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    color: Mapped[str] = mapped_column(String(16), default="#22c55e", nullable=False)
+    sam3_prompt: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class ImageItem(Base, TimestampMixin):
@@ -418,3 +432,59 @@ class AgentApproval(Base, TimestampMixin):
 
     run: Mapped[AgentRun] = relationship(back_populates="approvals")
     tool_call: Mapped[AgentToolCall | None] = relationship(back_populates="approvals")
+
+
+class SourceDataset(Base, TimestampMixin):
+    """Raw image pool kept separate from annotation datasets; images arrive by
+    local upload or FTP sync and carry free-form tags for retrieval."""
+
+    __tablename__ = "source_datasets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tag_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    images: Mapped[list["SourceImage"]] = relationship(back_populates="source_dataset", cascade="all, delete-orphan")
+    tags: Mapped[list["SourceTag"]] = relationship(back_populates="source_dataset", cascade="all, delete-orphan")
+
+
+class SourceImage(Base, TimestampMixin):
+    __tablename__ = "source_images"
+    __table_args__ = (
+        UniqueConstraint("source_dataset_id", "storage_name", name="uq_source_image_dataset_storage"),
+        CheckConstraint("source_type IN ('upload', 'ftp')", name="ck_source_image_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_dataset_id: Mapped[str] = mapped_column(ForeignKey("source_datasets.id", ondelete="CASCADE"), index=True, nullable=False)
+    file_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    storage_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(16), default="upload", nullable=False)
+
+    source_dataset: Mapped[SourceDataset] = relationship(back_populates="images")
+    tags: Mapped[list["SourceTag"]] = relationship(secondary="source_image_tags", back_populates="images", order_by="SourceTag.name")
+
+
+class SourceTag(Base, TimestampMixin):
+    __tablename__ = "source_tags"
+    __table_args__ = (UniqueConstraint("source_dataset_id", "name", name="uq_source_tag_dataset_name"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_dataset_id: Mapped[str] = mapped_column(ForeignKey("source_datasets.id", ondelete="CASCADE"), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    color: Mapped[str] = mapped_column(String(16), default="#3157d5", nullable=False)
+
+    source_dataset: Mapped[SourceDataset] = relationship(back_populates="tags")
+    images: Mapped[list["SourceImage"]] = relationship(secondary="source_image_tags", back_populates="tags")
+
+
+class SourceImageTag(Base):
+    __tablename__ = "source_image_tags"
+
+    image_id: Mapped[str] = mapped_column(ForeignKey("source_images.id", ondelete="CASCADE"), primary_key=True)
+    tag_id: Mapped[str] = mapped_column(ForeignKey("source_tags.id", ondelete="CASCADE"), primary_key=True)

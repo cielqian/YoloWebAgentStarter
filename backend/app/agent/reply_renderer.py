@@ -101,7 +101,7 @@ class AgentReplyRenderer:
         if failures:
             advice.append(f"- 最近任务中有 {len(failures)} 个失败；先查看失败原因与日志，再调整参数。")
         if len(advice) == 1:
-            advice.append("- 先检查数据集校验、类别分布与历史训练结果，再确定训练参数。")
+            advice.append("- 先检查标注任务校验、类别分布与历史训练结果，再确定训练参数。")
         return advice
 
     def _evaluation_conclusion(self, results: list[dict[str, Any]]) -> list[str]:
@@ -139,10 +139,10 @@ class AgentReplyRenderer:
             items = result.get("items") or []
             if "dataset_count" in result:
                 return (
-                    f"- 全局概况：数据集 {result.get('dataset_count')}，"
+                    f"- 全局概况：标注任务 {result.get('dataset_count')}，"
                     f"训练 {result.get('training_task_count')}，模型 {result.get('model_count')}。"
                 )
-            lines = [f"- 数据集列表：共 {result.get('total', len(items))} 个（展示 {len(items)} 个）。"]
+            lines = [f"- 标注任务列表：共 {result.get('total', len(items))} 个（展示 {len(items)} 个）。"]
             for row in items[:10]:
                 lines.append(
                     f"  · {untrusted_text(row.get('name'))} ({row.get('id')}) "
@@ -153,7 +153,7 @@ class AgentReplyRenderer:
 
         if name in {"get_dataset", "dataset_summary"}:
             return (
-                f"- 数据集概览：{untrusted_text(result.get('name'))} ({result.get('id')})，"
+                f"- 标注任务概览：{untrusted_text(result.get('name'))} ({result.get('id')})，"
                 f"任务 {result.get('task_type')}，图片 {result.get('image_count')}，"
                 f"已标注 {result.get('annotated_image_count')}，类别 {result.get('class_count')}。"
                 f" split={result.get('split_counts')}。"
@@ -248,7 +248,7 @@ class AgentReplyRenderer:
 
         if name == "model_latest_for_dataset":
             if result.get("found") is False:
-                return "- 模型：该数据集暂无受管 PT。"
+                return "- 模型：该标注任务暂无受管 PT。"
             model = result.get("model") or {}
             return (
                 f"- 最新受管模型：{untrusted_text(model.get('name'))} ({model.get('id')}) "

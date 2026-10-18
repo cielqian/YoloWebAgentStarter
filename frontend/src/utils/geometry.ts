@@ -45,6 +45,67 @@ export function normalizeAngle(angle: number): number {
   return normalized > 180 ? normalized - 360 : normalized;
 }
 
+function segmentDistance(point: [number, number], a: [number, number], b: [number, number]): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared === 0 ? 0 : clamp(((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSquared, 0, 1);
+  return Math.hypot(point[0] - (a[0] + t * dx), point[1] - (a[1] + t * dy));
+}
+
+function douglasPeucker(points: [number, number][], tolerance: number): [number, number][] {
+  if (points.length <= 2) return points;
+  let index = 0;
+  let maxDistance = 0;
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const distance = segmentDistance(points[i], points[0], points[points.length - 1]);
+    if (distance > maxDistance) {
+      maxDistance = distance;
+      index = i;
+    }
+  }
+  if (maxDistance <= tolerance) return [points[0], points[points.length - 1]];
+  const left = douglasPeucker(points.slice(0, index + 1), tolerance);
+  const right = douglasPeucker(points.slice(index), tolerance);
+  return [...left.slice(0, -1), ...right];
+}
+
+/** Douglas-Peucker 抽稀闭环多边形：以离起点最远的顶点把环拆成两条链分别处理，避免闭口边一侧失真。 */
+export function simplifyPolygon(points: [number, number][], tolerance: number): [number, number][] {
+  if (points.length <= 3 || tolerance <= 0) return points;
+  let split = 0;
+  let maxDistance = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const distance = Math.hypot(points[i][0] - points[0][0], points[i][1] - points[0][1]);
+    if (distance > maxDistance) {
+      maxDistance = distance;
+      split = i;
+    }
+  }
+  const first = douglasPeucker(points.slice(0, split + 1), tolerance);
+  const second = douglasPeucker([points[split], ...points.slice(split + 1), points[0]], tolerance);
+  const merged = [...first.slice(0, -1), ...second.slice(0, -1)];
+  return merged.length >= 3 ? merged : points;
+}
+
+/** 找 target 到多边形各边最近的投影点，返回插入位置（第 index 条边之后）与距离。 */
+export function nearestEdgeOnPolygon(points: [number, number][], target: [number, number]): { index: number; point: [number, number]; distance: number } | null {
+  if (points.length < 2) return null;
+  let best: { index: number; point: [number, number]; distance: number } | null = null;
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const lengthSquared = dx * dx + dy * dy;
+    const t = lengthSquared === 0 ? 0 : clamp(((target[0] - a[0]) * dx + (target[1] - a[1]) * dy) / lengthSquared, 0, 1);
+    const point: [number, number] = [a[0] + t * dx, a[1] + t * dy];
+    const distance = Math.hypot(target[0] - point[0], target[1] - point[1]);
+    if (best === null || distance < best.distance) best = { index: i, point, distance };
+  }
+  return best;
+}
+
 export function obbCorners(obb: OBB): [number, number][] {
   const radians = (obb.angle * Math.PI) / 180;
   const cosine = Math.cos(radians);

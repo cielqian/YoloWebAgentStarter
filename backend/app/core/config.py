@@ -34,6 +34,7 @@ class Settings:
     sam_model: str | None = None
     sam_device: str = "auto"
     sam_img_size: int = 1024
+    sam_backend: str | None = None
     agent_provider: str = "mock"
     agent_model: str = "mock-model"
     agent_api_key: str | None = None
@@ -78,6 +79,7 @@ class Settings:
             sam_model=os.getenv("YWA_SAM_MODEL") or None,
             sam_device=os.getenv("YWA_SAM_DEVICE", "auto"),
             sam_img_size=int(os.getenv("YWA_SAM_IMGSZ", "1024")),
+            sam_backend=(os.getenv("YWA_SAM_BACKEND") or "http://10.12.42.125:7860").strip().rstrip("/") or None,
             agent_provider=(os.getenv("YWA_AGENT_PROVIDER") or "mock").strip().lower() or "mock",
             agent_model=(os.getenv("YWA_AGENT_MODEL") or "mock-model").strip() or "mock-model",
             agent_api_key=(os.getenv("YWA_AGENT_API_KEY") or "").strip() or None,

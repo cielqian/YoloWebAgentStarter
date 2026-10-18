@@ -64,7 +64,7 @@ describe("DatasetHome card reports", () => {
     expect(container?.textContent).toContain("精确重复");
     act(() => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "收起结果")?.click());
     expect(container?.textContent).not.toContain("精确重复");
-    act(() => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "导出数据集")?.click());
+    act(() => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "导出数据")?.click());
     const dialog = container?.querySelector('[role="dialog"]');
     expect(dialog?.textContent).toContain("导出“road-signs”");
     expect(dialog?.querySelector('a[href$="/api/datasets/ds-1/export/yolo"]')?.textContent).toContain("下载 YOLO ZIP");

@@ -19,6 +19,17 @@ export interface ClassLabel {
   class_index: number;
   name: string;
   color: string;
+  sam3_prompt?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 全局类别库条目：标注任务可从中导入类别，实例分割任务会带上 SAM3 英文提示词。 */
+export interface ClassTemplate {
+  id: string;
+  name: string;
+  color: string;
+  sam3_prompt: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -121,7 +132,7 @@ export interface SamPrediction {
   image_id: string;
   class_id: string;
   mask_id: string;
-  polygon: [number, number][];
+  polygons: [number, number][][];
   score: number;
   backend_used: string;
   device: string | null;
@@ -138,6 +149,7 @@ export interface SamCapabilities {
 
 export interface SamSettings {
   enabled: boolean;
+  backend: string;
   model: string;
   device: string;
   img_size: number;
@@ -166,6 +178,36 @@ export interface LLMConnectionTestResult {
   remote_test_performed: boolean;
   code?: string;
   http_status?: number | null;
+}
+
+/** FTP settings persisted in settings.json; GET never returns the password. */
+export interface FtpSettings {
+  host: string;
+  port: number;
+  username: string;
+  password_configured: boolean;
+  passive: boolean;
+  encoding: string;
+  timeout_seconds: number;
+}
+
+export interface FtpConnectionTestResult {
+  ok: boolean;
+  message: string;
+  code: string;
+}
+
+export interface FtpEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number | null;
+  modified: string | null;
+}
+
+export interface FtpListResult {
+  path: string;
+  entries: FtpEntry[];
 }
 
 export interface TrainingDevice {
@@ -483,4 +525,40 @@ export interface AgentProviderStatus {
   api_key_configured: boolean;
   max_tool_rounds: number;
   approval_ttl_seconds: number;
+}
+
+export interface SourceDataset {
+  id: string;
+  name: string;
+  description: string | null;
+  image_count: number;
+  tag_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SourceTag {
+  id: string;
+  name: string;
+  color: string;
+  image_count: number;
+}
+
+export interface SourceImage {
+  id: string;
+  file_name: string;
+  width: number;
+  height: number;
+  size_bytes: number;
+  source_type: "upload" | "ftp";
+  tags: SourceTag[];
+  file_url: string;
+  created_at: string;
+}
+
+export interface SourceImagePage {
+  total: number;
+  offset: number;
+  limit: number;
+  items: SourceImage[];
 }

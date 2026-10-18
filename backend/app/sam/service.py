@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import math
 import threading
 from gc import collect
 from pathlib import Path
 
+import cv2
+import httpx
+import numpy as np
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -30,6 +34,21 @@ def _box_polygon(box: BBox) -> list[tuple[float, float]]:
         (box.x + box.width, box.y + box.height),
         (box.x, box.y + box.height),
     ]
+
+
+def _valid_polygons(
+    polygons: list[list[tuple[float, float]]],
+    image_width: int,
+    image_height: int,
+) -> list[list[tuple[float, float]]]:
+    valid: list[list[tuple[float, float]]] = []
+    for polygon in polygons:
+        try:
+            validate_polygon(polygon, image_width, image_height)
+        except ValidationError:
+            continue
+        valid.append(polygon)
+    return valid
 
 
 def clear_model_cache() -> None:
@@ -114,6 +133,186 @@ def _predict_with_sam(
         raise ValidationError("sam_prediction_failed", f"SAM prediction failed: {exc}") from exc
 
 
+
+def _mask_polygons_from_result(original_path: Path, result_bytes: bytes) -> list[list[tuple[float, float]]]:
+    """严格按 services/sam3/sam3_single_infer.py 的绘制方式反解掩码。
+
+    demo 把所有实例掩码 OR 合并后 alpha_composite 到原图：红色 (255,0,0)
+    alpha=110/255 半透明填充 + 1px 纯白不透明边界描边（描边在掩码内侧，
+    boundary &= combined，需计回掩码）；黄框与左上文字为不透明纯色，不在掩码内。
+    闭运算 7 愈合黄框切口（3px 线 + JPEG 扩散约 5-8px，更大核会把相邻实例粘连）。
+    """
+    original = cv2.imread(str(original_path))
+    result = cv2.imdecode(np.frombuffer(result_bytes, np.uint8), cv2.IMREAD_COLOR)
+    if original is None or result is None:
+        raise ValidationError("sam_prediction_failed", "SAM3 结果图解析失败")
+    if original.shape != result.shape:
+        result = cv2.resize(result, (original.shape[1], original.shape[0]))
+    source = original.astype(np.float32)
+    overlay = result.astype(np.float32)
+    red_alpha = 110.0 / 255.0
+    pred_fill = (1.0 - red_alpha) * source + red_alpha * np.array([0.0, 0.0, 255.0], np.float32)
+    fill_residual = np.abs(overlay - pred_fill).max(axis=2)
+    changed = np.abs(overlay - source).max(axis=2)
+    red = (fill_residual < 45) & (changed > 30)
+    # 白描边：纯白且紧邻红填充（≤2px）才是掩码边界；左上角白色文字不与掩码紧邻，被该约束排除
+    white_line = (np.abs(overlay - 255.0).max(axis=2) < 70) & (changed > 30)
+    near_red = cv2.dilate(red.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    mask = (red | (white_line & near_red)).astype(np.uint8) * 255
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    num, labels, stats, _ = cv2.connectedComponentsWithStats((mask > 0).astype(np.uint8))
+    clean = np.zeros_like(mask)
+    for index in range(1, num):
+        if stats[index, cv2.CC_STAT_AREA] >= 200:
+            clean[labels == index] = 255
+    contours, _ = cv2.findContours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    polygons: list[list[tuple[float, float]]] = []
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:32]:
+        if cv2.contourArea(contour) < 200:
+            break
+        # eps=0.5px 让折线贴近像素级掩码轮廓（远程 demo 是逐像素渲染，顶点太稀会显得粗糙）
+        approx = cv2.approxPolyDP(contour, 0.5, True)
+        poly = [(float(point[0][0]), float(point[0][1])) for point in approx]
+        if len(poly) >= 3:
+            polygons.append(poly)
+    return polygons
+
+
+def _segment_via_gradio(
+    client: httpx.Client,
+    base_url: str,
+    image_path: Path,
+    prompt_text: str,
+) -> bytes:
+    """SAM3 Gradio demo 的调用链：upload → /gradio_api/call/run_inference 队列 → 下载结果图。"""
+    with image_path.open("rb") as handle:
+        upload = client.post(f"{base_url}/gradio_api/upload", files={"files": (image_path.name, handle)})
+    try:
+        server_paths = upload.json()
+    except ValueError:
+        server_paths = None
+    if not isinstance(server_paths, list) or not server_paths or not isinstance(server_paths[0], str):
+        raise ValidationError("sam_prediction_failed", f"SAM3 上传图片失败: {upload.text[:200]}")
+    call = client.post(
+        f"{base_url}/gradio_api/call/run_inference",
+        json={"data": [{"path": server_paths[0], "meta": {"_type": "gradio.FileData"}}, prompt_text]},
+    )
+    try:
+        event_id = call.json().get("event_id")
+    except (ValueError, AttributeError):
+        event_id = None
+    if not event_id:
+        raise ValidationError("sam_prediction_failed", f"SAM3 提交推理任务失败: {call.text[:200]}")
+    stream = client.get(f"{base_url}/gradio_api/call/run_inference/{event_id}")
+    if stream.status_code != 200:
+        raise ValidationError("sam_prediction_failed", f"SAM3 队列查询失败: HTTP {stream.status_code}")
+    events: dict[str, str] = {}
+    current_event = None
+    for line in stream.text.splitlines():
+        if line.startswith("event: "):
+            current_event = line[len("event: "):].strip()
+        elif line.startswith("data: ") and current_event:
+            events[current_event] = line[len("data: "):].strip()
+    if "error" in events:
+        raise ValidationError("sam_prediction_failed", f"SAM3 推理失败: {events['error'][:200]}")
+    raw_payload = events.get("complete")
+    if not raw_payload:
+        raise ValidationError("sam_prediction_failed", "SAM3 队列未返回结果（推理超时或被中断）")
+    try:
+        payload = json.loads(raw_payload)
+    except ValueError as exc:
+        raise ValidationError("sam_prediction_failed", "SAM3 返回结果解析失败") from exc
+    if not (isinstance(payload, list) and payload and isinstance(payload[0], dict)):
+        raise ValidationError("sam_prediction_failed", f"SAM3 返回异常: {str(payload)[:200]}")
+    filedata = payload[0]
+    url = str(filedata.get("url") or "")
+    if not url and filedata.get("path"):
+        url = f"{base_url}/gradio_api/file={filedata['path']}"
+    if not url:
+        raise ValidationError("sam_prediction_failed", "SAM3 结果缺少文件地址")
+    download = client.get(url)
+    if download.status_code != 200 or not download.content:
+        raise ValidationError("sam_prediction_failed", f"SAM3 结果图下载失败: HTTP {download.status_code}")
+    return download.content
+
+
+def _predict_with_remote(
+    base_url: str,
+    image_path: Path,
+    prompt_text: str,
+) -> tuple[list[list[tuple[float, float]]], float, str | None]:
+    """调用文本概念提示的 SAM3 服务，下载叠加结果图后差分提取多边形。
+
+    兼容两种部署形态：api_server.py 的 POST /segment（结果图 + X-Score 头），
+    以及 SAM3 自带 Gradio demo（gradio_api 队列接口，无 score）。
+    """
+    if not prompt_text.strip():
+        raise ValidationError("sam_model_not_configured", "远程 SAM3 依赖类别名作为概念提示，请先为标注任务配置类别。")
+    base = base_url.rstrip("/")
+    try:
+        with httpx.Client(timeout=httpx.Timeout(330.0, connect=10.0), trust_env=False) as client:
+            with image_path.open("rb") as handle:
+                response = client.post(
+                    f"{base}/segment",
+                    data={"prompt": prompt_text},
+                    files={"image": (image_path.name, handle)},
+                )
+            if response.status_code == 404:
+                result_bytes = _segment_via_gradio(client, base, image_path, prompt_text)
+                score = 1.0
+            else:
+                if response.status_code != 200:
+                    raise ValidationError(
+                        "sam_prediction_failed",
+                        f"SAM3 服务返回 {response.status_code}: {response.text[:200]}",
+                    )
+                if "image" not in response.headers.get("content-type", ""):
+                    raise ValidationError("sam_prediction_failed", "SAM3 服务返回了非图片内容，无法提取多边形")
+                result_bytes = response.content
+                score = 1.0
+                raw_score = response.headers.get("x-score", "").strip()
+                if raw_score:
+                    try:
+                        score = float(raw_score)
+                    except ValueError:
+                        pass
+    except httpx.HTTPError as exc:
+        raise ValidationError("sam_model_unavailable", f"SAM3 服务连接失败: {exc}") from exc
+    polygons = _mask_polygons_from_result(image_path, result_bytes)
+    if not polygons:
+        raise ValidationError("sam_prediction_failed", "SAM returned no masks for this prompt")
+    return polygons, score, "remote"
+
+
+def _filter_instances_by_prompt(
+    polygons: list[list[tuple[float, float]]],
+    request: "SamPredictRequest",
+) -> list[list[tuple[float, float]]]:
+    """远程 SAM3 只接收类名文本提示并返回全图所有实例。
+
+    点选的语义是"标注该类别"，直接返回全部实例；框选保留与提示框匹配的实例。
+    """
+    if request.box is not None:
+        box = request.box
+
+        def bbox_iou(poly: list[tuple[float, float]]) -> float:
+            xs = [x for x, _ in poly]
+            ys = [y for _, y in poly]
+            ix = max(0.0, min(max(xs), box.x + box.width) - max(min(xs), box.x))
+            iy = max(0.0, min(max(ys), box.y + box.height) - max(min(ys), box.y))
+            inter = ix * iy
+            poly_area = (max(xs) - min(xs)) * (max(ys) - min(ys))
+            return inter / (poly_area + box.width * box.height - inter + 1e-6)
+
+        scored = sorted(((bbox_iou(poly), poly) for poly in polygons), key=lambda item: -item[0])
+        keep = [poly for score, poly in scored if score >= 0.5]
+        if keep:
+            return keep
+        return [scored[0][1]] if scored and scored[0][0] > 0.1 else []
+    return polygons
+
+
 class SamService:
     """Domain service for local SAM-assisted polygon proposals.
 
@@ -153,22 +352,40 @@ class SamService:
         sam = SamSettingsService(self.settings).get()
         if not sam.enabled:
             raise ValidationError("sam_disabled", "SAM 辅助标注已在设置中关闭。")
-        if sam.model:
+        if sam.backend:
+            # 远程 SAM3 的概念空间只覆盖英文；优先用类别的英文提示词，缺翻译时直接指出而不是白等一次推理
+            from app.class_library.translation import contains_cjk
+
+            prompt_text = (class_label.sam3_prompt or "").strip() or class_label.name
+            if contains_cjk(prompt_text):
+                raise ValidationError(
+                    "sam3_prompt_not_english",
+                    f"类别“{class_label.name}”缺少英文 SAM3 提示词，请在类别面板或类别管理中维护后重试。",
+                )
+            polygons, score, device = _predict_with_remote(sam.backend, path, prompt_text)
+            polygons = _filter_instances_by_prompt(polygons, request)
+            if not polygons:
+                raise ValidationError("sam_prediction_failed", "SAM 未在提示位置找到目标实例")
+            backend_used = "remote-sam3"
+        elif sam.model:
             polygon, score, device = _predict_with_sam(path, request, sam.model, sam.device, sam.img_size)
-            backend_used = "ultralytics_sam"
+            polygons, backend_used = [polygon], "ultralytics_sam"
         elif request.box is not None and sam.fallback_mode == "box":
-            polygon, score, device, backend_used = _box_polygon(request.box), 1.0, None, "box_stub"
+            polygons, score, device, backend_used = [_box_polygon(request.box)], 1.0, None, "box_stub"
         else:
             raise ValidationError(
                 "sam_model_not_configured",
                 "点提示需要在设置中配置本地或 Ultralytics SAM 权重。",
             )
-        validate_polygon(polygon, image.width, image.height)
+        # 远程结果图可能带出多个实例，逐个校验并丢弃越界/过小的，而不是让整体失败。
+        valid_polygons = _valid_polygons(polygons, image.width, image.height)
+        if not valid_polygons:
+            raise ValidationError("sam_prediction_failed", "SAM returned no valid polygons for this prompt")
         return SamPredictResponse(
             image_id=image.id,
             class_id=class_label.id,
             mask_id=new_id("mask"),
-            polygon=polygon,
+            polygons=valid_polygons,
             score=score,
             backend_used=backend_used,
             device=device,

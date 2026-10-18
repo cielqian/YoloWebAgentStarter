@@ -33,7 +33,7 @@ class SamPredictResponse(BaseModel):
     image_id: str
     class_id: str
     mask_id: str
-    polygon: list[tuple[float, float]]
+    polygons: list[list[tuple[float, float]]]
     score: float
     backend_used: str
     device: str | None = None

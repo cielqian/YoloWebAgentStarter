@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import json
 import re
 from typing import Any
@@ -14,6 +15,9 @@ from app.agent.llm_auth import (
 from app.core.config import Settings
 from app.core.errors import ValidationError
 from app.settings.schemas import (
+    FtpSettingsInternal,
+    FtpSettingsOut,
+    FtpSettingsUpdate,
     LLMConnectionTestRequest,
     LLMConnectionTestResult,
     LLMSettingsInternal,
@@ -49,22 +53,33 @@ class SettingsService:
             img_size = int(section.get("img_size", self.env_img_size))
         except (TypeError, ValueError):
             img_size = self.env_img_size
+        # settings.json 未写过 backend 键时跟随环境变量默认；显式清空即关闭远程。
+        raw_backend = section.get("backend")
+        if raw_backend is None:
+            backend = (self.settings.sam_backend or "").strip().rstrip("/")
+        else:
+            backend = str(raw_backend).strip().rstrip("/")
         return SamSettingsResponse(
             enabled=bool(section.get("enabled", True)),
+            backend=backend,
             model=model,
             device=device,
             img_size=max(64, min(img_size, 4096)),
             fallback_mode="disabled" if section.get("fallback_mode") == "disabled" else "box",
-            model_configured=bool(model),
+            model_configured=bool(model) or bool(backend),
         )
 
     def update_sam(self, payload: SamSettingsUpdate) -> SamSettingsResponse:
         device = payload.device.strip().lower()
         if not self._DEVICE.fullmatch(device):
             raise ValidationError("invalid_sam_device", "SAM 设备必须是 auto、cpu、mps、cuda[:id] 或 CUDA id 列表。")
+        backend = payload.backend.strip().rstrip("/")
+        if backend and not backend.lower().startswith(("http://", "https://")):
+            raise ValidationError("invalid_sam_backend", "SAM3 服务地址必须以 http:// 或 https:// 开头。")
         data = self._read()
         data["sam"] = {
             "enabled": payload.enabled,
+            "backend": backend,
             "model": payload.model.strip(),
             "device": device,
             "img_size": payload.img_size,
@@ -226,6 +241,53 @@ class SettingsService:
         if raw is not None and str(raw).strip():
             return str(raw).strip()
         return (self.settings.agent_api_key or "").strip()
+
+    # --- FTP ---
+
+    def get_ftp_settings_internal(self) -> FtpSettingsInternal:
+        data = self._read()
+        section = data.get("ftp", {}) if isinstance(data.get("ftp"), dict) else {}
+        return FtpSettingsInternal(
+            host=str(section.get("host", "")).strip(),
+            port=int(section.get("port", 21) or 21),
+            username=str(section.get("username", "")).strip(),
+            password=str(section.get("password", "") or ""),
+            passive=bool(section.get("passive", True)),
+            encoding=str(section.get("encoding", "utf-8") or "utf-8").strip() or "utf-8",
+            timeout_seconds=int(section.get("timeout_seconds", 15) or 15),
+        )
+
+    def get_ftp_settings(self) -> FtpSettingsOut:
+        internal = self.get_ftp_settings_internal()
+        return FtpSettingsOut(
+            host=internal.host,
+            port=internal.port,
+            username=internal.username,
+            password_configured=bool(internal.password),
+            passive=internal.passive,
+            encoding=internal.encoding,
+            timeout_seconds=internal.timeout_seconds,
+        )
+
+    def update_ftp_settings(self, payload: FtpSettingsUpdate) -> FtpSettingsOut:
+        try:
+            codecs.lookup(payload.encoding)
+        except LookupError as exc:
+            raise ValidationError("invalid_ftp_encoding", "FTP 编码无效，请填写如 utf-8 或 gbk。") from exc
+        current = self.get_ftp_settings_internal()
+        password = current.password if payload.password is None or payload.password == "" else payload.password
+        data = self._read()
+        data["ftp"] = {
+            "host": payload.host.strip(),
+            "port": payload.port,
+            "username": payload.username.strip(),
+            "password": password,
+            "passive": payload.passive,
+            "encoding": payload.encoding.strip() or "utf-8",
+            "timeout_seconds": payload.timeout_seconds,
+        }
+        self._write(data)
+        return self.get_ftp_settings()
 
     def _read(self) -> dict:
         if not self.path.is_file():

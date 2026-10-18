@@ -28,6 +28,7 @@ class Storage:
         self.data_dir = data_dir.resolve()
         self.import_root = import_root.resolve()
         self.datasets_dir = self.data_dir / "datasets"
+        self.source_datasets_dir = self.data_dir / "source-datasets"
         self.exports_dir = self.data_dir / "exports"
         self.training_dir = self.data_dir / "runs" / "training"
         self.evaluation_dir = self.data_dir / "runs" / "evaluation"
@@ -138,6 +139,36 @@ class Storage:
     def remove_dataset(self, dataset_id: str) -> None:
         directory = self.dataset_dir(dataset_id).resolve()
         if _is_within(directory, self.datasets_dir.resolve()) and directory.exists():
+            shutil.rmtree(directory)
+
+    def source_dataset_dir(self, source_dataset_id: str) -> Path:
+        return self.source_datasets_dir / source_dataset_id
+
+    def source_images_dir(self, source_dataset_id: str) -> Path:
+        path = self.source_dataset_dir(source_dataset_id) / "images"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def source_image_path(self, source_dataset_id: str, storage_name: str) -> Path:
+        candidate = (self.source_images_dir(source_dataset_id) / storage_name).resolve()
+        if not _is_within(candidate, self.source_images_dir(source_dataset_id).resolve()):
+            raise ValidationError("unsafe_path", "Image path escapes the managed source dataset directory.")
+        return candidate
+
+    def write_source_image(self, source_dataset_id: str, storage_name: str, content: bytes, *, max_bytes: int) -> tuple[int, int]:
+        destination = self.source_image_path(source_dataset_id, storage_name)
+        try:
+            if len(content) > max_bytes:
+                raise ValidationError("image_too_large", "Image exceeds the configured upload limit.")
+            destination.write_bytes(content)
+        except (OSError, ValidationError):
+            destination.unlink(missing_ok=True)
+            raise
+        return self._verify_image(destination)
+
+    def remove_source_dataset(self, source_dataset_id: str) -> None:
+        directory = self.source_dataset_dir(source_dataset_id).resolve()
+        if _is_within(directory, self.source_datasets_dir.resolve()) and directory.exists():
             shutil.rmtree(directory)
 
     def video_import_task_dir(self, task_id: str) -> Path:

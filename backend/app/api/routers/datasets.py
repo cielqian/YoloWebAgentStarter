@@ -8,6 +8,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_session, get_settings, get_storage
+from app.class_library.schemas import ClassImportRequest, ClassImportResponse, ClassLabelUpdate
+from app.class_library.service import import_templates_into_dataset, update_class_label
 from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationError
 from app.core.ids import new_id
@@ -230,8 +232,37 @@ def get_classes(dataset_id: str, session: Session = Depends(get_session)) -> lis
 
 
 @router.post("/{dataset_id}/classes", response_model=ClassLabelResponse, status_code=201)
-def post_class(dataset_id: str, payload: ClassLabelCreate, session: Session = Depends(get_session)) -> ClassLabelResponse:
-    return _class_response(create_class(session, dataset_id, payload))
+def post_class(
+    dataset_id: str,
+    payload: ClassLabelCreate,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ClassLabelResponse:
+    return _class_response(create_class(session, dataset_id, payload, settings))
+
+
+@router.patch("/{dataset_id}/classes/{class_id}", response_model=ClassLabelResponse)
+def patch_class(
+    dataset_id: str,
+    class_id: str,
+    payload: ClassLabelUpdate,
+    session: Session = Depends(get_session),
+) -> ClassLabelResponse:
+    return _class_response(update_class_label(session, dataset_id, class_id, payload))
+
+
+@router.post("/{dataset_id}/classes/import", response_model=ClassImportResponse)
+def import_classes(
+    dataset_id: str,
+    payload: ClassImportRequest,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> ClassImportResponse:
+    imported, skipped = import_templates_into_dataset(session, dataset_id, payload.template_ids, settings)
+    return ClassImportResponse(
+        imported=[_class_response(item) for item in imported],
+        skipped_names=skipped,
+    )
 
 
 @router.delete("/{dataset_id}/classes/{class_id}", status_code=204, response_class=Response, response_model=None)

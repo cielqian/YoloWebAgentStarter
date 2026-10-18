@@ -202,7 +202,7 @@ export function TrainingComputeRail({
       <div className="training-dataset-preview-card training-dataset-preview-card--static">
         <div className="training-dataset-preview-gradient" aria-hidden />
         <div className="training-dataset-preview-text">
-          <span className="training-dataset-preview-label">当前数据集</span>
+          <span className="training-dataset-preview-label">当前标注任务</span>
           <strong>{dataset.name}</strong>
           <span className="training-dataset-preview-link">{dataset.image_count} 张 · {dataset.class_count} 类 · {taskTypeLabel(dataset.task_type)}</span>
         </div>

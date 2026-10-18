@@ -1,6 +1,7 @@
 import type {
   Annotation,
   ClassLabel,
+  ClassTemplate,
   Dataset,
   DatasetQualityReport,
   DuplicateReport,
@@ -22,6 +23,13 @@ import type {
   LLMSettings,
   LLMConnectionTestResult,
   LLMAuthScheme,
+  FtpSettings,
+  FtpConnectionTestResult,
+  FtpEntry,
+  FtpListResult,
+  SourceDataset,
+  SourceImagePage,
+  SourceTag,
   SystemInfo,
   RuntimeLogResponse,
   VideoImportTask,
@@ -72,13 +80,74 @@ export const api = {
     auth_scheme: LLMAuthScheme;
     auth_header_name: string;
   }) => request<LLMConnectionTestResult>("/api/settings/llm/test", json(payload)),
+  getFtpSettings: () => request<FtpSettings>("/api/ftp/config"),
+  updateFtpSettings: (payload: Omit<FtpSettings, "password_configured"> & { password?: string }) =>
+    request<FtpSettings>("/api/ftp/config", json(payload, "PUT")),
+  testFtpConnection: () => request<FtpConnectionTestResult>("/api/ftp/config/test", json({})),
+  listFtp: (path: string) => request<FtpListResult>(`/api/ftp/list?path=${encodeURIComponent(path)}`),
+  ftpDownloadUrl: (path: string) => apiUrl(`/api/ftp/download?path=${encodeURIComponent(path)}`),
+  uploadFtp: async (directory: string, files: File[]) => {
+    const form = new FormData();
+    form.append("directory", directory);
+    files.forEach((file) => form.append("files", file));
+    return request<{ uploaded: FtpEntry[] }>("/api/ftp/upload", { method: "POST", body: form });
+  },
+  ftpMkdir: (path: string) => request<FtpEntry>("/api/ftp/mkdir", json({ path })),
+  ftpRename: (source: string, target: string) => request<{ ok: boolean }>("/api/ftp/rename", json({ source, target })),
+  ftpDelete: (path: string) => request<{ ok: boolean }>("/api/ftp/delete", json({ path })),
+  listSourceDatasets: () => request<SourceDataset[]>("/api/source-datasets"),
+  createSourceDataset: (name: string, description?: string) =>
+    request<SourceDataset>("/api/source-datasets", json({ name, description: description || null })),
+  updateSourceDataset: (datasetId: string, payload: { name?: string; description?: string | null }) =>
+    request<SourceDataset>(`/api/source-datasets/${datasetId}`, json(payload, "PATCH")),
+  deleteSourceDataset: (datasetId: string) => request<void>(`/api/source-datasets/${datasetId}`, { method: "DELETE" }),
+  listSourceImages: (datasetId: string, options: { offset?: number; limit?: number; tagId?: string; query?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (options.offset) params.set("offset", String(options.offset));
+    if (options.limit) params.set("limit", String(options.limit));
+    if (options.tagId) params.set("tag_id", options.tagId);
+    if (options.query) params.set("query", options.query);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<SourceImagePage>(`/api/source-datasets/${datasetId}/images${suffix}`);
+  },
+  uploadSourceImages: async (datasetId: string, files: File[]) => {
+    const form = new FormData();
+    files.forEach((file) => form.append("files", file));
+    return request<{ imported: number; invalid: number }>(`/api/source-datasets/${datasetId}/images/upload`, { method: "POST", body: form });
+  },
+  syncSourceFromFtp: (datasetId: string, path: string, recursive: boolean) =>
+    request<{ synced: number; skipped: number }>(`/api/source-datasets/${datasetId}/images/ftp-sync`, json({ path, recursive })),
+  updateSourceImage: (datasetId: string, imageId: string, payload: { file_name?: string; tag_ids?: string[] }) =>
+    request<SourceImagePage["items"][number]>(`/api/source-datasets/${datasetId}/images/${imageId}`, json(payload, "PATCH")),
+  deleteSourceImage: (datasetId: string, imageId: string) =>
+    request<void>(`/api/source-datasets/${datasetId}/images/${imageId}`, { method: "DELETE" }),
+  listSourceTags: (datasetId: string) => request<SourceTag[]>(`/api/source-datasets/${datasetId}/tags`),
+  createSourceTag: (datasetId: string, name: string, color = "#3157d5") =>
+    request<SourceTag>(`/api/source-datasets/${datasetId}/tags`, json({ name, color })),
+  updateSourceTag: (datasetId: string, tagId: string, payload: { name?: string; color?: string }) =>
+    request<SourceTag>(`/api/source-datasets/${datasetId}/tags/${tagId}`, json(payload, "PATCH")),
+  deleteSourceTag: (datasetId: string, tagId: string) =>
+    request<void>(`/api/source-datasets/${datasetId}/tags/${tagId}`, { method: "DELETE" }),
   listDatasets: () => request<Dataset[]>("/api/datasets"),
   createDataset: (name: string, taskType: TaskType, description?: string) =>
     request<Dataset>("/api/datasets", json({ name, task_type: taskType, description: description || null })),
   deleteDataset: (datasetId: string) => request<void>(`/api/datasets/${datasetId}`, { method: "DELETE" }),
   listClasses: (datasetId: string) => request<ClassLabel[]>(`/api/datasets/${datasetId}/classes`),
-  createClass: (datasetId: string, name: string, color = "#22c55e") =>
-    request<ClassLabel>(`/api/datasets/${datasetId}/classes`, json({ name, color })),
+  createClass: (datasetId: string, name: string, color = "#22c55e", sam3Prompt?: string) =>
+    request<ClassLabel>(`/api/datasets/${datasetId}/classes`, json({ name, color, ...(sam3Prompt !== undefined ? { sam3_prompt: sam3Prompt } : {}) })),
+  patchClass: (datasetId: string, classId: string, payload: { name?: string; color?: string; sam3_prompt?: string }) =>
+    request<ClassLabel>(`/api/datasets/${datasetId}/classes/${classId}`, json(payload, "PATCH")),
+  deleteClass: (datasetId: string, classId: string) =>
+    request<void>(`/api/datasets/${datasetId}/classes/${classId}`, { method: "DELETE" }),
+  importClasses: (datasetId: string, templateIds: string[]) =>
+    request<{ imported: ClassLabel[]; skipped_names: string[] }>(`/api/datasets/${datasetId}/classes/import`, json({ template_ids: templateIds })),
+  listClassTemplates: () => request<ClassTemplate[]>("/api/class-templates"),
+  createClassTemplate: (payload: { name: string; color: string; sam3_prompt?: string }) =>
+    request<ClassTemplate>("/api/class-templates", json(payload)),
+  updateClassTemplate: (templateId: string, payload: { name?: string; color?: string; sam3_prompt?: string }) =>
+    request<ClassTemplate>(`/api/class-templates/${templateId}`, json(payload, "PATCH")),
+  deleteClassTemplate: (templateId: string) => request<void>(`/api/class-templates/${templateId}`, { method: "DELETE" }),
+  translateSam3Prompt: (name: string) => request<{ sam3_prompt: string | null; source: string }>("/api/class-templates/translate", json({ name })),
   listImages: async (datasetId: string) => {
     const pageSize = 500;
     const first = await request<ImagePage>(`/api/datasets/${datasetId}/images?offset=0&limit=${pageSize}`);

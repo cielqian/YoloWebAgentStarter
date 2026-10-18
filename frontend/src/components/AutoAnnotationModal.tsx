@@ -127,7 +127,7 @@ export function AutoAnnotationModal({ dataset, onClose, onChanged }: { dataset: 
         <div className="auto-annotation-summary"><span><small>生成标注</small><strong>{task.created_annotations}</strong></span><span><small>跳过图片</small><strong>{task.skipped_images}</strong></span><span><small>置信度</small><strong>{task.confidence.toFixed(2)}</strong></span></div>
         {task.error_message && <div className={task.status === "failed" ? "validation invalid" : "validation"}><span>{task.error_message}</span></div>}
         {log?.logs && <pre className="auto-annotation-log">{log.logs}</pre>}
-        <footer>{running ? <button className="button danger" disabled={busy || task.stop_requested} onClick={() => void stop()}>{task.stop_requested ? "正在停止…" : "取消任务"}</button> : <span className="hint">结果已写入数据集，请继续人工审核。</span>}<button className="button" onClick={onClose}>{running ? "后台运行" : "完成"}</button></footer>
+        <footer>{running ? <button className="button danger" disabled={busy || task.stop_requested} onClick={() => void stop()}>{task.stop_requested ? "正在停止…" : "取消任务"}</button> : <span className="hint">结果已写入标注任务，请继续人工审核。</span>}<button className="button" onClick={onClose}>{running ? "后台运行" : "完成"}</button></footer>
       </>}
     </section>
   </div>;

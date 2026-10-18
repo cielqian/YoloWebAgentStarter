@@ -11,6 +11,7 @@ LLMAuthScheme = Literal["bearer", "header", "raw_authorization"]
 
 class SamSettingsResponse(BaseModel):
     enabled: bool
+    backend: str = ""
     model: str
     device: str
     img_size: int
@@ -20,6 +21,7 @@ class SamSettingsResponse(BaseModel):
 
 class SamSettingsUpdate(BaseModel):
     enabled: bool = True
+    backend: str = Field(default="", max_length=512)
     model: str = Field(default="", max_length=1024)
     device: str = Field(default="auto", min_length=1, max_length=64)
     img_size: int = Field(default=1024, ge=64, le=4096)
@@ -73,3 +75,33 @@ class LLMConnectionTestResult(BaseModel):
 
 class LLMSettingsInternal(LLMSettingsOut):
     api_key: str = ""
+
+
+class FtpSettingsOut(BaseModel):
+    host: str = ""
+    port: int = 21
+    username: str = ""
+    password_configured: bool = False
+    passive: bool = True
+    encoding: str = "utf-8"
+    timeout_seconds: int = 15
+
+
+class FtpSettingsUpdate(BaseModel):
+    host: str = Field(default="", max_length=255)
+    port: int = Field(default=21, ge=1, le=65535)
+    username: str = Field(default="", max_length=128)
+    password: str | None = Field(default=None, description="Leave empty to keep the existing password.")
+    passive: bool = True
+    encoding: str = Field(default="utf-8", max_length=32)
+    timeout_seconds: int = Field(default=15, ge=3, le=120)
+
+
+class FtpSettingsInternal(FtpSettingsOut):
+    password: str = ""
+
+
+class FtpConnectionTestResult(BaseModel):
+    ok: bool
+    message: str
+    code: str = "ok"

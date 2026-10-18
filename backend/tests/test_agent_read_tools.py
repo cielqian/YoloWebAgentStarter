@@ -81,7 +81,7 @@ def test_agent_lists_datasets_via_read_tool(client):
     assert any(item["id"] == dataset_id for item in result["items"])
     assert all("\x00" not in item["name"] for item in result["items"])
     assistant = next(item for item in body["messages"] if item["role"] == "assistant")
-    assert "数据集列表" in assistant["content"]
+    assert "标注任务列表" in assistant["content"]
     assert dataset_id in assistant["content"] or "agent-demo" in assistant["content"]
 
 

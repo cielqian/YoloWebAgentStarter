@@ -1,0 +1,6 @@
+# 复现产物（由第 3~7 节命令生成，体积大，不入库）
+sam3_model/
+sam3_onnx_300I/
+sam3_onnx_optimized_*/
+sam3_om/
+sam3_result*.jpg

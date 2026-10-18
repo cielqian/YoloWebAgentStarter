@@ -66,8 +66,8 @@ export function ModelLibraryCard({
           <h3 title={model.name}>{model.name}</h3>
         </button>
         <div className="model-card-dataset" title={datasetName}>
-          <span className="model-card-dataset-label">数据集</span>
-          <span className="model-card-dataset-name">{datasetName || "未关联数据集"}</span>
+          <span className="model-card-dataset-label">标注任务</span>
+          <span className="model-card-dataset-name">{datasetName || "未关联标注任务"}</span>
         </div>
         <p className="model-card-time" title={model.created_at}>{when}</p>
 

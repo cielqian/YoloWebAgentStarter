@@ -236,7 +236,7 @@ export function ModelDetailView({
 
           {tab === "versions" && (
             <section className="mdd-panel">
-              <header className="mdd-panel-head"><h3>同数据集版本</h3></header>
+              <header className="mdd-panel-head"><h3>同标注任务版本</h3></header>
               <div className="mdd-panel-body" style={{ padding: 0 }}>
                 <table className="mdd-version-table">
                   <thead>

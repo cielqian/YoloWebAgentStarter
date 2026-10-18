@@ -179,6 +179,65 @@ describe("AnnotationView persistence", () => {
     expect(onCreateClass).toHaveBeenCalledWith("person", "#ef4444");
   });
 
+  it("toggles annotation visibility from the shape list", () => {
+    act(() => {
+      root?.render(<AnnotationView dataset={dataset} image={image} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+
+    const row = container?.querySelector<HTMLDivElement>(".shape-row");
+    expect(row?.classList.contains("hidden")).toBe(false);
+    const hide = row?.querySelector<HTMLButtonElement>(".annotation-visibility-button");
+    expect(hide?.getAttribute("aria-label")).toBe("隐藏标注 1");
+
+    act(() => hide?.click());
+    expect(row?.classList.contains("hidden")).toBe(true);
+    expect(hide?.getAttribute("aria-label")).toBe("显示标注 1");
+    expect(hide?.getAttribute("aria-pressed")).toBe("true");
+
+    act(() => hide?.click());
+    expect(row?.classList.contains("hidden")).toBe(false);
+  });
+
+  it("hides and shows all annotations at once", () => {
+    const secondAnnotation: Annotation = { ...annotation, id: "ann-2", class_id: "cls-1" };
+    act(() => {
+      root?.render(<AnnotationView dataset={dataset} image={image} classes={classes} annotations={[annotation, secondAnnotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+
+    const rows = () => Array.from(container?.querySelectorAll<HTMLDivElement>(".shape-row") ?? []);
+    const findButton = (label: string) => container?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+
+    expect(rows()).toHaveLength(2);
+    const showAll = findButton("全部显示");
+    expect(showAll?.disabled).toBe(true);
+
+    act(() => findButton("全部隐藏")?.click());
+    expect(rows().every((row) => row.classList.contains("hidden"))).toBe(true);
+    expect(findButton("全部隐藏")?.disabled).toBe(true);
+    expect(showAll?.disabled).toBe(false);
+
+    act(() => showAll?.click());
+    expect(rows().every((row) => !row.classList.contains("hidden"))).toBe(true);
+    expect(showAll?.disabled).toBe(true);
+  });
+
+  it("deletes an unused class and blocks deletion while a draft still uses it", async () => {
+    const onDeleteClass = vi.fn(async () => true);
+    act(() => {
+      root?.render(<AnnotationView dataset={dataset} image={image} classes={[...classes, personClass]} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onDeleteClass={onDeleteClass} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+
+    const deleteButtons = Array.from(container?.querySelectorAll<HTMLButtonElement>(".annotation-class-delete") ?? []);
+    expect(deleteButtons).toHaveLength(2);
+    expect(deleteButtons[0].disabled).toBe(true); // vehicle 正被当前标注使用
+
+    act(() => deleteButtons[1]?.click());
+    const confirm = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) => button.textContent === "确认删除");
+    await act(async () => confirm?.click());
+
+    expect(onDeleteClass).toHaveBeenCalledWith(personClass.id);
+  });
+
   it("allows changing an existing shape to another class", () => {
     const onSave = vi.fn();
     act(() => {

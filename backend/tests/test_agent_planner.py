@@ -116,4 +116,4 @@ def test_reply_renderer_confirmation_and_report():
             }
         ]
     )
-    assert "数据集列表" in report
+    assert "标注任务列表" in report

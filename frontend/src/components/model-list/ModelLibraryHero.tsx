@@ -20,7 +20,7 @@ export function ModelLibraryHero({ bestModel, dataset, busy, onTest, onOpenDetai
       <div className="section-header">
         <div className="title-group">
           <h2>当前最佳模型</h2>
-          <p>按本数据集已登记的 mAP50 选出，便于快速推理、评估与导出。</p>
+          <p>按本标注任务已登记的 mAP50 选出，便于快速推理、评估与导出。</p>
         </div>
         <span className="badge-premium badge-active">BEST · MAP50</span>
       </div>
@@ -46,7 +46,7 @@ export function ModelLibraryHero({ bestModel, dataset, busy, onTest, onOpenDetai
                 <span className="value">{formatMetric(bestModel.map50)}</span>
                 <span className="hero-secondary-metric">mAP50-95 {formatMetric(bestModel.map50_95)}</span>
               </div>
-              <p className="hero-recommend-copy">本数据集当前首选推理权重</p>
+              <p className="hero-recommend-copy">本标注任务当前首选推理权重</p>
               <div className="card-progress-bar hero-progress">
                 <div className="card-progress-fill" style={{ width: `${(bestModel.map50 || 0) * 100}%` }} />
               </div>
@@ -74,7 +74,7 @@ export function ModelLibraryHero({ bestModel, dataset, busy, onTest, onOpenDetai
             <div className="meta-item">
               <div className="meta-icon" aria-hidden>D</div>
               <div className="meta-info">
-                <span>数据集</span>
+                <span>标注任务</span>
                 <strong>{dataset.name}</strong>
               </div>
             </div>

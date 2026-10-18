@@ -70,17 +70,23 @@ def list_classes(session: Session, dataset_id: str) -> list[ClassLabel]:
     return list(session.scalars(query))
 
 
-def create_class(session: Session, dataset_id: str, payload: ClassLabelCreate) -> ClassLabel:
-    get_dataset(session, dataset_id)
+def create_class(session: Session, dataset_id: str, payload: ClassLabelCreate, settings: Settings | None = None) -> ClassLabel:
+    dataset = get_dataset(session, dataset_id)
     next_index = session.scalar(
         select(func.max(ClassLabel.class_index)).where(ClassLabel.dataset_id == dataset_id)
     )
+    sam3_prompt = payload.sam3_prompt
+    if sam3_prompt is None and dataset.task_type == "segment" and settings is not None:
+        from app.class_library.translation import default_sam3_prompt
+
+        sam3_prompt = default_sam3_prompt(settings, payload.name)
     class_label = ClassLabel(
         id=new_id("cls"),
         dataset_id=dataset_id,
         class_index=(next_index + 1) if next_index is not None else 0,
         name=payload.name,
         color=payload.color,
+        sam3_prompt=sam3_prompt,
     )
     session.add(class_label)
     try:
@@ -110,6 +116,11 @@ def delete_class(session: Session, dataset_id: str, class_id: str) -> None:
             select(ClassLabel).where(ClassLabel.dataset_id == dataset_id).order_by(ClassLabel.class_index)
         )
     )
+    # UNIQUE(dataset_id, class_index) 按 UPDATE 逐行校验，而 SQLAlchemy 按主键顺序发语句，
+    # 直接重排会在中间态撞唯一约束；先挪到互不冲突的负数临时位再落最终序号。
+    for offset, item in enumerate(remaining):
+        item.class_index = -1 - offset
+    session.flush()
     for index, item in enumerate(remaining):
         item.class_index = index
     refresh_dataset_counts(session, dataset_id)

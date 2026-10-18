@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import { api } from "../api/client";
 import type { AppLocale } from "../locale";
 import { saveLocale } from "../locale";
-import type { LLMAuthScheme, LLMSettings, SamSettings, TrainingDevice } from "../types";
+import type { FtpSettings, LLMAuthScheme, LLMSettings, SamSettings, TrainingDevice } from "../types";
 
-export type SettingsTab = "llm" | "sam" | "language";
+export type SettingsTab = "llm" | "sam" | "ftp" | "language";
 
 type LlmFormState = LLMSettings & { api_key: string };
 
@@ -53,6 +53,9 @@ const copy = {
     samTitle: "SAM 辅助标注",
     samSubtitle: "配置 segment 标注页使用的交互式 SAM 建议。建议结果仍需人工确认后保存。",
     samEnabled: "启用 SAM 辅助",
+    samBackend: "SAM3 服务地址",
+    samBackendHint: "远程 SAM3 分割服务（文本提示，如 http://10.12.42.125:7860）。填写后优先使用，留空则回退下方本地权重。",
+    samLocalFallbackHint: "已配置远程 SAM3 服务：推理在远程完成，下方本地权重 / 设备 / 尺寸仅在地址留空时作为回退使用。",
     modelSam: "模型权重或模型 ID",
     modelHint: "可填写本地 .pt 路径或 Ultralytics 可识别的模型名，例如 sam_b.pt。",
     device: "推理设备",
@@ -62,10 +65,30 @@ const copy = {
     disabled: "禁用回退",
     saveSam: "保存 SAM 设置",
     savedSam: "SAM 设置已保存",
+    ftpNav: "FTP 服务",
+    ftpNavDescription: "主机、账号与连接偏好",
+    ftpTitle: "FTP 连接",
+    ftpSubtitle: "供“FTP 管理”页浏览、上传、下载与移动文件。凭据只保存在 settings.json。",
+    ftpHost: "主机",
+    ftpPort: "端口",
+    ftpUser: "用户名",
+    ftpPassword: "密码",
+    ftpPasswordKeep: "已配置密码：留空则保留原值",
+    ftpPassive: "被动模式 (PASV)",
+    ftpPassiveHint: "多数内网/云 FTP 需要开启；仅极少数老服务器要关闭。",
+    ftpEncoding: "路径编码",
+    ftpEncodingHint: "中文服务器常用 gbk，默认 utf-8。",
+    ftpTimeout: "连接超时（秒）",
+    ftpTest: "测试连接",
+    ftpTesting: "测试中…",
+    saveFtp: "保存 FTP 设置",
+    savedFtp: "FTP 设置已保存",
+    ftpConfigured: "已配置",
+    ftpNotConfigured: "未配置",
     ready: "已配置真实模型",
     fallbackReady: "使用框形建议",
     disabledStatus: "已关闭",
-    samFooter: "SAM 只对 segment 数据集开放。",
+    samFooter: "SAM 只对 segment 标注任务开放。",
     languageTitle: "语言设置",
     languageSubtitle: "切换工作台界面语言。偏好只保存在本机浏览器中。",
     displayLanguage: "显示语言",
@@ -132,6 +155,9 @@ const copy = {
     samTitle: "SAM assisted annotation",
     samSubtitle: "Configure interactive SAM proposals for segment annotation. Review every proposal before saving it.",
     samEnabled: "Enable SAM assist",
+    samBackend: "SAM3 service URL",
+    samBackendHint: "Remote SAM3 segmentation service (text-prompted, e.g. http://10.12.42.125:7860). Takes priority when set; leave empty to use the local weights below.",
+    samLocalFallbackHint: "A remote SAM3 service is configured: inference runs remotely. The local weights / device / size below only apply as fallback when the URL is empty.",
     modelSam: "Model checkpoint or model id",
     modelHint: "Use a local .pt path or an Ultralytics model name such as sam_b.pt.",
     device: "Inference device",
@@ -141,6 +167,26 @@ const copy = {
     disabled: "Disable fallback",
     saveSam: "Save SAM settings",
     savedSam: "SAM settings saved",
+    ftpNav: "FTP Service",
+    ftpNavDescription: "Host, credentials and connection",
+    ftpTitle: "FTP Connection",
+    ftpSubtitle: "Used by the FTP manager page to browse, upload, download and move files. Credentials stay in settings.json.",
+    ftpHost: "Host",
+    ftpPort: "Port",
+    ftpUser: "Username",
+    ftpPassword: "Password",
+    ftpPasswordKeep: "Password configured: leave empty to keep it",
+    ftpPassive: "Passive mode (PASV)",
+    ftpPassiveHint: "Most cloud / intranet servers need PASV on.",
+    ftpEncoding: "Path encoding",
+    ftpEncodingHint: "Use gbk for many Chinese servers; default utf-8.",
+    ftpTimeout: "Connection timeout (s)",
+    ftpTest: "Test connection",
+    ftpTesting: "Testing…",
+    saveFtp: "Save FTP settings",
+    savedFtp: "FTP settings saved",
+    ftpConfigured: "Configured",
+    ftpNotConfigured: "Not configured",
     ready: "Real model configured",
     fallbackReady: "Box proposals",
     disabledStatus: "Disabled",
@@ -255,6 +301,14 @@ export function SettingsView({
             onClick={() => onTabChange("sam")}
           />
           <SettingsNavigationItem
+            active={tab === "ftp"}
+            icon={<FtpIcon />}
+            title={text.ftpNav}
+            description={text.ftpNavDescription}
+            badge={text.local}
+            onClick={() => onTabChange("ftp")}
+          />
+          <SettingsNavigationItem
             active={tab === "language"}
             icon={<LanguageIcon />}
             title={text.languageNav}
@@ -267,6 +321,8 @@ export function SettingsView({
             <LlmSettingsPanel locale={locale} text={text} />
           ) : tab === "sam" ? (
             <SamSettingsPanel locale={locale} text={text} onSamSettingsChange={onSamSettingsChange} />
+          ) : tab === "ftp" ? (
+            <FtpSettingsPanel text={text} />
           ) : (
             <LanguageSettingsPanel locale={locale} text={text} onLocaleChange={onLocaleChange} />
           )}
@@ -583,6 +639,7 @@ function SamSettingsPanel({ locale, text, onSamSettingsChange }: { locale: AppLo
       setSettings(
         await api.updateSamSettings({
           enabled: settings.enabled,
+          backend: settings.backend,
           model: settings.model,
           device: settings.device,
           img_size: settings.img_size,
@@ -622,8 +679,17 @@ function SamSettingsPanel({ locale, text, onSamSettingsChange }: { locale: AppLo
           />
           <span>
             <strong>{text.samEnabled}</strong>
-            <small>{settings.model_configured ? settings.model : text.modelHint}</small>
+            <small>{settings.backend || (settings.model_configured ? settings.model : text.modelHint)}</small>
           </span>
+        </label>
+        <label>
+          <span>{text.samBackend}</span>
+          <input
+            value={settings.backend}
+            placeholder="http://10.12.42.125:7860"
+            onChange={(event) => setSettings({ ...settings, backend: event.target.value })}
+          />
+          <small>{text.samBackendHint}</small>
         </label>
         <label>
           <span>{text.modelSam}</span>
@@ -663,6 +729,7 @@ function SamSettingsPanel({ locale, text, onSamSettingsChange }: { locale: AppLo
           </select>
         </label>
       </div>
+      {settings.backend ? <p className="settings-hint">{text.samLocalFallbackHint}</p> : null}
       {!devices.some((device) => device.type !== "cpu") ? <p className="settings-hint">{text.noDevice}</p> : null}
       <footer className="settings-footer">
         <span>{text.samFooter}</span>
@@ -671,6 +738,132 @@ function SamSettingsPanel({ locale, text, onSamSettingsChange }: { locale: AppLo
         </button>
       </footer>
     </section>
+  );
+}
+
+type FtpFormState = Omit<FtpSettings, "password_configured"> & { password: string };
+
+const emptyFtpForm: FtpFormState = { host: "", port: 21, username: "", password: "", passive: true, encoding: "utf-8", timeout_seconds: 15 };
+
+const FTP_ENCODINGS = ["utf-8", "gbk", "gb2312", "big5", "latin-1"];
+
+function FtpSettingsPanel({ text }: { text: SettingsText }) {
+  const [form, setForm] = useState<FtpFormState>(emptyFtpForm);
+  const [busy, setBusy] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [passwordConfigured, setPasswordConfigured] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void api
+      .getFtpSettings()
+      .then((settings) => {
+        setPasswordConfigured(settings.password_configured);
+        setForm({ ...settings, password: "" });
+      })
+      .catch((reason) => setError(reason instanceof Error ? reason.message : text.error))
+      .finally(() => setBusy(false));
+  }, [text.error]);
+
+  const persist = () => api.updateFtpSettings(form.password ? form : { ...form, password: undefined });
+
+  const save = async (event?: FormEvent) => {
+    event?.preventDefault();
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await persist();
+      setPasswordConfigured(saved.password_configured);
+      setForm((current) => ({ ...current, password: "" }));
+      setMessage(text.savedFtp);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : text.error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const test = async () => {
+    setTesting(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await persist();
+      setPasswordConfigured(saved.password_configured);
+      setForm((current) => ({ ...current, password: "" }));
+      const result = await api.testFtpConnection();
+      if (result.ok) setMessage(result.message);
+      else setError(result.message);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : text.error);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  if (busy) return <section className="panel settings-card"><p className="muted settings-loading">{text.loading}</p></section>;
+  return (
+    <form className="panel settings-card" onSubmit={(event) => void save(event)}>
+      <header className="settings-card-head">
+        <div className="settings-card-icon"><FtpIcon /></div>
+        <div>
+          <h2>{text.ftpTitle}</h2>
+          <p>{text.ftpSubtitle}</p>
+        </div>
+        <span className={`settings-status ${form.host ? "ready" : "disabled"}`}>
+          {form.host ? text.ftpConfigured : text.ftpNotConfigured}
+        </span>
+      </header>
+      {error ? <div className="validation invalid"><span>{error}</span></div> : null}
+      {message ? <div className="validation valid"><span>{message}</span></div> : null}
+      <div className="settings-form-grid">
+        <label>
+          <span>{text.ftpHost}</span>
+          <input value={form.host} placeholder="ftp.example.com" onChange={(event) => setForm({ ...form, host: event.target.value })} />
+        </label>
+        <label>
+          <span>{text.ftpPort}</span>
+          <input type="number" min={1} max={65535} value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} />
+        </label>
+        <label>
+          <span>{text.ftpUser}</span>
+          <input value={form.username} placeholder="anonymous" onChange={(event) => setForm({ ...form, username: event.target.value })} />
+        </label>
+        <label>
+          <span>{text.ftpPassword}</span>
+          <input type="password" value={form.password} placeholder={passwordConfigured ? "••••••••" : ""} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+          <small>{passwordConfigured ? text.ftpPasswordKeep : ""}</small>
+        </label>
+        <label>
+          <span>{text.ftpEncoding}</span>
+          <select value={form.encoding} onChange={(event) => setForm({ ...form, encoding: event.target.value })}>
+            {!FTP_ENCODINGS.includes(form.encoding) ? <option value={form.encoding}>{form.encoding}</option> : null}
+            {FTP_ENCODINGS.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <small>{text.ftpEncodingHint}</small>
+        </label>
+        <label>
+          <span>{text.ftpTimeout}</span>
+          <input type="number" min={3} max={120} value={form.timeout_seconds} onChange={(event) => setForm({ ...form, timeout_seconds: Number(event.target.value) })} />
+        </label>
+        <label className="settings-toggle">
+          <input type="checkbox" checked={form.passive} onChange={(event) => setForm({ ...form, passive: event.target.checked })} />
+          <span>
+            <strong>{text.ftpPassive}</strong>
+            <small>{text.ftpPassiveHint}</small>
+          </span>
+        </label>
+      </div>
+      <footer className="settings-footer">
+        <button type="button" className="button" disabled={testing || saving || !form.host} onClick={() => void test()}>
+          {testing ? text.ftpTesting : text.ftpTest}
+        </button>
+        <button className="button primary" disabled={saving}>{saving ? "…" : text.saveFtp}</button>
+      </footer>
+    </form>
   );
 }
 
@@ -721,6 +914,17 @@ function SamIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M4 5.5h16v13H4zM8 9l2.5 2.5L16 8m-8 7h8" />
+    </svg>
+  );
+}
+
+function FtpIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="4" y="4" width="16" height="6" rx="1.5" />
+      <rect x="4" y="14" width="16" height="6" rx="1.5" />
+      <circle cx="8" cy="7" r="1" />
+      <circle cx="8" cy="17" r="1" />
     </svg>
   );
 }

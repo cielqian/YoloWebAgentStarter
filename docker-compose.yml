@@ -1,0 +1,41 @@
+services:
+  backend:
+    build: ./backend
+    image: yolowebagent-starter-backend
+    restart: unless-stopped
+    environment:
+      YWA_HOST: 0.0.0.0
+      YWA_PORT: "8000"
+      YWA_DATA_DIR: /app/data
+      YWA_IMPORT_ROOT: /app/data/imports
+      # SAM 辅助标注：远程 SAM3 服务优先；地址不通时可注释掉回退本地权重
+      YWA_SAM_BACKEND: http://10.12.42.125:7860
+      YWA_SAM_DEVICE: auto
+      # 本地 SAM 权重（远程服务不可用时的回退），文件名不同的话改这里
+      YWA_SAM_MODEL: /app/models/sam_b.pt
+      # 需要覆盖其他 YWA_* 配置时，可改用 env_file: ./backend/.env
+    volumes:
+      - ywa-data:/app/data
+      - ./models:/app/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/system/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: ""
+    image: yolowebagent-starter-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  ywa-data:

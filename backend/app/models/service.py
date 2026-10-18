@@ -382,7 +382,7 @@ class ModelService:
             left, right = records
             if (left.dataset_id, left.split, left.confidence, left.iou) != (right.dataset_id, right.split, right.confidence, right.iou):
                 status = "incomparable"
-                issues.append("最近成功评估的数据集、split 或评估阈值不一致。")
+                issues.append("最近成功评估的标注任务、split 或评估阈值不一致。")
             # Existing records do not fingerprint evaluated images/annotations.
             # Even equal dataset IDs and split names cannot prove equal snapshots.
             issues.append("现有评估记录未保存可核验的数据快照指纹，同名 split 不代表相同样本与标注。")

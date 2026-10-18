@@ -58,7 +58,7 @@ export function summarizeApprovalParams(
   locale: "zh" | "en",
 ): Array<{ label: string; value: string }> {
   const labels: Record<string, { zh: string; en: string }> = {
-    dataset_id: { zh: "数据集", en: "Dataset" },
+    dataset_id: { zh: "标注任务", en: "Dataset" },
     model_id: { zh: "模型 ID", en: "Model ID" },
     name: { zh: "任务名", en: "Name" },
     model: { zh: "模型", en: "Model" },

@@ -28,7 +28,7 @@ def info(settings: Settings = Depends(get_settings)) -> dict[str, object]:
             "model_configured": sam.model_configured,
             "box_prompt_available": sam.enabled,
             "point_prompt_available": sam.enabled and sam.model_configured,
-            "box_backend": "ultralytics_sam" if sam.model_configured else "box_stub",
+            "box_backend": "remote-sam3" if sam.backend else ("ultralytics_sam" if sam.model_configured else "box_stub"),
         },
         "training_devices": [device.as_dict() for device in DeviceService().list_devices()],
     }
