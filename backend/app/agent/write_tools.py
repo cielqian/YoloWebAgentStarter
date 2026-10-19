@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import func, select
@@ -19,6 +19,9 @@ from app.training.config import validate_model_family
 from app.training.schemas import TrainingTaskCreate
 from app.training.service import TrainingService
 from app.core.task_types import TaskType
+
+if TYPE_CHECKING:
+    from app.core.config import Settings
 
 
 ToolHandler = Callable[[Session, dict[str, Any]], dict[str, Any]]
@@ -59,6 +62,7 @@ def normalize_write_payload(tool_name: str, payload: dict[str, Any] | None) -> d
             "img_size": parsed.img_size,
             "batch_size": parsed.batch_size,
             "device": parsed.device,
+            "node_id": parsed.node_id or None,
             "val_ratio": parsed.val_ratio,
             "seed": parsed.seed,
         }
@@ -102,13 +106,23 @@ def normalize_write_payload(tool_name: str, payload: dict[str, Any] | None) -> d
     return data
 
 
-def _preflight_training(session: Session, storage: Storage, payload: TrainingTaskCreate, training: TrainingService) -> None:
+def _preflight_training(
+    session: Session,
+    storage: Storage,
+    payload: TrainingTaskCreate,
+    training: TrainingService,
+    settings: "Settings | None" = None,
+) -> None:
     dataset = get_dataset(session, payload.dataset_id)
     task_type = payload.task_type or TaskType(dataset.task_type)
     if task_type.value != dataset.task_type:
         raise ValidationError("task_type_mismatch", "Training task type must match the dataset task type.")
     validate_model_family(task_type, payload.model)
     training._validate_dataset_ready(session, dataset)
+    if payload.node_id:
+        # Same checks the approved execution will run: node exists, is enabled,
+        # reachable, and exposes the requested device.
+        training._resolve_remote_node(payload, settings)
 
 
 def _preflight_evaluation(session: Session, models: ModelService, model_id: str, split: str) -> None:
@@ -183,6 +197,7 @@ def build_write_handlers(
     training_service: TrainingService | None = None,
     model_service: ModelService | None = None,
     session_factory=None,
+    settings: "Settings | None" = None,
 ) -> dict[str, tuple[str, dict[str, Any], ToolHandler]]:
     """Write tools validate/normalize payloads and run cheap preflight; execution waits for approval."""
     from app.training.runtime.queue import training_queue
@@ -197,7 +212,7 @@ def build_write_handlers(
         payload = TrainingTaskCreate.model_validate(
             {key: value for key, value in data.items() if key not in {"action", "preview"}}
         )
-        _preflight_training(session, storage, payload, training)
+        _preflight_training(session, storage, payload, training, settings)
         return bound_json(data)
 
     def create_model_evaluation(session: Session, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -215,7 +230,8 @@ def build_write_handlers(
 
     return {
         "create_training_task": (
-            "Propose creating a local training task. Requires human approval before execution.",
+            "Propose creating a training task, locally or on a registered remote compute node "
+            "(node_id from the training_nodes tool; omit for local training). Requires human approval before execution.",
             {
                 "type": "object",
                 "properties": {
@@ -227,6 +243,7 @@ def build_write_handlers(
                     "img_size": {"type": "integer", "minimum": 32, "maximum": 4096},
                     "batch_size": {"type": "integer", "minimum": 1, "maximum": 4096},
                     "device": {"type": "string", "minLength": 1, "maxLength": 64},
+                    "node_id": {"type": "string", "maxLength": 64},
                     "workers": {"type": "integer", "minimum": 0, "maximum": 128},
                     "val_ratio": {"type": "number", "minimum": 0, "maximum": 0.9},
                     "seed": {"type": "integer", "minimum": 0},
@@ -282,12 +299,14 @@ def register_write_tools(
     training_service: TrainingService | None = None,
     model_service: ModelService | None = None,
     session_factory=None,
+    settings: "Settings | None" = None,
 ) -> None:
     for name, (description, parameters, handler) in build_write_handlers(
         storage,
         training_service=training_service,
         model_service=model_service,
         session_factory=session_factory,
+        settings=settings,
     ).items():
         registry.register(
             AgentToolSpec(

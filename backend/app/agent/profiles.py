@@ -19,7 +19,7 @@ class AgentProfile:
 
 
 DATA_READ = {"global_summary", "dataset_summary", "dataset_quality_report", "dataset_validate", "dataset_readiness"}
-TRAIN_READ = {"training_list", "training_status", "training_latest_result", "training_logs", "training_diagnose_failure"}
+TRAIN_READ = {"training_list", "training_status", "training_latest_result", "training_logs", "training_nodes", "training_diagnose_failure"}
 MODEL_READ = {"model_list", "model_get", "model_latest_for_dataset", "model_compare", "model_comparability",
               "evaluation_list", "evaluation_summary", "evaluation_error_summary"}
 

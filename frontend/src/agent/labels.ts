@@ -50,6 +50,8 @@ const TOOL_NAMES: Record<string, { zh: string; en: string }> = {
   get_training_task: { zh: "训练任务详情", en: "Get training task" },
   training_summary: { zh: "训练摘要", en: "Training summary" },
   training_logs: { zh: "训练日志", en: "Training logs" },
+  training_nodes: { zh: "训练节点算力", en: "Training nodes" },
+  list_training_nodes: { zh: "训练节点算力", en: "List training nodes" },
   list_models: { zh: "模型列表", en: "List models" },
   get_model: { zh: "模型详情", en: "Get model" },
   model_latest_for_dataset: { zh: "最新模型", en: "Latest model" },

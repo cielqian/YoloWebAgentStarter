@@ -125,7 +125,7 @@ class AgentService:
         self.session_factory = session_factory
         self.settings = settings
         self.storage = storage
-        self.registry = registry or build_default_registry(storage, session_factory=session_factory)
+        self.registry = registry or build_default_registry(storage, session_factory=session_factory, settings=settings)
         self.training_service = training_service
         self.model_service = model_service
         self.auto_annotation_service = auto_annotation_service
@@ -971,8 +971,9 @@ class AgentService:
                 {key: value for key, value in payload.items() if key not in {"action", "preview", "reserved_task_id"}}
             )
             task = training.create_task(session, create_payload, task_id=task_id, settings=getattr(self, "settings", None))
+            node_note = f"，已下发到远程节点 {task.node_id}" if task.node_id else ""
             summary = (
-                f"已确认并创建训练任务 `{task.id}`（数据集 {task.dataset_id}）。"
+                f"已确认并创建训练任务 `{task.id}`（数据集 {task.dataset_id}{node_note}）。"
                 f"可在训练页查看进度。本轮结束，不会自动等待训练完成。"
             )
             return task.id, summary

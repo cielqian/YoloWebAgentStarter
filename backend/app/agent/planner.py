@@ -10,7 +10,7 @@ from app.agent.provider import ProviderToolCall
 from app.agent.write_tools import WRITE_TOOL_NAMES
 
 
-_ID_RE = re.compile(r"\b((?:ds|train|eval)_[a-f0-9]+|model_[a-zA-Z0-9_]+)\b", re.IGNORECASE)
+_ID_RE = re.compile(r"\b((?:ds|train|eval|node)_[a-f0-9]+|model_[a-zA-Z0-9_]+)\b", re.IGNORECASE)
 
 # Upstream dotted names → Starter OpenAI-safe names.
 _PRIMARY_ALIASES: dict[str, tuple[str, ...]] = {
@@ -22,6 +22,7 @@ _PRIMARY_ALIASES: dict[str, tuple[str, ...]] = {
     "training_status": ("get_training_task",),
     "training_latest_result": ("training_summary",),
     "training_logs": (),
+    "training_nodes": ("list_training_nodes",),
     "model_list": ("list_models",),
     "model_get": ("get_model",),
     "model_latest_for_dataset": (),
@@ -64,6 +65,7 @@ class RuleBasedPlanner:
         train_ids = [item for item in ids if item.lower().startswith("train_")]
         model_ids = [item for item in ids if item.lower().startswith("model_")]
         eval_ids = [item for item in ids if item.lower().startswith("eval_")]
+        node_ids = [item for item in ids if item.lower().startswith("node_")]
         allow = available
 
         # Reject out-of-scope automation keywords; still offer a safe read tool.
@@ -145,6 +147,7 @@ class RuleBasedPlanner:
                     "device": "auto",
                     "val_ratio": self._number(text, "val", 0.2),
                     "seed": int(self._number(text, "seed", 42)),
+                    **({"node_id": node_ids[0]} if node_ids else {}),
                 },
                 allow,
                 requires_confirmation=True,
@@ -176,11 +179,31 @@ class RuleBasedPlanner:
                     "device": "auto",
                     "val_ratio": self._number(text, "val", 0.2),
                     "seed": int(self._number(text, "seed", 42)),
+                    **({"node_id": node_ids[0]} if node_ids else {}),
                 },
                 allow,
                 requires_confirmation=True,
             )
             return self._single(step, risks=self._risks("create_training_task"))
+
+        wants_nodes = any(
+            token in text
+            for token in (
+                "训练节点",
+                "算力节点",
+                "节点列表",
+                "有哪些节点",
+                "算力资源",
+                "可用算力",
+                "compute node",
+                "training node",
+                "node list",
+            )
+        )
+        if wants_nodes:
+            step = self._step("training_nodes", {}, allow)
+            if step:
+                return self._single(step)
 
         wants_quality = any(token in text for token in ("quality", "质量", "分布", "coverage", "覆盖"))
         wants_validate = any(token in text for token in ("validate", "校验", "验证"))
@@ -401,6 +424,8 @@ class RuleBasedPlanner:
             return True
         if re.search(r"(yolo[\w.-]*\.pt|best\.pt|last\.pt)", text) and "训练" in text:
             return True
+        if re.search(r"\bnode_[a-f0-9]+\b", text) and "训练" in text:
+            return True
         return False
 
     @staticmethod
@@ -431,6 +456,7 @@ class RuleBasedPlanner:
             "training_status": "查看训练任务状态",
             "training_latest_result": "查看最近一次训练结果",
             "training_logs": "查看训练日志尾部",
+            "training_nodes": "查看本机设备与远程训练节点的算力状态",
             "model_list": "列出受管模型",
             "model_get": "查看受管模型详情",
             "model_latest_for_dataset": "查看数据集最近的受管 PT",
@@ -438,14 +464,14 @@ class RuleBasedPlanner:
             "evaluation_list": "列出模型评估记录",
             "evaluation_summary": "查看评估摘要",
             "evaluation_error_summary": "汇总评估错误样本类型",
-            "create_training_task": "创建本地 YOLO 训练任务（需确认）",
+            "create_training_task": "创建 YOLO 训练任务，可本机或远程节点（需确认）",
             "create_model_evaluation": "创建受管模型评估任务（需确认）",
             "create_auto_annotation_task": "创建自动标注任务（需确认，结果须人工审核）",
         }.get(tool_name, tool_name)
 
     def _risks(self, tool_name: str) -> list[str]:
         if tool_name == "create_training_task":
-            return ["训练会创建后台任务并占用本机计算资源。确认后本轮结束，不会自动启动评估。"]
+            return ["训练会创建后台任务并占用本机或所选远程节点的计算资源。确认后本轮结束，不会自动启动评估。"]
         if tool_name == "create_model_evaluation":
             return ["评估会创建后台任务并读取已持久化 split。"]
         if tool_name == "create_auto_annotation_task":

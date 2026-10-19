@@ -20,6 +20,7 @@ npm-debug.log*
 
 # Local model and training artifacts
 runs/
+Ultralytics/
 *.pt
 *.onnx
 *.engine

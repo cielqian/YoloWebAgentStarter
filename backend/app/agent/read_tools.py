@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -26,6 +26,9 @@ from app.dataset.validation import validate_dataset
 from app.models.service import ModelService
 from app.training.runtime.queue import training_queue
 from app.training.service import TrainingService
+
+if TYPE_CHECKING:
+    from app.core.config import Settings
 
 
 ToolHandler = Callable[[Session, dict[str, Any]], dict[str, Any]]
@@ -94,6 +97,7 @@ def build_read_handlers(
     training_service: TrainingService | None = None,
     model_service: ModelService | None = None,
     session_factory=None,
+    settings: "Settings | None" = None,
 ) -> dict[str, tuple[str, dict[str, Any], ToolHandler]]:
     """Return name -> (description, json_schema, handler)."""
     training = training_service or TrainingService(session_factory, storage, training_queue)
@@ -186,6 +190,7 @@ def build_read_handlers(
                     "status": task.status,
                     "task_type": task.task_type,
                     "model_name": untrusted_text(task.model_name),
+                    "node_id": task.node_id,
                     "progress_epoch": task.progress_epoch,
                     "progress_total_epochs": task.progress_total_epochs,
                     "progress_percent": task.progress_percent,
@@ -194,6 +199,40 @@ def build_read_handlers(
             )
         items, truncated = truncate_list(items)
         return bound_json({"items": items, "total": len(listed.items), "truncated": truncated})
+
+    def list_training_nodes(session: Session, arguments: dict[str, Any]) -> dict[str, Any]:
+        from app.training.runtime.remote_nodes import merged_devices
+
+        local = [dict(device) for device in training.devices()]
+        nodes: list[dict[str, Any]] = []
+        remote: list[dict[str, Any]] = []
+        if settings is not None:
+            items, node_status = merged_devices(settings)
+            remote = [dict(device) for device in items if isinstance(device, dict) and device.get("node_id")]
+            for node in node_status:
+                error = node.get("error")
+                nodes.append(
+                    {
+                        "id": node.get("id"),
+                        "name": untrusted_text(node.get("name")),
+                        "url": node.get("url"),
+                        "status": node.get("status"),
+                        "device_count": node.get("device_count"),
+                        "error": untrusted_text(error, limit=240) if error else None,
+                    }
+                )
+        local, local_truncated = truncate_list(local)
+        remote, remote_truncated = truncate_list(remote)
+        return bound_json(
+            {
+                "local_devices": local,
+                "local_truncated": local_truncated,
+                "nodes": nodes,
+                "remote_devices": remote,
+                "remote_truncated": remote_truncated,
+                "remote_training_available": settings is not None,
+            }
+        )
 
     def get_training_task(session: Session, arguments: dict[str, Any]) -> dict[str, Any]:
         task_id = _require_str_any(arguments, "task_id", "training_task_id")
@@ -502,6 +541,16 @@ def build_read_handlers(
             },
             training_logs_tool,
         ),
+        "training_nodes": (
+            "List local devices and registered remote training nodes with online status, "
+            "device inventory and node ids used to dispatch remote training tasks.",
+            {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            list_training_nodes,
+        ),
         "model_list": (
             "List managed model versions.",
             {
@@ -606,6 +655,7 @@ def build_read_handlers(
         "list_training_tasks": "training_list",
         "get_training_task": "training_status",
         "training_summary": "training_latest_result",
+        "list_training_nodes": "training_nodes",
         "list_models": "model_list",
         "get_model": "model_get",
         "compare_models": "model_compare",
@@ -625,6 +675,7 @@ def build_default_registry(
     training_service: TrainingService | None = None,
     model_service: ModelService | None = None,
     session_factory=None,
+    settings: "Settings | None" = None,
 ) -> AgentToolRegistry:
     registry = AgentToolRegistry()
     if storage is None:
@@ -634,6 +685,7 @@ def build_default_registry(
         training_service=training_service,
         model_service=model_service,
         session_factory=session_factory,
+        settings=settings,
     )
     legacy_aliases = handlers.pop("__legacy_aliases__", {})  # type: ignore[assignment]
     if not isinstance(legacy_aliases, dict):
@@ -658,5 +710,6 @@ def build_default_registry(
         training_service=training_service,
         model_service=model_service,
         session_factory=session_factory,
+        settings=settings,
     )
     return registry

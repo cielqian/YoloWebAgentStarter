@@ -169,3 +169,48 @@ def test_agent_denies_unknown_tools(client, monkeypatch):
     assert body["status"] == "completed"
     assert body["tool_calls"][0]["status"] == "failed"
     assert body["tool_calls"][0]["result_json"]["error"] == "tool_not_allowed"
+
+
+def test_mock_plans_training_nodes_query():
+    available = {"training_nodes", "list_training_nodes", "training_list", "global_summary"}
+    nodes = _plan_tools("有哪些训练节点和可用算力", available)
+    assert [item.name for item in nodes] == ["training_nodes"]
+
+    alias = _plan_tools("有哪些训练节点", {"list_training_nodes"})
+    assert [item.name for item in alias] == ["list_training_nodes"]
+
+
+def test_agent_lists_training_nodes_with_remote_status(client, monkeypatch):
+    from app.training.runtime import remote_nodes
+
+    node = client.post(
+        "/api/training/nodes",
+        json={"name": "npu-01", "url": "http://npu-01:8010", "token": "secret", "enabled": True},
+    ).json()
+
+    snapshot = {
+        "payload": {
+            "hostname": "npu-server",
+            "devices": [
+                {"id": "cpu", "type": "cpu", "name": "Kunpeng", "index": None, "memory_total_mb": None, "memory_free_mb": None, "status": "available"},
+                {"id": "npu:0", "type": "npu", "name": "Ascend 310P", "index": 0, "memory_total_mb": 24576, "memory_free_mb": 20000, "status": "available"},
+            ],
+        }
+    }
+    monkeypatch.setattr(remote_nodes, "fetch_node_snapshot", lambda url, token, timeout=3.0, use_cache=True: snapshot)
+
+    session_id = client.post("/api/agent/sessions", json={"title": "nodes"}).json()["id"]
+    run = client.post(
+        f"/api/agent/sessions/{session_id}/messages?wait_for_completion=true",
+        json={"content": "有哪些训练节点和可用算力"},
+    )
+    assert run.status_code == 200, run.text
+    body = run.json()
+    call = next(item for item in body["tool_calls"] if item["name"] == "training_nodes")
+    assert call["status"] == "completed"
+    result = call["result_json"]
+    assert [item["id"] for item in result["nodes"]] == [node["id"]]
+    assert result["nodes"][0]["status"] == "online"
+    assert f"{node['id']}:npu:0" in {item["id"] for item in result["remote_devices"]}
+    assert any(item["type"] == "cpu" for item in result["local_devices"])
+    assert "token" not in json.dumps(result)

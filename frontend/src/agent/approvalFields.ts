@@ -22,6 +22,7 @@ export function editableApprovalFields(toolName: string): ApprovalEditableField[
       { key: "img_size", labelZh: "图像尺寸", labelEn: "Image size", type: "number", min: 32, step: 32 },
       { key: "batch_size", labelZh: "Batch", labelEn: "Batch", type: "number", min: 1, step: 1 },
       { key: "val_ratio", labelZh: "验证比例", labelEn: "Val ratio", type: "number", min: 0, max: 0.9, step: 0.01 },
+      { key: "node_id", labelZh: "训练节点", labelEn: "Node", type: "text" },
       { key: "device", labelZh: "设备", labelEn: "Device", type: "text" },
     ];
   }
@@ -65,6 +66,7 @@ export function summarizeApprovalParams(
     epochs: { zh: "Epochs", en: "Epochs" },
     img_size: { zh: "图像尺寸", en: "Image size" },
     batch_size: { zh: "Batch", en: "Batch" },
+    node_id: { zh: "训练节点", en: "Node" },
     device: { zh: "设备", en: "Device" },
     val_ratio: { zh: "验证比例", en: "Val ratio" },
     split: { zh: "Split", en: "Split" },
@@ -105,7 +107,7 @@ export function expectedApprovalOutputs(toolName: string, locale: "zh" | "en"): 
   return [];
 }
 
-/** Drop empty numeric fields before approve API calls. */
+/** Drop empty numeric fields (and empty node_id, meaning local training) before approve API calls. */
 export function sanitizeApprovalPayload(
   payload: Record<string, unknown>,
   toolName: string,
@@ -118,6 +120,10 @@ export function sanitizeApprovalPayload(
     if (value === "" || value === null || value === undefined) {
       delete cleaned[key];
     }
+  }
+  const nodeId = cleaned["node_id"];
+  if (typeof nodeId === "string" && !nodeId.trim()) {
+    delete cleaned["node_id"];
   }
   return cleaned;
 }

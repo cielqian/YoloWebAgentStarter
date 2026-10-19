@@ -117,3 +117,26 @@ def test_reply_renderer_confirmation_and_report():
         ]
     )
     assert "数据集列表" in report
+
+
+def test_rule_planner_node_query_and_remote_training_dispatch():
+    planner = RuleBasedPlanner()
+    available = {"training_nodes", "list_training_nodes", "create_training_task", "training_list"}
+
+    nodes = planner.plan_tool_calls("有哪些训练节点和可用算力", available)
+    assert [item.name for item in nodes] == ["training_nodes"]
+
+    remote = planner.structured_plan(
+        "为 ds_abc123def456 在 node_beef42ca 上创建训练任务", available=available
+    )
+    assert remote.needs_confirmation
+    assert remote.steps[-1].tool_name == "create_training_task"
+    assert remote.steps[-1].arguments["node_id"] == "node_beef42ca"
+
+    implicit = planner.structured_plan("把 ds_abc123def456 放到 node_beef42ca 训练", available=available)
+    assert implicit.steps[-1].tool_name == "create_training_task"
+    assert implicit.steps[-1].arguments["node_id"] == "node_beef42ca"
+
+    local = planner.structured_plan("为 ds_abc123def456 创建训练任务", available=available)
+    assert local.steps[-1].tool_name == "create_training_task"
+    assert "node_id" not in local.steps[-1].arguments

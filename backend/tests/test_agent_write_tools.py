@@ -405,3 +405,101 @@ def test_approve_strips_tampered_payload_keys(client, tmp_path, monkeypatch):
     assert "shell" not in stored
     assert "model_path" not in stored
     assert stored["dataset_id"] == dataset_id
+
+
+def test_training_write_payload_keeps_node_id_in_preview():
+    from app.agent.write_tools import normalize_write_payload
+
+    remote = normalize_write_payload(
+        "create_training_task",
+        {"dataset_id": "ds_abc123def456", "node_id": "node_beef42ca"},
+    )
+    assert remote["node_id"] == "node_beef42ca"
+    assert remote["preview"]["node_id"] == "node_beef42ca"
+
+    local = normalize_write_payload("create_training_task", {"dataset_id": "ds_abc123def456"})
+    assert local["preview"]["node_id"] is None
+
+
+def test_remote_training_proposal_fails_preflight_for_unknown_node(client, tmp_path, monkeypatch):
+    executable = tmp_path / "fake-yolo"
+    fake_yolo(executable)
+    monkeypatch.setenv("YWA_YOLO_EXECUTABLE", str(executable))
+    dataset_id, _ = prepared_dataset(client)
+
+    session_id = client.post("/api/agent/sessions", json={"title": "remote-unknown"}).json()["id"]
+    run = client.post(
+        f"/api/agent/sessions/{session_id}/messages?wait_for_completion=true",
+        json={"content": f"在节点 node_deadbeef42 上为 {dataset_id} 创建训练任务"},
+    )
+    assert run.status_code == 200, run.text
+    body = run.json()
+    call = next(item for item in body["tool_calls"] if item["name"] == "create_training_task")
+    assert call["status"] == "failed"
+    assert call["result_json"]["error"] == "training_node_not_found"
+    assert not body.get("approvals")
+    assert client.get(f"/api/training/tasks?dataset_id={dataset_id}").json()["items"] == []
+
+
+def test_approve_dispatches_remote_training_to_node(client, monkeypatch):
+    from app.training.runtime import remote_nodes
+    import app.training.service as training_service_module
+
+    snapshot = {
+        "payload": {
+            "hostname": "gpu-server-01",
+            "devices": [
+                {"id": "cpu", "type": "cpu", "name": "EPYC", "index": None, "memory_total_mb": None, "memory_free_mb": None, "status": "available"},
+                {"id": "cuda:0", "type": "cuda", "name": "RTX 4090", "index": 0, "memory_total_mb": 24564, "memory_free_mb": 23000, "status": "available"},
+            ],
+        }
+    }
+
+    def fake_snapshot(url, token, timeout=3.0, use_cache=True):
+        return snapshot
+
+    dispatched: list[dict] = []
+
+    def fake_dispatch(node, spec, dataset_zip, weights):
+        dispatched.append({"node": dict(node), "spec": dict(spec), "has_archive": dataset_zip is not None})
+
+    monkeypatch.setattr(remote_nodes, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "dispatch_remote_task", fake_dispatch)
+
+    node = client.post(
+        "/api/training/nodes",
+        json={"name": "gpu-01", "url": "http://gpu-01:8010", "token": "secret", "enabled": True},
+    ).json()
+
+    dataset_id, _ = prepared_dataset(client)
+    session_id = client.post("/api/agent/sessions", json={"title": "remote"}).json()["id"]
+    run = client.post(
+        f"/api/agent/sessions/{session_id}/messages?wait_for_completion=true",
+        json={"content": f"在节点 {node['id']} 上为 {dataset_id} 创建训练任务"},
+    )
+    assert run.status_code == 200, run.text
+    body = run.json()
+    assert body["status"] == "awaiting_approval"
+    approval = body["approvals"][0]
+    assert approval["payload_json"]["node_id"] == node["id"]
+    assert approval["payload_json"]["preview"]["node_id"] == node["id"]
+    # 提案阶段不得真正下发
+    assert dispatched == []
+
+    approved = client.post(f"/api/agent/approvals/{approval['id']}/approve")
+    assert approved.status_code == 200, approved.text
+    payload = approved.json()
+    task_id = payload["approval"]["result_task_id"]
+    assert task_id and task_id.startswith("train_")
+
+    task = client.get(f"/api/training/tasks/{task_id}").json()
+    assert task["node_id"] == node["id"]
+    assert task["status"] == "running"
+
+    assert len(dispatched) == 1
+    assert dispatched[0]["spec"]["task_id"] == task_id
+    assert dispatched[0]["node"]["id"] == node["id"]
+    assert dispatched[0]["has_archive"] is True
+    assistants = [item for item in payload["run"]["messages"] if item["role"] == "assistant"]
+    assert node["id"] in assistants[-1]["content"]
