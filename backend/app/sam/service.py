@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 import threading
 from gc import collect
@@ -179,138 +178,63 @@ def _mask_polygons_from_result(original_path: Path, result_bytes: bytes) -> list
     return polygons
 
 
-def _segment_via_gradio(
-    client: httpx.Client,
-    base_url: str,
-    image_path: Path,
-    prompt_text: str,
-) -> bytes:
-    """SAM3 Gradio demo 的调用链：upload → /gradio_api/call/run_inference 队列 → 下载结果图。"""
-    with image_path.open("rb") as handle:
-        upload = client.post(f"{base_url}/gradio_api/upload", files={"files": (image_path.name, handle)})
-    try:
-        server_paths = upload.json()
-    except ValueError:
-        server_paths = None
-    if not isinstance(server_paths, list) or not server_paths or not isinstance(server_paths[0], str):
-        raise ValidationError("sam_prediction_failed", f"SAM3 上传图片失败: {upload.text[:200]}")
-    call = client.post(
-        f"{base_url}/gradio_api/call/run_inference",
-        json={"data": [{"path": server_paths[0], "meta": {"_type": "gradio.FileData"}}, prompt_text]},
-    )
-    try:
-        event_id = call.json().get("event_id")
-    except (ValueError, AttributeError):
-        event_id = None
-    if not event_id:
-        raise ValidationError("sam_prediction_failed", f"SAM3 提交推理任务失败: {call.text[:200]}")
-    stream = client.get(f"{base_url}/gradio_api/call/run_inference/{event_id}")
-    if stream.status_code != 200:
-        raise ValidationError("sam_prediction_failed", f"SAM3 队列查询失败: HTTP {stream.status_code}")
-    events: dict[str, str] = {}
-    current_event = None
-    for line in stream.text.splitlines():
-        if line.startswith("event: "):
-            current_event = line[len("event: "):].strip()
-        elif line.startswith("data: ") and current_event:
-            events[current_event] = line[len("data: "):].strip()
-    if "error" in events:
-        raise ValidationError("sam_prediction_failed", f"SAM3 推理失败: {events['error'][:200]}")
-    raw_payload = events.get("complete")
-    if not raw_payload:
-        raise ValidationError("sam_prediction_failed", "SAM3 队列未返回结果（推理超时或被中断）")
-    try:
-        payload = json.loads(raw_payload)
-    except ValueError as exc:
-        raise ValidationError("sam_prediction_failed", "SAM3 返回结果解析失败") from exc
-    if not (isinstance(payload, list) and payload and isinstance(payload[0], dict)):
-        raise ValidationError("sam_prediction_failed", f"SAM3 返回异常: {str(payload)[:200]}")
-    filedata = payload[0]
-    url = str(filedata.get("url") or "")
-    if not url and filedata.get("path"):
-        url = f"{base_url}/gradio_api/file={filedata['path']}"
-    if not url:
-        raise ValidationError("sam_prediction_failed", "SAM3 结果缺少文件地址")
-    download = client.get(url)
-    if download.status_code != 200 or not download.content:
-        raise ValidationError("sam_prediction_failed", f"SAM3 结果图下载失败: HTTP {download.status_code}")
-    return download.content
-
-
 def _predict_with_remote(
     base_url: str,
     image_path: Path,
     prompt_text: str,
+    box: BBox | None = None,
 ) -> tuple[list[list[tuple[float, float]]], float, str | None]:
-    """调用文本概念提示的 SAM3 服务，下载叠加结果图后差分提取多边形。
+    """调用 services/sam3/api_server.py 的 POST /segment 并差分提取多边形。
 
-    兼容两种部署形态：api_server.py 的 POST /segment（结果图 + X-Score 头），
-    以及 SAM3 自带 Gradio demo（gradio_api 队列接口，无 score）。
+    框选时把提示框一并传给服务端：服务端只对框内裁剪图推理，再把叠加
+    结果贴回原图返回，因此返回图与原图同尺寸、同坐标系，可直接差分。
     """
     if not prompt_text.strip():
         raise ValidationError("sam_model_not_configured", "远程 SAM3 依赖类别名作为概念提示，请先为标注任务配置类别。")
     base = base_url.rstrip("/")
+    form: dict[str, str] = {"prompt": prompt_text}
+    if box is not None:
+        x1 = int(round(box.x))
+        y1 = int(round(box.y))
+        x2 = int(round(box.x + box.width))
+        y2 = int(round(box.y + box.height))
+        form["box"] = f"{x1},{y1},{x2},{y2}"
     try:
         with httpx.Client(timeout=httpx.Timeout(330.0, connect=10.0), trust_env=False) as client:
             with image_path.open("rb") as handle:
                 response = client.post(
                     f"{base}/segment",
-                    data={"prompt": prompt_text},
+                    data=form,
                     files={"image": (image_path.name, handle)},
                 )
-            if response.status_code == 404:
-                result_bytes = _segment_via_gradio(client, base, image_path, prompt_text)
-                score = 1.0
-            else:
-                if response.status_code != 200:
-                    raise ValidationError(
-                        "sam_prediction_failed",
-                        f"SAM3 服务返回 {response.status_code}: {response.text[:200]}",
-                    )
-                if "image" not in response.headers.get("content-type", ""):
-                    raise ValidationError("sam_prediction_failed", "SAM3 服务返回了非图片内容，无法提取多边形")
-                result_bytes = response.content
-                score = 1.0
-                raw_score = response.headers.get("x-score", "").strip()
-                if raw_score:
-                    try:
-                        score = float(raw_score)
-                    except ValueError:
-                        pass
+            if response.status_code != 200:
+                detail = response.text[:200]
+                try:
+                    parsed = response.json()
+                except ValueError:
+                    parsed = None
+                if isinstance(parsed, dict) and parsed.get("detail"):
+                    detail = str(parsed["detail"])[:200]
+                raise ValidationError(
+                    "sam_prediction_failed",
+                    f"SAM3 服务返回 {response.status_code}: {detail}",
+                )
+            if "image" not in response.headers.get("content-type", ""):
+                raise ValidationError("sam_prediction_failed", "SAM3 服务返回了非图片内容，无法提取多边形")
+            result_bytes = response.content
+            score = 1.0
+            raw_score = response.headers.get("x-score", "").strip()
+            if raw_score:
+                try:
+                    score = float(raw_score)
+                except ValueError:
+                    pass
     except httpx.HTTPError as exc:
         raise ValidationError("sam_model_unavailable", f"SAM3 服务连接失败: {exc}") from exc
     polygons = _mask_polygons_from_result(image_path, result_bytes)
     if not polygons:
         raise ValidationError("sam_prediction_failed", "SAM returned no masks for this prompt")
     return polygons, score, "remote"
-
-
-def _filter_instances_by_prompt(
-    polygons: list[list[tuple[float, float]]],
-    request: "SamPredictRequest",
-) -> list[list[tuple[float, float]]]:
-    """远程 SAM3 只接收类名文本提示并返回全图所有实例。
-
-    点选的语义是"标注该类别"，直接返回全部实例；框选保留与提示框匹配的实例。
-    """
-    if request.box is not None:
-        box = request.box
-
-        def bbox_iou(poly: list[tuple[float, float]]) -> float:
-            xs = [x for x, _ in poly]
-            ys = [y for _, y in poly]
-            ix = max(0.0, min(max(xs), box.x + box.width) - max(min(xs), box.x))
-            iy = max(0.0, min(max(ys), box.y + box.height) - max(min(ys), box.y))
-            inter = ix * iy
-            poly_area = (max(xs) - min(xs)) * (max(ys) - min(ys))
-            return inter / (poly_area + box.width * box.height - inter + 1e-6)
-
-        scored = sorted(((bbox_iou(poly), poly) for poly in polygons), key=lambda item: -item[0])
-        keep = [poly for score, poly in scored if score >= 0.5]
-        if keep:
-            return keep
-        return [scored[0][1]] if scored and scored[0][0] > 0.1 else []
-    return polygons
 
 
 class SamService:
@@ -362,10 +286,14 @@ class SamService:
                     "sam3_prompt_not_english",
                     f"类别“{class_label.name}”缺少英文 SAM3 提示词，请在类别面板或类别管理中维护后重试。",
                 )
-            polygons, score, device = _predict_with_remote(sam.backend, path, prompt_text)
-            polygons = _filter_instances_by_prompt(polygons, request)
+            if request.box is not None:
+                # 框选：提示框随请求传给服务端，服务端只对框内裁剪图推理，无需本地再过滤
+                polygons, score, device = _predict_with_remote(sam.backend, path, prompt_text, box=request.box)
+            else:
+                # 点选：点击只是触发推理（服务端无点提示参数），全图推理并把该类别全部实例都返回
+                polygons, score, device = _predict_with_remote(sam.backend, path, prompt_text)
             if not polygons:
-                raise ValidationError("sam_prediction_failed", "SAM 未在提示位置找到目标实例")
+                raise ValidationError("sam_prediction_failed", "SAM 未找到目标实例")
             backend_used = "remote-sam3"
         elif sam.model:
             polygon, score, device = _predict_with_sam(path, request, sam.model, sam.device, sam.img_size)

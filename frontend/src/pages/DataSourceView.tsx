@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, apiUrl } from "../api/client";
+import { api, apiUrl, type FtpSyncProgressEvent } from "../api/client";
 import { Toast } from "../components/Toast";
 import type { FtpEntry, SourceDataset, SourceImage, SourceImagePage, SourceTag } from "../types";
 
@@ -239,6 +239,8 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const [ftpSelected, setFtpSelected] = useState<string[]>([]);
   const [ftpTagIds, setFtpTagIds] = useState<string[]>([]);
   const [ftpRecursive, setFtpRecursive] = useState(true);
+  const [syncProgress, setSyncProgress] = useState<FtpSyncProgressEvent>();
+  const [syncTotal, setSyncTotal] = useState(0);
   const [tagDialog, setTagDialog] = useState<{ mode: "create" } | { mode: "edit"; tag: SourceTag }>();
   const [tagName, setTagName] = useState("");
   const [tagColor, setTagColor] = useState("#3157d5");
@@ -285,7 +287,13 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
       setError(message(reason));
     } finally {
       setBusy(false);
+      setSyncProgress(undefined);
     }
+  };
+
+  const handleSyncEvent = (event: FtpSyncProgressEvent) => {
+    if (event.stage === "download") setSyncTotal(event.synced);
+    setSyncProgress(event);
   };
 
   const pickFiles = (files: FileList | null) => {
@@ -359,8 +367,9 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     const tagIds = [...ftpTagIds];
     setFtpOpen(false);
     await runAction(async () => {
-      const result = await api.syncSourceFromFtp(dataset.id, { path, recursive: ftpRecursive, tagIds });
-      return `FTP 同步完成：新增 ${result.synced} 张${result.skipped ? `，跳过 ${result.skipped} 个` : ""}`;
+      const result = await api.syncSourceFromFtp(dataset.id, { path, recursive: ftpRecursive, tagIds }, handleSyncEvent);
+      const hint = result.truncated ? "；目录图片较多，已达单次同步上限，请分目录分批同步" : "";
+      return `FTP 同步完成：新增 ${result.synced} 张${result.skipped ? `，跳过 ${result.skipped} 个` : ""}${hint}`;
     });
   };
 
@@ -370,7 +379,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     const tagIds = [...ftpTagIds];
     setFtpOpen(false);
     await runAction(async () => {
-      const result = await api.syncSourceFromFtp(dataset.id, { path: "/", recursive: false, filePaths: files, tagIds });
+      const result = await api.syncSourceFromFtp(dataset.id, { path: "/", recursive: false, filePaths: files, tagIds }, handleSyncEvent);
       return `FTP 导入完成：新增 ${result.synced} 张${result.skipped ? `，跳过 ${result.skipped} 个` : ""}`;
     });
   };
@@ -456,6 +465,18 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
       </header>
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <Toast kind="success" message={notice} onClose={() => setNotice("")} />
+      {syncProgress && (
+        <section className="panel sync-progress" role="status">
+          <span className="sync-progress-spin" aria-hidden="true" />
+          <span>
+            {syncProgress.stage === "download"
+              ? `正在从 FTP 下载图片：已获取 ${syncProgress.synced} 张${syncProgress.skipped ? `，跳过 ${syncProgress.skipped} 个` : ""}…`
+              : syncTotal
+                ? `正在导入图片：${syncProgress.synced}/${syncTotal} 张…`
+                : `正在导入图片：已保存 ${syncProgress.synced} 张…`}
+          </span>
+        </section>
+      )}
       <div className="source-sticky">
         <section className="panel source-toolbar">
           <div className="source-toolbar-top">
@@ -572,11 +593,15 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                   <p className="muted">正在读取目录…</p>
                 ) : ftpEntries.length ? (
                   <table className="ftp-table">
+                    <thead>
+                      <tr><th className="ftp-check-col" aria-label="选择" /><th>名称</th><th>大小</th></tr>
+                    </thead>
                     <tbody>
                       {ftpEntries.map((entry) => {
                         if (entry.is_dir) {
                           return (
                             <tr key={entry.path}>
+                              <td className="ftp-check-col" />
                               <td>
                                 <button className="ftp-name dir" onClick={() => void loadFtp(entry.path)} title="打开目录">
                                   <span aria-hidden="true">📁</span><span>{entry.name}</span>
@@ -588,20 +613,30 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                         }
                         const isImage = IMAGE_RE.test(entry.name);
                         const checked = ftpSelected.includes(entry.path);
+                        const toggleSelected = () => setFtpSelected((paths) => (checked ? paths.filter((item) => item !== entry.path) : [...paths, entry.path]));
                         return (
-                          <tr key={entry.path} className={checked ? "selected" : undefined}>
-                            <td>
-                              <label className={`ftp-name${isImage ? "" : " disabled"}`} title={isImage ? undefined : "仅支持 jpg / jpeg / png / bmp / webp 图片"}>
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  disabled={!isImage || busy}
-                                  onChange={() => setFtpSelected((paths) => (checked ? paths.filter((item) => item !== entry.path) : [...paths, entry.path]))}
-                                />
-                                <span aria-hidden="true">📄</span><span>{entry.name}</span>
-                              </label>
+                          <tr
+                            key={entry.path}
+                            className={`ftp-file-row${isImage ? "" : " unsupported"}${checked ? " selected" : ""}`}
+                            onClick={() => {
+                              if (isImage && !busy) toggleSelected();
+                            }}
+                          >
+                            <td className="ftp-check-col">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={!isImage || busy}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={toggleSelected}
+                              />
                             </td>
-                            <td>{formatSize(entry.size)}</td>
+                            <td>
+                              <span className={`ftp-name${isImage ? "" : " disabled"}`} title={isImage ? undefined : "仅支持 jpg / jpeg / png / bmp / webp 图片"}>
+                                <span aria-hidden="true">📄</span><span>{entry.name}</span>
+                              </span>
+                            </td>
+                            <td>{entry.size != null ? formatSize(entry.size) : "—"}</td>
                           </tr>
                         );
                       })}

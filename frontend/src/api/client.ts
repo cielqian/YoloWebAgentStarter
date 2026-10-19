@@ -65,6 +65,9 @@ const json = (body: unknown, method = "POST"): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+export type FtpSyncProgressEvent = { stage: "download" | "save"; synced: number; skipped: number };
+export type FtpSyncResult = { synced: number; skipped: number; truncated: boolean };
+
 export const api = {
   getSystemInfo: () => request<SystemInfo>("/api/system/info"),
   getSamSettings: () => request<SamSettings>("/api/settings/sam"),
@@ -119,16 +122,63 @@ export const api = {
   },
   batchUpdateSourceImageTags: (datasetId: string, imageIds: string[], tagIds: string[], remove = false) =>
     request<{ updated: number }>(`/api/source-datasets/${datasetId}/images/batch-tags`, json({ image_ids: imageIds, tag_ids: tagIds, remove })),
-  syncSourceFromFtp: (datasetId: string, payload: { path: string; recursive: boolean; filePaths?: string[]; tagIds?: string[] }) =>
-    request<{ synced: number; skipped: number }>(
-      `/api/source-datasets/${datasetId}/images/ftp-sync`,
+  syncSourceFromFtp: async (
+    datasetId: string,
+    payload: { path: string; recursive: boolean; filePaths?: string[]; tagIds?: string[] },
+    onEvent?: (event: FtpSyncProgressEvent) => void,
+  ): Promise<FtpSyncResult> => {
+    const response = await fetch(
+      apiUrl(`/api/source-datasets/${datasetId}/images/ftp-sync`),
       json({
         path: payload.path,
         recursive: payload.recursive,
         ...(payload.filePaths?.length ? { file_paths: payload.filePaths } : {}),
         ...(payload.tagIds?.length ? { tag_ids: payload.tagIds } : {}),
-      })
-    ),
+      }),
+    );
+    if (!response.ok || !response.body) {
+      let text = `Request failed (${response.status})`;
+      try {
+        const body = (await response.json()) as { error?: { message?: string } };
+        text = body.error?.message ?? text;
+      } catch {
+        // 服务端未返回 JSON 时保留 HTTP 状态描述。
+      }
+      throw new Error(text);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: FtpSyncResult | undefined;
+    const consume = (block: string) => {
+      const dataLine = block.split("\n").find((line) => line.startsWith("data: "));
+      if (!dataLine) return;
+      const event = JSON.parse(dataLine.slice(6)) as
+        | ({ type: "progress" } & FtpSyncProgressEvent)
+        | ({ type: "done" } & FtpSyncResult)
+        | { type: "error"; message: string };
+      if (event.type === "error") throw new Error(event.message);
+      if (event.type === "done") {
+        result = { synced: event.synced, skipped: event.skipped, truncated: event.truncated };
+        return;
+      }
+      onEvent?.({ stage: event.stage, synced: event.synced, skipped: event.skipped });
+    };
+    for (;;) {
+      const { value, done: finished } = await reader.read();
+      if (finished) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (;;) {
+        const index = buffer.indexOf("\n\n");
+        if (index < 0) break;
+        consume(buffer.slice(0, index));
+        buffer = buffer.slice(index + 2);
+      }
+    }
+    if (buffer.trim()) consume(buffer);
+    if (!result) throw new Error("FTP 同步中断，请重试。");
+    return result;
+  },
   updateSourceImage: (datasetId: string, imageId: string, payload: { file_name?: string; tag_ids?: string[] }) =>
     request<SourceImagePage["items"][number]>(`/api/source-datasets/${datasetId}/images/${imageId}`, json(payload, "PATCH")),
   deleteSourceImage: (datasetId: string, imageId: string) =>

@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import type { ModelVersion } from "../../types";
 import { artifactTagsFor, formatMetric } from "../../models/helpers";
 import { formatRelativeTime } from "../../training/helpers";
@@ -40,7 +41,14 @@ export function ModelLibraryCard({
         : "default";
 
   return (
-    <article className={`premium-card premium-card--${tone}${selected ? " active" : ""}`}>
+    <article
+      className={`premium-card premium-card--${tone}${selected ? " active" : ""}`}
+      onClick={(event: MouseEvent<HTMLElement>) => {
+        // 点卡片任意空白处即勾选；标题、操作按钮和复选框保持各自的交互。
+        if ((event.target as HTMLElement).closest("button, a, input, label")) return;
+        onToggleSelect(model.id);
+      }}
+    >
       <div className="card-header-premium">
         <div className="model-card-badges">
           <span className={`badge-premium badge-${tone === "best" ? "active" : tone === "onnx" ? "onnx" : tone === "archived" ? "archived" : "checkpoint"}`}>

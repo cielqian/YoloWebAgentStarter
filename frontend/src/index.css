@@ -48,6 +48,20 @@ h1, h2, p { margin: 0; }
 .starter-sidebar-version { color: #a1a9b9; font-size: 10px; font-weight: 650; text-align: center; }
 .starter-main { min-width: 0; overflow: clip; }
 
+/* 专注模式（标注页）：隐藏顶栏与菜单栏，收紧留白让画布撑满 */
+.starter-shell.focus-mode .starter-topbar { display: none; }
+.starter-shell.focus-mode .starter-layout { min-height: 100vh; grid-template-columns: minmax(0, 1fr); }
+.starter-shell.focus-mode .starter-sidebar { display: none; }
+@media (min-width: 721px) {
+  .starter-shell.focus-mode .annotation-layout { height: 100dvh; max-width: none; padding: 8px 6px 8px; }
+  .starter-shell.focus-mode .annotation-layout .annotation-head { padding-bottom: 6px; gap: 10px; }
+  .starter-shell.focus-mode .annotation-body { margin-top: 8px; gap: 10px; }
+  .starter-shell.focus-mode .canvas-card { padding: 10px; }
+  .starter-shell.focus-mode .annotation-sidebar { padding: 10px; gap: 12px; }
+  .starter-shell.focus-mode .annotation-image-sidebar { padding: 8px 6px; }
+  .starter-shell.focus-mode .annotation-list-heading { padding-bottom: 8px; }
+}
+
 /* 数据集总览：按 YoloWebAgent 的“列表页 -> 数据集详情”层级重新组织。 */
 .dataset-home-page { width: 100%; max-width: 1760px; margin: 0 auto; padding: 34px 36px 54px; }
 .dataset-home-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 32px; }
@@ -180,6 +194,11 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .annotation-layout .annotation-head h1 { font-size: 17px; }
 .annotation-sidebar { min-height: 0; overflow-y: auto; }
 .annotation-layout .stage-wrap { min-height: 320px; }
+@media (min-width: 721px) {
+  .annotation-layout .annotation-canvas-column { display: flex; flex-direction: column; overflow: hidden; }
+  .annotation-layout .canvas-card { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+  .annotation-layout .stage-wrap { flex: 1 1 auto; min-height: 300px; }
+}
 .annotation-image-sidebar { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-height: 0; overflow: hidden; padding: 14px 10px; }
 .annotation-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 2px 8px 12px; border-bottom: 1px solid #edf0f4; }
 .annotation-list-heading strong { color: #68768d; font-size: 11px; }
@@ -589,6 +608,9 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .source-card > footer { display: flex; gap: 8px; }
 .source-page { display: block; }
 .source-page > .source-grid, .source-page > .source-sticky, .source-page > .source-image-grid, .source-page > .source-pagination { margin-top: 18px; }
+.sync-progress { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding: 12px 16px; color: #536077; font-size: 13px; }
+.sync-progress-spin { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #d7deec; border-top-color: #3157d5; animation: sync-progress-rotate 0.8s linear infinite; }
+@keyframes sync-progress-rotate { to { transform: rotate(360deg); } }
 .source-toolbar { display: grid; gap: 12px; padding: 14px; }
 .source-toolbar-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .source-sticky { position: sticky; top: 62px; z-index: 15; display: grid; gap: 18px; background: #f7f8fb; box-shadow: 0 10px 22px rgba(24, 37, 61, .05); }
@@ -625,14 +647,18 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .ftp-picker { display: grid; gap: 12px; }
 .ftp-picker .ftp-toolbar { padding: 10px 12px; border: 1px solid #edf0f4; border-radius: 8px; }
 .ftp-picker-list { max-height: 360px; overflow: auto; border: 1px solid #edf0f4; border-radius: 8px; background: #fff; }
-.ftp-picker-list .ftp-name { max-width: none; }
+.ftp-picker-list .ftp-name { display: inline-flex; align-items: center; gap: 8px; max-width: none; color: #435068; font-weight: 400; }
 .ftp-picker-tags { padding: 2px 2px 0; }
 .ftp-picker-list > .muted { padding: 20px 12px; text-align: center; }
 .ftp-picker-list .ftp-table td { border-bottom: 1px solid #edf0f4; }
 .ftp-picker-list .ftp-table tr:last-child td { border-bottom: 0; }
 .ftp-picker-list tr.selected td { background: #f5f7ff; }
 .ftp-name.disabled { color: #a8b0c0; cursor: not-allowed; }
-.ftp-name input { margin: 0; }
+.ftp-check-col { width: 34px; }
+.ftp-picker-list .ftp-table tr.ftp-file-row { cursor: pointer; }
+.ftp-picker-list .ftp-table tr.ftp-file-row.unsupported { cursor: not-allowed; }
+.ftp-picker-list .ftp-check-col input { display: block; margin: 0; }
+.ftp-picker-list .ftp-table thead th { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #e2e6ee; }
 .ftp-picker-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .ftp-picker-actions .source-toggle { margin-right: auto; }
 .source-image-card img { width: 100%; height: 140px; border-radius: 10px 10px 0 0; object-fit: cover; background: #f0f2f7; }

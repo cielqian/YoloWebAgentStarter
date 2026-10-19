@@ -16,7 +16,7 @@ vi.mock("../api/client", () => {
     thumbnail_url: `/api/source-datasets/sd-1/images/${id}/thumbnail`,
     created_at: "2026-10-18T07:02:42Z",
   });
-  const ftpEntries = {
+  const ftpEntries: Record<string, { name: string; path: string; is_dir: boolean; size: number | null; modified: string | null }[]> = {
     "/": [
       { name: "cam1", path: "/cam1", is_dir: true, size: null, modified: null },
       { name: "a.png", path: "/a.png", is_dir: false, size: 2048, modified: null },
@@ -157,7 +157,7 @@ describe("DataSourceView FTP picker", () => {
     await act(async () => {});
 
     await clickButton("同步整个文件夹");
-    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/cam1", recursive: true, tagIds: ["stag-a"] });
+    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/cam1", recursive: true, tagIds: ["stag-a"] }, expect.any(Function));
   });
 
   it("imports multiple selected files across folders", async () => {
@@ -169,8 +169,11 @@ describe("DataSourceView FTP picker", () => {
     const checkboxFor = (name: string) =>
       Array.from(container?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
         .find((item) => item.closest("tr")?.textContent?.includes(name));
+    const rowFor = (name: string) =>
+      Array.from(container?.querySelectorAll<HTMLTableRowElement>(".ftp-table tbody tr") ?? [])
+        .find((item) => item.textContent?.includes(name));
     expect(checkboxFor("note.txt")?.disabled).toBe(true);
-    await act(async () => { checkboxFor("a.png")?.click(); });
+    await act(async () => { rowFor("a.png")?.click(); });
     await act(async () => { checkboxFor("b.jpg")?.click(); });
 
     const folder = Array.from(container?.querySelectorAll<HTMLButtonElement>(".ftp-name.dir") ?? []).find((item) => item.textContent?.includes("cam1"));
@@ -179,6 +182,6 @@ describe("DataSourceView FTP picker", () => {
     await act(async () => { checkboxFor("d.png")?.click(); });
 
     await clickButton(/导入所选 3 张/);
-    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/", recursive: false, filePaths: ["/a.png", "/b.jpg", "/cam1/d.png"], tagIds: [] });
+    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/", recursive: false, filePaths: ["/a.png", "/b.jpg", "/cam1/d.png"], tagIds: [] }, expect.any(Function));
   });
 });

@@ -94,3 +94,4 @@ class SourceFtpSyncRequest(BaseModel):
 class SourceFtpSyncResult(BaseModel):
     synced: int
     skipped: int
+    truncated: bool = False

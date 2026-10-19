@@ -485,6 +485,70 @@ def test_sam_uses_configured_ultralytics_model(client, monkeypatch):
     assert suggestion.json()["device"] == "mps"
 
 
+def test_sam_remote_box_prompt_scopes_inference_to_the_box(client, monkeypatch):
+    dataset_id = create_dataset(client, "segment")
+    class_id = client.post(f"/api/datasets/{dataset_id}/classes", json={"name": "truck"}).json()["id"]
+    image = client.post(
+        f"/api/datasets/{dataset_id}/images/upload",
+        files={"files": ("truck.png", png_bytes(), "image/png")},
+    ).json()["items"][0]
+
+    calls: list[tuple[str, str, object]] = []
+
+    def fake_predict(base_url, image_path, prompt_text, box=None):
+        calls.append((base_url, prompt_text, box))
+        return [[(12.0, 12.0), (40.0, 12.0), (40.0, 35.0), (12.0, 35.0)]], 0.87, "remote"
+
+    monkeypatch.setattr("app.sam.service._predict_with_remote", fake_predict)
+    client.app.state.settings = replace(client.app.state.settings, sam_backend="http://sam3.test:8001")
+
+    suggestion = client.post(
+        "/api/sam/predict",
+        json={"image_id": image["id"], "class_id": class_id, "prompt_type": "box", "box": {"x": 10, "y": 12, "width": 30, "height": 25}},
+    )
+    assert suggestion.status_code == 200, suggestion.text
+    payload = suggestion.json()
+    assert payload["backend_used"] == "remote-sam3"
+    assert payload["score"] == 0.87
+    assert payload["polygons"] == [[[12.0, 12.0], [40.0, 12.0], [40.0, 35.0], [12.0, 35.0]]]
+    assert len(calls) == 1
+    base_url, prompt_text, box = calls[0]
+    assert base_url == "http://sam3.test:8001"
+    assert prompt_text == "truck"
+    assert (box.x, box.y, box.width, box.height) == (10, 12, 30, 25)
+
+
+def test_sam_remote_point_prompt_returns_all_instances(client, monkeypatch):
+    dataset_id = create_dataset(client, "segment")
+    class_id = client.post(f"/api/datasets/{dataset_id}/classes", json={"name": "truck"}).json()["id"]
+    image = client.post(
+        f"/api/datasets/{dataset_id}/images/upload",
+        files={"files": ("truck.png", png_bytes(), "image/png")},
+    ).json()["items"][0]
+
+    left = [(5.0, 5.0), (25.0, 5.0), (25.0, 20.0), (5.0, 20.0)]
+    right = [(60.0, 5.0), (80.0, 5.0), (80.0, 20.0), (60.0, 20.0)]
+
+    def fake_predict(base_url, image_path, prompt_text, box=None):
+        assert box is None
+        return [left, right], 0.9, "remote"
+
+    monkeypatch.setattr("app.sam.service._predict_with_remote", fake_predict)
+    client.app.state.settings = replace(client.app.state.settings, sam_backend="http://sam3.test:8001")
+
+    suggestion = client.post(
+        "/api/sam/predict",
+        json={"image_id": image["id"], "class_id": class_id, "prompt_type": "point", "points": [{"x": 15, "y": 10, "label": 1}]},
+    )
+    assert suggestion.status_code == 200, suggestion.text
+    payload = suggestion.json()
+    assert payload["backend_used"] == "remote-sam3"
+    assert payload["polygons"] == [
+        [[5.0, 5.0], [25.0, 5.0], [25.0, 20.0], [5.0, 20.0]],
+        [[60.0, 5.0], [80.0, 5.0], [80.0, 20.0], [60.0, 20.0]],
+    ]
+
+
 def test_scan_path_is_restricted_to_import_root(client, tmp_path):
     dataset_id = create_dataset(client)
     response = client.post(f"/api/datasets/{dataset_id}/images/scan", json={"path": "../", "recursive": True, "split": "train"})

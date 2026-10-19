@@ -158,6 +158,21 @@ describe("AnnotationView persistence", () => {
     expect(onPrevious).toHaveBeenCalledTimes(1);
   });
 
+  it("passes current drafts to next navigation for auto-save", () => {
+    const onNext = vi.fn();
+    act(() => {
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 2 }} image={image} images={[image, secondImage]} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onPrevious={vi.fn()} onNext={onNext} hasPrevious hasNext onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+
+    const row = container?.querySelector<HTMLDivElement>(".shape-row");
+    act(() => row?.click());
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" })));
+
+    const next = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent?.includes("下一张"));
+    act(() => next?.click());
+    expect(onNext).toHaveBeenCalledWith([]);
+  });
+
   it("adds a custom class from the annotation sidebar", async () => {
     const onCreateClass = vi.fn(async () => personClass);
     act(() => {

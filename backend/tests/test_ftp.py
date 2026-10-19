@@ -355,6 +355,27 @@ def test_list_parses_windows_dos_listing(client, fake_ftp, monkeypatch):
     assert entries["midnight.log"]["modified"] == "2025-12-30 00:00"
 
 
+def test_fetch_directory_images_caps_and_reports_truncated(client, fake_ftp):
+    configure(client)
+    fake_ftp.mkd("/cam1")
+    fake_ftp.mkd("/cam2")
+    fake_ftp.storbinary("STOR /cam1/one.png", io.BytesIO(b"a"))
+    fake_ftp.storbinary("STOR /cam1/two.png", io.BytesIO(b"b"))
+    fake_ftp.storbinary("STOR /cam2/three.png", io.BytesIO(b"c"))
+
+    service = FtpService(client.app.state.settings)
+
+    seen: list[int] = []
+    files, truncated = service.fetch_directory_images("/", recursive=True, max_bytes=50, max_files=2, on_progress=seen.append)
+    assert len(files) == 2
+    assert truncated is True
+    assert seen == [1, 2]
+
+    all_files, all_truncated = service.fetch_directory_images("/", recursive=True, max_bytes=50, max_files=5)
+    assert [name for name, _ in all_files] == ["cam1/one.png", "cam1/two.png", "cam2/three.png"]
+    assert all_truncated is False
+
+
 def test_fetch_files_filters_and_downloads(client, fake_ftp):
     configure(client)
     fake_ftp.storbinary("STOR /pic.png", io.BytesIO(b"pngdata"))

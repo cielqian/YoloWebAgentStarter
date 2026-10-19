@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import posixpath
 import re
+from collections.abc import Callable
 from datetime import datetime
 from ftplib import FTP, error_perm, error_temp
 
@@ -99,16 +100,26 @@ class FtpService:
         name = posixpath.basename(target) or "ftp_file"
         return name, buffer.getvalue()
 
-    def fetch_directory_images(self, path: str, *, recursive: bool, max_bytes: int) -> list[tuple[str, bytes]]:
+    def fetch_directory_images(
+        self,
+        path: str,
+        *,
+        recursive: bool,
+        max_bytes: int,
+        max_files: int | None = None,
+        on_progress: Callable[[int], None] | None = None,
+    ) -> tuple[list[tuple[str, bytes]], bool]:
         """Collect readable image files under an FTP directory in one control session.
 
         Oversized or unreadable files are skipped so a single bad file cannot abort the sync.
+        Stops after max_files downloads and returns truncated=True so callers can prompt for batched syncs.
         """
         root = normalize_ftp_path(path)
         collected: list[tuple[str, bytes]] = []
+        truncated = False
         with self._managed_client() as client:
             pending: list[tuple[str, str]] = [("", root)]
-            while pending:
+            while pending and not truncated:
                 relative, current = pending.pop(0)
                 for entry in self._entries(client, current):
                     display = f"{relative}/{entry.name}" if relative else entry.name
@@ -118,12 +129,23 @@ class FtpService:
                         continue
                     if posixpath.splitext(entry.name)[1].lower() not in SUPPORTED_IMAGE_SUFFIXES:
                         continue
+                    if max_files is not None and len(collected) >= max_files:
+                        truncated = True
+                        break
                     data = self._download_limited(client, entry.path, max_bytes)
                     if data is not None:
                         collected.append((display, data))
-        return collected
+                        if on_progress is not None:
+                            on_progress(len(collected))
+        return collected, truncated
 
-    def fetch_files(self, paths: list[str], *, max_bytes: int) -> tuple[list[tuple[str, bytes]], int]:
+    def fetch_files(
+        self,
+        paths: list[str],
+        *,
+        max_bytes: int,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> tuple[list[tuple[str, bytes]], int]:
         """按给定路径清单下载图片文件，返回 (文件名, 内容) 列表和跳过数量（非图片/超限/不可读）。"""
         collected: list[tuple[str, bytes]] = []
         skipped = 0
@@ -138,6 +160,8 @@ class FtpService:
                     skipped += 1
                     continue
                 collected.append((posixpath.basename(path), data))
+                if on_progress is not None:
+                    on_progress(len(collected), skipped)
         return collected, skipped
 
     @staticmethod

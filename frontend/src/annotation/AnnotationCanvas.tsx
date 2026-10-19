@@ -62,6 +62,7 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
   const [selectedBboxId, setSelectedBboxId] = useState<string>();
   const [selectedPolygonId, setSelectedPolygonId] = useState<string>();
   const [displaySize, setDisplaySize] = useState({ width: MAX_WIDTH, height: MAX_HEIGHT });
+  const stageWrapRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState<PanState>();
@@ -74,11 +75,26 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
     const element = new window.Image();
     element.onload = () => {
       setImageElement(element);
-      const ratio = Math.min(MAX_WIDTH / image.width, MAX_HEIGHT / image.height, 1);
-      setDisplaySize({ width: Math.max(1, Math.round(image.width * ratio)), height: Math.max(1, Math.round(image.height * ratio)) });
     };
     element.src = image.file_url.startsWith("http") ? image.file_url : `${(import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000").replace(/\/$/, "")}${image.file_url}`;
   }, [image]);
+
+  // 画布按 stage-wrap 实际可用区域等比缩放，随窗口尺寸自适应（不超过原图尺寸）。
+  useEffect(() => {
+    const wrap = stageWrapRef.current;
+    if (!wrap || !imageElement) return;
+    const fit = () => {
+      const box = wrap.getBoundingClientRect();
+      if (box.width < 10 || box.height < 10) return;
+      const ratio = Math.min(box.width / image.width, box.height / image.height, 1);
+      setDisplaySize({ width: Math.max(1, Math.round(image.width * ratio)), height: Math.max(1, Math.round(image.height * ratio)) });
+    };
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [image, imageElement]);
 
   useEffect(() => {
     setTool(taskTool(taskType));
@@ -292,8 +308,8 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
           <button className="button danger" disabled={!annotations.length} onClick={clearAllDrafts}>清空全部草稿</button>
         </div>
       </div>
-      <p className="hint">Ctrl/⌘ + 滚轮缩放，Ctrl/⌘ + 拖动平移画布。当前类别：{classes.find((item) => item.id === activeClassId)?.name ?? "未选择"}。{samBusy ? `SAM 推理中，已用 ${samElapsed} 秒；远程 SAM3 单次推理一般需要 20~60 秒，完成后会自动生成多边形建议。` : !canAnnotate ? "请先在右侧新增一个类别，再开始绘制。" : taskType === "obb" ? selectedObb ? "已选中 OBB：拖动可移动，四角手柄可缩放，顶部圆形手柄可旋转。" : "拖拽创建 OBB；点击既有框即可选择、旋转、缩放或删除。" : taskType === "detect" && selectedBbox ? "已选中框：拖动可移动，四角手柄可调整大小；BBox 不支持旋转。" : selectedPolygon ? "已选中多边形：拖动顶点调整形状，双击边线添加顶点，双击顶点删除（至少保留 3 个点）；SAM 生成的密集轮廓可先“简化顶点”再微调。" : tool === "select" ? "已退出绘制：点击既有标注可选中并编辑，Ctrl/⌘ 拖动可平移；点选上方工具继续绘制。" : tool === "sam" ? samConfigured ? "拖拽一个提示框，SAM 会返回一个或多个可确认的多边形建议。" : "未配置 SAM：框选只会生成可审阅的矩形建议，不会运行模型推理。" : tool === "sam_point" ? "点击一个前景点，SAM 会返回一个或多个可确认的多边形建议。" : taskType === "segment" && !samConfigured ? "SAM 未配置；可使用 Polygon，或使用仅供审阅的框形建议。" : "坐标以原图像素保存。"}{tool === "polygon" && polygonPoints.length > 0 ? "已放置的顶点可直接拖动调整、双击删除；靠近第一个点点击可自动闭合多边形。" : ""}</p>
-      <div className="stage-wrap">
+      <p className="hint">Ctrl/⌘ + 滚轮缩放，Ctrl/⌘ + 拖动平移画布。当前类别：{classes.find((item) => item.id === activeClassId)?.name ?? "未选择"}。{samBusy ? `SAM 推理中，已用 ${samElapsed} 秒；远程 SAM3 单次推理一般需要 20~60 秒，完成后会自动生成多边形建议。` : !canAnnotate ? "请先在右侧新增一个类别，再开始绘制。" : taskType === "obb" ? selectedObb ? "已选中 OBB：拖动可移动，四角手柄可缩放，顶部圆形手柄可旋转。" : "拖拽创建 OBB；点击既有框即可选择、旋转、缩放或删除。" : taskType === "detect" && selectedBbox ? "已选中框：拖动可移动，四角手柄可调整大小；BBox 不支持旋转。" : selectedPolygon ? "已选中多边形：拖动顶点调整形状，双击边线添加顶点，双击顶点删除（至少保留 3 个点）；SAM 生成的密集轮廓可先“简化顶点”再微调。" : tool === "select" ? "已退出绘制：点击既有标注可选中并编辑，Ctrl/⌘ 拖动可平移；点选上方工具继续绘制。" : tool === "sam" ? samConfigured ? "拖拽一个提示框，SAM 会返回一个或多个可确认的多边形建议。" : "未配置 SAM：框选只会生成可审阅的矩形建议，不会运行模型推理。" : tool === "sam_point" ? "点击图片任意位置触发推理，SAM 会把图中该类别的全部实例生成为多边形建议；只标注单个对象请用 SAM 框选。" : taskType === "segment" && !samConfigured ? "SAM 未配置；可使用 Polygon，或使用仅供审阅的框形建议。" : "坐标以原图像素保存。"}{tool === "polygon" && polygonPoints.length > 0 ? "已放置的顶点可直接拖动调整、双击删除；靠近第一个点点击可自动闭合多边形。" : ""}</p>
+      <div className="stage-wrap" ref={stageWrapRef}>
         {imageElement ? (
           <Stage
             width={displaySize.width}

@@ -9,6 +9,7 @@ interface Props {
   datasetName?: string;
   onNavigate: (section: StarterSection) => void;
   locale?: AppLocale;
+  focusMode?: boolean;
   children: ReactNode;
 }
 
@@ -28,7 +29,7 @@ const navigation: Array<{ id: StarterSection; label: string; icon: ReactNode }> 
  * 社区版工作台外壳。视觉和信息层级参考 YoloWebAgent。
  * Agent MVP 为本地只读助手 + 人工确认提交；不含 Workflow / 无人值守入口。
  */
-export function StarterShell({ active, datasetName, onNavigate, locale = "zh", children }: Props) {
+export function StarterShell({ active, datasetName, onNavigate, locale = "zh", focusMode = false, children }: Props) {
   const text = localeText[locale];
   const labels: Record<StarterSection, string> = {
     workspace: text.datasets,
@@ -42,7 +43,7 @@ export function StarterShell({ active, datasetName, onNavigate, locale = "zh", c
     datasources: text.dataSources,
   };
   return (
-    <div className="starter-shell">
+    <div className={focusMode ? "starter-shell focus-mode" : "starter-shell"}>
       <header className="starter-topbar">
         <button className="starter-topbar-brand" onClick={() => onNavigate("workspace")} aria-label={text.backToDatasets}>
           <span className="starter-topbar-mark">Y</span>
@@ -78,7 +79,7 @@ export function StarterShell({ active, datasetName, onNavigate, locale = "zh", c
 }
 
 function NavigationButton({ item, active, labels, onNavigate }: { item: (typeof navigation)[number]; active: StarterSection; labels: Record<StarterSection, string>; onNavigate: (section: StarterSection) => void }) {
-  return <button className={active === item.id ? "starter-menu-item active" : "starter-menu-item"} onClick={() => onNavigate(item.id)}>
+  return <button className={active === item.id ? "starter-menu-item active" : "starter-menu-item"} title={labels[item.id]} onClick={() => onNavigate(item.id)}>
     {item.icon}<span>{labels[item.id]}</span>
   </button>;
 }

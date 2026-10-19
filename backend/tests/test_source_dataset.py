@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -27,6 +28,14 @@ def upload_image(client: TestClient, dataset_id: str, file_name: str = "a.png") 
     )
     assert response.status_code == 201
     return response.json()
+
+
+def sse_events(response) -> list[dict]:
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = [json.loads(line[len("data: "):]) for line in response.text.splitlines() if line.startswith("data: ")]
+    assert events, "SSE 流没有返回事件"
+    return events
 
 
 def test_source_dataset_crud(client: TestClient) -> None:
@@ -155,19 +164,20 @@ def test_ftp_sync_imports_images(client: TestClient, monkeypatch) -> None:
     dataset = create_dataset(client, "FTP 同步")
     captured: dict = {}
 
-    def fake_fetch(self, path: str, *, recursive: bool, max_bytes: int):
+    def fake_fetch(self, path: str, *, recursive: bool, max_bytes: int, max_files=None, on_progress=None):
         captured["path"] = path
         captured["recursive"] = recursive
-        return [("cam1/frame1.png", png_bytes()), ("cam1/notes.txt", b"skip me")]
+        return [("cam1/frame1.png", png_bytes()), ("cam1/notes.txt", b"skip me")], False
 
     monkeypatch.setattr(ftp_service.FtpService, "fetch_directory_images", fake_fetch)
 
-    response = client.post(
+    events = sse_events(client.post(
         f"/api/source-datasets/{dataset['id']}/images/ftp-sync",
         json={"path": "/remote/cam1", "recursive": False},
-    )
-    assert response.status_code == 200
-    assert response.json() == {"synced": 1, "skipped": 1}
+    ))
+    assert events[0] == {"type": "progress", "stage": "download", "synced": 0, "skipped": 0}
+    assert events[-1] == {"type": "done", "synced": 1, "skipped": 1, "truncated": False}
+    assert any(event["stage"] == "save" for event in events if event["type"] == "progress")
     assert captured == {"path": "/remote/cam1", "recursive": False}
 
     images = client.get(f"/api/source-datasets/{dataset['id']}/images").json()["items"]
@@ -260,19 +270,18 @@ def test_ftp_sync_with_selected_files(client: TestClient, monkeypatch) -> None:
     dataset = create_dataset(client)
     captured: dict = {}
 
-    def fake_fetch_files(self, paths, *, max_bytes):
+    def fake_fetch_files(self, paths, *, max_bytes, on_progress=None):
         captured["paths"] = paths
         captured["max_bytes"] = max_bytes
         return [("one.png", png_bytes()), ("two.png", png_bytes())], 1
 
     monkeypatch.setattr(ftp_service.FtpService, "fetch_files", fake_fetch_files)
 
-    response = client.post(
+    events = sse_events(client.post(
         f"/api/source-datasets/{dataset['id']}/images/ftp-sync",
         json={"path": "/remote", "recursive": False, "file_paths": ["/remote/one.png", "/remote/two.png", "/remote/skip.txt"]},
-    )
-    assert response.status_code == 200
-    assert response.json() == {"synced": 2, "skipped": 1}
+    ))
+    assert events[-1] == {"type": "done", "synced": 2, "skipped": 1, "truncated": False}
     assert captured["paths"] == ["/remote/one.png", "/remote/two.png", "/remote/skip.txt"]
 
     images = client.get(f"/api/source-datasets/{dataset['id']}/images").json()["items"]
@@ -304,13 +313,55 @@ def test_ftp_sync_with_tags(client: TestClient, monkeypatch) -> None:
     monkeypatch.setattr(
         ftp_service.FtpService,
         "fetch_directory_images",
-        lambda self, path, *, recursive, max_bytes: [("frame1.png", png_bytes())],
+        lambda self, path, *, recursive, max_bytes, max_files=None, on_progress=None: ([("frame1.png", png_bytes())], False),
     )
 
-    response = client.post(
+    events = sse_events(client.post(
         f"/api/source-datasets/{dataset['id']}/images/ftp-sync",
         json={"path": "/remote", "recursive": False, "tag_ids": [tag["id"]]},
-    )
-    assert response.status_code == 200, response.text
+    ))
+    assert events[-1] == {"type": "done", "synced": 1, "skipped": 0, "truncated": False}
     item = client.get(f"/api/source-datasets/{dataset['id']}/images").json()["items"][0]
     assert [entry["name"] for entry in item["tags"]] == ["夜间"]
+
+
+def test_ftp_sync_streams_download_and_save_progress(client: TestClient, monkeypatch) -> None:
+    dataset = create_dataset(client, "FTP 进度")
+
+    def fake_fetch(self, path, *, recursive, max_bytes, max_files=None, on_progress=None):
+        files = [(f"img{index}.png", png_bytes()) for index in range(3)]
+        for count in range(1, len(files) + 1):
+            if on_progress is not None:
+                on_progress(count)
+        return files, False
+
+    monkeypatch.setattr(ftp_service.FtpService, "fetch_directory_images", fake_fetch)
+
+    events = sse_events(client.post(
+        f"/api/source-datasets/{dataset['id']}/images/ftp-sync",
+        json={"path": "/remote"},
+    ))
+    downloads = [event["synced"] for event in events if event["type"] == "progress" and event["stage"] == "download"]
+    assert downloads == [0, 1, 2, 3]
+    saves = [event["synced"] for event in events if event["type"] == "progress" and event["stage"] == "save"]
+    assert saves == [1, 2, 3]
+    assert events[-1] == {"type": "done", "synced": 3, "skipped": 0, "truncated": False}
+
+
+def test_ftp_sync_rejects_foreign_tag_before_download(client: TestClient, monkeypatch) -> None:
+    dataset = create_dataset(client)
+    other = create_dataset(client, "另一数据源")
+    foreign = client.post(f"/api/source-datasets/{other['id']}/tags", json={"name": "外来"}).json()
+
+    def fail_fetch(self, *args, **kwargs):
+        raise AssertionError("标签校验失败时不应开始下载")
+
+    monkeypatch.setattr(ftp_service.FtpService, "fetch_directory_images", fail_fetch)
+
+    events = sse_events(client.post(
+        f"/api/source-datasets/{dataset['id']}/images/ftp-sync",
+        json={"path": "/remote", "tag_ids": [foreign["id"]]},
+    ))
+    assert len(events) == 1
+    assert events[0]["type"] == "error"
+    assert events[0]["code"] == "source_tag_not_found"

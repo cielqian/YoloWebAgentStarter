@@ -2,7 +2,7 @@
 
 .models-layout.models-workspace-page {
   width: 100%;
-  max-width: var(--page-content-max-wide, 1440px);
+  max-width: var(--page-content-max-wide, 1760px);
   margin: 0 auto;
   padding: 28px 36px 64px;
 }
@@ -1508,3 +1508,5 @@
     grid-template-columns: 1fr;
   }
 }
+
+.premium-card { cursor: pointer; }

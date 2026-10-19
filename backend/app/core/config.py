@@ -23,6 +23,7 @@ class Settings:
     cors_origins: tuple[str, ...] = ("http://127.0.0.1:5173", "http://localhost:5173")
     max_upload_bytes: int = 50 * 1024 * 1024
     max_video_upload_bytes: int = 2 * 1024 * 1024 * 1024
+    ftp_sync_max_files: int = 500
     max_video_duration_seconds: int = 4 * 60 * 60
     max_video_generated_images: int = 100_000
     max_video_output_bytes: int = 50 * 1024 * 1024 * 1024
@@ -68,6 +69,7 @@ class Settings:
             cors_origins=origins,
             max_upload_bytes=int(os.getenv("YWA_MAX_UPLOAD_MB", "50")) * 1024 * 1024,
             max_video_upload_bytes=int(os.getenv("YWA_MAX_VIDEO_UPLOAD_MB", "2048")) * 1024 * 1024,
+            ftp_sync_max_files=int(os.getenv("YWA_FTP_SYNC_MAX_FILES", "500")),
             max_video_duration_seconds=int(os.getenv("YWA_MAX_VIDEO_DURATION_SECONDS", str(4 * 60 * 60))),
             max_video_generated_images=int(os.getenv("YWA_MAX_VIDEO_GENERATED_IMAGES", "100000")),
             max_video_output_bytes=int(os.getenv("YWA_MAX_VIDEO_OUTPUT_MB", str(50 * 1024))) * 1024 * 1024,
@@ -79,7 +81,7 @@ class Settings:
             sam_model=os.getenv("YWA_SAM_MODEL") or None,
             sam_device=os.getenv("YWA_SAM_DEVICE", "auto"),
             sam_img_size=int(os.getenv("YWA_SAM_IMGSZ", "1024")),
-            sam_backend=(os.getenv("YWA_SAM_BACKEND") or "http://10.12.42.125:7860").strip().rstrip("/") or None,
+            sam_backend=(os.getenv("YWA_SAM_BACKEND") or "http://10.12.42.125:8001").strip().rstrip("/") or None,
             agent_provider=(os.getenv("YWA_AGENT_PROVIDER") or "mock").strip().lower() or "mock",
             agent_model=(os.getenv("YWA_AGENT_MODEL") or "mock-model").strip() or "mock-model",
             agent_api_key=(os.getenv("YWA_AGENT_API_KEY") or "").strip() or None,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -118,6 +119,7 @@ def add_images(
     uploads: list[tuple[str, bytes]],
     source_type: str,
     tag_ids: list[str] | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> SourceUploadResult:
     get_source_dataset(session, source_dataset_id)
     tags = _owned_tags(session, source_dataset_id, tag_ids) if tag_ids else []
@@ -128,6 +130,8 @@ def add_images(
             staged.append(_stage_image(session, storage, source_dataset_id, file_name, content, source_type, settings.max_upload_bytes))
         except ValidationError:
             invalid += 1
+        if on_progress is not None:
+            on_progress(len(staged), invalid)
     for image in staged:
         image.tags = list(tags)
     try:
@@ -150,17 +154,43 @@ def sync_from_ftp(
     settings: Settings,
     source_dataset_id: str,
     payload: SourceFtpSyncRequest,
+    on_event: Callable[[dict], None] | None = None,
 ) -> SourceFtpSyncResult:
+    def emit(event: dict) -> None:
+        if on_event is not None:
+            on_event(event)
+
     tag_ids = payload.tag_ids or None
+    get_source_dataset(session, source_dataset_id)
+    # 先校验标签再下载，避免整目录拉完后才发现标签不合法。
+    if tag_ids:
+        _owned_tags(session, source_dataset_id, tag_ids)
+    emit({"type": "progress", "stage": "download", "synced": 0, "skipped": 0})
     if payload.file_paths:
-        files, skipped = FtpService(settings).fetch_files(payload.file_paths, max_bytes=settings.max_upload_bytes)
-        result = add_images(session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids)
+        files, skipped = FtpService(settings).fetch_files(
+            payload.file_paths,
+            max_bytes=settings.max_upload_bytes,
+            on_progress=lambda synced, skipped_so_far: emit(
+                {"type": "progress", "stage": "download", "synced": synced, "skipped": skipped_so_far}
+            ),
+        )
+        result = add_images(
+            session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids,
+            on_progress=lambda saved, invalid: emit({"type": "progress", "stage": "save", "synced": saved, "skipped": invalid}),
+        )
         return SourceFtpSyncResult(synced=result.imported, skipped=result.invalid + skipped)
-    files = FtpService(settings).fetch_directory_images(
-        payload.path, recursive=payload.recursive, max_bytes=settings.max_upload_bytes
+    files, truncated = FtpService(settings).fetch_directory_images(
+        payload.path,
+        recursive=payload.recursive,
+        max_bytes=settings.max_upload_bytes,
+        max_files=settings.ftp_sync_max_files,
+        on_progress=lambda synced: emit({"type": "progress", "stage": "download", "synced": synced, "skipped": 0}),
     )
-    result = add_images(session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids)
-    return SourceFtpSyncResult(synced=result.imported, skipped=result.invalid)
+    result = add_images(
+        session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids,
+        on_progress=lambda saved, invalid: emit({"type": "progress", "stage": "save", "synced": saved, "skipped": invalid}),
+    )
+    return SourceFtpSyncResult(synced=result.imported, skipped=result.invalid, truncated=truncated)
 
 
 def list_images(

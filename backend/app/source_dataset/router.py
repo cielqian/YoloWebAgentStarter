@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+import queue
+import threading
+
 from pathlib import Path
 
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_session, get_settings, get_storage
@@ -20,7 +24,6 @@ from app.source_dataset.schemas import (
     SourceDatasetOut,
     SourceDatasetUpdate,
     SourceFtpSyncRequest,
-    SourceFtpSyncResult,
     SourceImageOut,
     SourceImagePage,
     SourceImageUpdate,
@@ -118,15 +121,42 @@ def batch_add_tags(
     return SourceBatchTagsResult(updated=updated)
 
 
-@router.post("/{source_dataset_id}/images/ftp-sync", response_model=SourceFtpSyncResult)
+@router.post("/{source_dataset_id}/images/ftp-sync")
 def ftp_sync(
     source_dataset_id: str,
     payload: SourceFtpSyncRequest,
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
-) -> SourceFtpSyncResult:
-    return service.sync_from_ftp(session, storage, settings, source_dataset_id, payload)
+) -> StreamingResponse:
+    # 流开始前先校验数据集存在，让 404 等错误仍走标准 JSON 错误响应。
+    service.get_source_dataset(session, source_dataset_id)
+
+    def encode(event: dict) -> str:
+        return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    def stream():
+        events: queue.Queue[dict | None] = queue.Queue()
+
+        # 同步是阻塞调用，进度回调无法直接 yield，用工作线程 + 队列转发给流。
+        def run() -> None:
+            try:
+                result = service.sync_from_ftp(session, storage, settings, source_dataset_id, payload, on_event=events.put)
+                events.put({"type": "done", **result.model_dump()})
+            except Exception as exc:
+                events.put({
+                    "type": "error",
+                    "code": getattr(exc, "error_code", "ftp_sync_failed"),
+                    "message": getattr(exc, "message", str(exc)),
+                })
+            finally:
+                events.put(None)
+
+        threading.Thread(target=run, daemon=True).start()
+        while (event := events.get()) is not None:
+            yield encode(event)
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
 @router.patch("/{source_dataset_id}/images/{image_id}", response_model=SourceImageOut)
