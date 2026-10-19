@@ -43,7 +43,7 @@ def test_agent_session_message_run_persists_with_mock_provider(client):
     assert len(body["messages"]) == 2
     assert body["messages"][0]["role"] == "user"
     assert body["messages"][1]["role"] == "assistant"
-    assert "标注任务" in body["messages"][1]["content"] or "Agent" in body["messages"][1]["content"]
+    assert "数据集" in body["messages"][1]["content"] or "Agent" in body["messages"][1]["content"]
 
     detail = client.get(f"/api/agent/sessions/{session_id}")
     assert detail.status_code == 200, detail.text

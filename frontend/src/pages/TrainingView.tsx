@@ -19,7 +19,7 @@ import {
   type TrainingFormState,
 } from "../training/helpers";
 import { formatEtaSeconds, parseTrainingLogs } from "../training/trainingLogParse";
-import type { Dataset, TaskType, TrainingDevice, TrainingLog, TrainingSummary, TrainingTask } from "../types";
+import type { Dataset, TaskType, TrainingDevice, TrainingLog, TrainingNodeStatus, TrainingSummary, TrainingTask } from "../types";
 
 interface Props {
   datasets: Dataset[];
@@ -41,6 +41,7 @@ export function TrainingView({ datasets, dataset, onDatasetChange, onOpenModels,
   const [form, setForm] = useState<TrainingFormState>(() => defaultForm(dataset.task_type));
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [devices, setDevices] = useState<TrainingDevice[]>([]);
+  const [nodes, setNodes] = useState<TrainingNodeStatus[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -96,9 +97,10 @@ export function TrainingView({ datasets, dataset, onDatasetChange, onOpenModels,
     if (typeof api.listTrainingDevices !== "function") return;
     api.listTrainingDevices().then((result) => {
       setDevices(result.items);
+      setNodes(result.nodes ?? []);
       setForm((prev) => {
         if (prev.gpu_ids.length) return prev;
-        const first = result.items.find((item) => item.type === "cuda" && item.index !== null);
+        const first = result.items.find((item) => item.type === "cuda" && item.index !== null && !item.node_id);
         return first ? { ...prev, gpu_ids: [String(first.index)] } : prev;
       });
     }).catch((reason) => setError(errorMessage(reason)));
@@ -297,7 +299,7 @@ export function TrainingView({ datasets, dataset, onDatasetChange, onOpenModels,
             <p className="muted">复用已保存的 train / val / test split，在本机运行 Ultralytics YOLO。</p>
           </div>
         </div>
-        <div className="training-page-header-meta" aria-label="当前标注任务摘要">
+        <div className="training-page-header-meta" aria-label="当前数据集摘要">
           <span className="training-chip"><strong>{dataset.name}</strong></span>
           <span className="training-chip">{dataset.image_count} 张图片</span>
           <span className="training-chip">{dataset.class_count} 类</span>
@@ -312,7 +314,7 @@ export function TrainingView({ datasets, dataset, onDatasetChange, onOpenModels,
           <span>{error}</span>
           {splitRecovery && (
             <div className="training-split-recovery">
-              <small>这会重新分配该标注任务全部图片的持久化 split；请确认当前 split 不需要保留。</small>
+              <small>这会重新分配该数据集全部图片的持久化 split；请确认当前 split 不需要保留。</small>
               <button className="button" disabled={busy || dataset.image_count < 2} onClick={() => void autoSplitForTraining()}>
                 自动分配 train / val
               </button>
@@ -399,6 +401,7 @@ export function TrainingView({ datasets, dataset, onDatasetChange, onOpenModels,
           dataset={dataset}
           form={form}
           devices={devices}
+          nodes={nodes}
           busy={busy}
           canSubmit={canSubmit}
           riskText={riskText}

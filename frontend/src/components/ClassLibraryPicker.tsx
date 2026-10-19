@@ -5,7 +5,7 @@ import type { ClassLabel, ClassTemplate } from "../types";
 
 function errorMessage(reason: unknown): string { return reason instanceof Error ? reason.message : "操作失败，请检查后端服务。"; }
 
-/** 标注页“从类别库选择”弹窗：勾选模板后导入当前标注任务，同名类别会被跳过。 */
+/** 标注页“从类别库选择”弹窗：勾选模板后导入当前数据集，同名类别会被跳过。 */
 export function ClassLibraryPicker(props: {
   existingClasses: ClassLabel[];
   isSegment: boolean;
@@ -54,7 +54,7 @@ export function ClassLibraryPicker(props: {
 
   return <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={props.onClose}>
     <section className="dataset-dialog data-exchange-dialog class-library-picker" role="dialog" aria-modal="true" aria-labelledby="class-library-picker-title" onMouseDown={(event) => event.stopPropagation()}>
-      <header className="data-exchange-header"><div><span className="eyebrow">CLASS LIBRARY</span><h2 id="class-library-picker-title">从类别库导入类别</h2><p>勾选后导入当前标注任务{props.isSegment ? "，实例分割任务会一并带入 SAM3 英文提示词" : ""}。</p></div><button className="icon-button" onClick={props.onClose} aria-label="关闭">×</button></header>
+      <header className="data-exchange-header"><div><span className="eyebrow">CLASS LIBRARY</span><h2 id="class-library-picker-title">从类别库导入类别</h2><p>勾选后导入当前数据集{props.isSegment ? "，实例分割任务会一并带入 SAM3 英文提示词" : ""}。</p></div><button className="icon-button" onClick={props.onClose} aria-label="关闭">×</button></header>
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <div className="class-library-picker-list">
         {templates === undefined ? <p className="muted">加载中…</p> : !templates.length ? <p className="annotation-empty-state">类别库还是空的，请先在左侧“类别库”页面维护类别。</p> : templates.map((template) => {

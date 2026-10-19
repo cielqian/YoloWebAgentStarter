@@ -67,7 +67,7 @@ vi.mock("../api/agent", () => {
         session_id: "asess_1",
         run_id: "arun_1",
         role: "user" as const,
-        content: "列出有哪些标注任务",
+        content: "列出有哪些数据集",
         sequence: 1,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z",
@@ -77,7 +77,7 @@ vi.mock("../api/agent", () => {
         session_id: "asess_1",
         run_id: "arun_1",
         role: "assistant" as const,
-        content: "标注任务列表：agent-demo (ds_abc)",
+        content: "数据集列表：agent-demo (ds_abc)",
         sequence: 2,
         created_at: "2026-01-01T00:00:01Z",
         updated_at: "2026-01-01T00:00:01Z",
@@ -333,11 +333,11 @@ describe("AgentView", () => {
 
     expect(container?.textContent).toContain("智能体");
     expect(container?.textContent).toContain("质量问答");
-    expect(container?.textContent).toContain("列出有哪些标注任务");
+    expect(container?.textContent).toContain("列出有哪些数据集");
     expect(container?.textContent).toContain("全局概览");
-    expect(container?.textContent).toContain("标注任务: agent-demo");
+    expect(container?.textContent).toContain("数据集: agent-demo");
 
-    const jump = Array.from(container?.querySelectorAll("button") ?? []).find((button) => button.textContent?.includes("标注任务: agent-demo"));
+    const jump = Array.from(container?.querySelectorAll("button") ?? []).find((button) => button.textContent?.includes("数据集: agent-demo"));
     expect(jump).toBeTruthy();
     await act(async () => { jump?.click(); });
     expect(onOpenDataset).toHaveBeenCalledWith("ds_abc");
@@ -358,8 +358,8 @@ describe("AgentView", () => {
     });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(container?.textContent).toContain("当前标注任务上下文");
-    const quickPrompt = Array.from(container?.querySelectorAll("button") ?? []).find((button) => button.textContent === "标注任务质量报告");
+    expect(container?.textContent).toContain("当前数据集上下文");
+    const quickPrompt = Array.from(container?.querySelectorAll("button") ?? []).find((button) => button.textContent === "数据集质量报告");
     expect(quickPrompt).toBeTruthy();
     await act(async () => { quickPrompt?.click(); });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
@@ -429,7 +429,7 @@ describe("AgentView", () => {
   it("shows progress and allows cancellation after asynchronous submission", async () => {
     const { agentApi } = await import("../api/agent");
     const baseline = await agentApi.getSession("asess_1");
-    const user = { ...baseline.messages[0], id: "amsg_async", run_id: "arun_async", content: "查看标注任务", sequence: 3 };
+    const user = { ...baseline.messages[0], id: "amsg_async", run_id: "arun_async", content: "查看数据集", sequence: 3 };
     const pending = { ...baseline.runs[0], id: "arun_async", status: "pending" as const, messages: [user], tool_calls: [] };
     vi.mocked(agentApi.getSession).mockResolvedValueOnce(baseline);
     vi.mocked(agentApi.postMessage).mockResolvedValueOnce(pending);
@@ -438,7 +438,7 @@ describe("AgentView", () => {
       await act(async () => {
         root?.render(<AgentView locale="zh" onOpenDataset={vi.fn()} onOpenTrainingTask={vi.fn()} onOpenModel={vi.fn()} />);
       });
-      const prompt = Array.from(container?.querySelectorAll("button") ?? []).find((button) => button.textContent === "列出标注任务");
+      const prompt = Array.from(container?.querySelectorAll("button") ?? []).find((button) => button.textContent === "列出数据集");
       await act(async () => { prompt?.click(); });
       expect(container?.querySelector('[role="status"]')?.textContent).toContain("等待运行");
       let cancel = Array.from(container?.querySelectorAll("button") ?? []).find((button) => button.textContent === "取消运行");
@@ -452,7 +452,7 @@ describe("AgentView", () => {
       expect(agentApi.getRun).toHaveBeenLastCalledWith("arun_async");
       expect(agentApi.getSession).not.toHaveBeenCalled();
       expect(agentApi.listSessionPage).not.toHaveBeenCalled();
-      expect(container?.querySelector('[role="status"]')?.textContent).toContain("正在调用：标注任务概览");
+      expect(container?.querySelector('[role="status"]')?.textContent).toContain("正在调用：数据集概览");
       const cancelled = { ...running, status: "cancelled" as const, stop_requested: true };
       vi.mocked(agentApi.cancelRun).mockResolvedValueOnce(cancelled);
       cancel = Array.from(container?.querySelectorAll("button") ?? []).find((button) => button.textContent === "取消运行");
@@ -817,7 +817,7 @@ describe("AgentView", () => {
           session_id: "asess_1",
           run_id: "arun_fail",
           role: "user",
-          content: "列出标注任务",
+          content: "列出数据集",
           sequence: 1,
           created_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",

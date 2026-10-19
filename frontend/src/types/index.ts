@@ -9,6 +9,22 @@ export interface Dataset {
   image_count: number;
   annotated_image_count: number;
   class_count: number;
+  latest_version_number?: number | null;
+  active_version_number?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatasetVersion {
+  id: string;
+  dataset_id: string;
+  version_number: number;
+  note: string | null;
+  is_active: boolean;
+  image_count: number;
+  annotation_count: number;
+  class_count: number;
+  has_pending_changes?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -24,7 +40,7 @@ export interface ClassLabel {
   updated_at: string;
 }
 
-/** 全局类别库条目：标注任务可从中导入类别，实例分割任务会带上 SAM3 英文提示词。 */
+/** 全局类别库条目：数据集可从中导入类别，实例分割任务会带上 SAM3 英文提示词。 */
 export interface ClassTemplate {
   id: string;
   name: string;
@@ -212,12 +228,40 @@ export interface FtpListResult {
 
 export interface TrainingDevice {
   id: string;
-  type: "cpu" | "mps" | "cuda";
+  type: "cpu" | "mps" | "cuda" | "npu";
   name: string;
   index: number | null;
   memory_total_mb: number | null;
   memory_free_mb: number | null;
   status: "available" | "idle" | "busy" | "unavailable" | "unknown";
+  node_id?: string | null;
+  node_name?: string | null;
+}
+
+export interface TrainingNodeStatus {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  status: "online" | "offline";
+  device_count: number;
+  error: string | null;
+}
+
+export interface TrainingNode {
+  id: string;
+  name: string;
+  url: string;
+  token_configured: boolean;
+  enabled: boolean;
+}
+
+export interface TrainingNodeTestResult {
+  ok: boolean;
+  message: string;
+  hostname: string | null;
+  device_count: number;
+  device_types: string[];
 }
 
 export interface RuntimeLogResponse {

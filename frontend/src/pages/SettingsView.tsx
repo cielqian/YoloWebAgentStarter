@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import { api } from "../api/client";
 import type { AppLocale } from "../locale";
 import { saveLocale } from "../locale";
-import type { FtpSettings, LLMAuthScheme, LLMSettings, SamSettings, TrainingDevice } from "../types";
+import type { FtpSettings, LLMAuthScheme, LLMSettings, SamSettings, TrainingDevice, TrainingNode, TrainingNodeStatus } from "../types";
 
-export type SettingsTab = "llm" | "sam" | "ftp" | "language";
+export type SettingsTab = "llm" | "sam" | "ftp" | "nodes" | "language";
 
 type LlmFormState = LLMSettings & { api_key: string };
 
@@ -85,10 +85,30 @@ const copy = {
     savedFtp: "FTP 设置已保存",
     ftpConfigured: "已配置",
     ftpNotConfigured: "未配置",
+    nodesNav: "训练节点",
+    nodesNavDescription: "远程算力服务器巡检",
+    nodesTitle: "训练节点",
+    nodesSubtitle: "注册部署了 compute-agent 的算力服务器（GPU / NPU）。「训练」页会展示其设备巡检结果。配置保存在 settings.json。",
+    nodeName: "节点名称",
+    nodeUrl: "Agent 地址",
+    nodeUrlHint: "例如 http://10.12.42.125:8010，需先在服务器上启动 compute-agent。",
+    nodeToken: "共享密钥",
+    nodeTokenHint: "agent 启动时设置的 token；未设置则留空。仅保存，不回显。",
+    nodeAdd: "添加节点",
+    nodeTest: "测试连接",
+    nodeTesting: "测试中…",
+    nodeDelete: "删除",
+    nodeConfirmDelete: "确认删除",
+    nodesEmpty: "还没有注册训练节点。在算力服务器上启动 compute-agent 后，在这里添加。",
+    nodesRegistered: "{count} 个节点",
+    nodeAdded: "节点已添加",
+    nodeDeleted: "节点已删除",
+    nodeTestOk: "连接成功：{hostname} · {count} 个设备（{types}）",
+    nodeTestFail: "连接失败",
     ready: "已配置真实模型",
     fallbackReady: "使用框形建议",
     disabledStatus: "已关闭",
-    samFooter: "SAM 只对 segment 标注任务开放。",
+    samFooter: "SAM 只对 segment 数据集开放。",
     languageTitle: "语言设置",
     languageSubtitle: "切换工作台界面语言。偏好只保存在本机浏览器中。",
     displayLanguage: "显示语言",
@@ -187,6 +207,26 @@ const copy = {
     savedFtp: "FTP settings saved",
     ftpConfigured: "Configured",
     ftpNotConfigured: "Not configured",
+    nodesNav: "Training nodes",
+    nodesNavDescription: "Remote compute servers",
+    nodesTitle: "Training nodes",
+    nodesSubtitle: "Register servers running compute-agent (GPU / NPU). Their devices show up on the Training page. Stored in settings.json.",
+    nodeName: "Node name",
+    nodeUrl: "Agent URL",
+    nodeUrlHint: "e.g. http://10.12.42.125:8010 — start compute-agent on the server first.",
+    nodeToken: "Shared token",
+    nodeTokenHint: "The token the agent was started with; leave empty if none. Stored, never echoed.",
+    nodeAdd: "Add node",
+    nodeTest: "Test connection",
+    nodeTesting: "Testing…",
+    nodeDelete: "Delete",
+    nodeConfirmDelete: "Confirm delete",
+    nodesEmpty: "No training nodes yet. Start compute-agent on a server and add it here.",
+    nodesRegistered: "{count} nodes",
+    nodeAdded: "Node added",
+    nodeDeleted: "Node deleted",
+    nodeTestOk: "Connected: {hostname} · {count} devices ({types})",
+    nodeTestFail: "Connection failed",
     ready: "Real model configured",
     fallbackReady: "Box proposals",
     disabledStatus: "Disabled",
@@ -309,6 +349,14 @@ export function SettingsView({
             onClick={() => onTabChange("ftp")}
           />
           <SettingsNavigationItem
+            active={tab === "nodes"}
+            icon={<NodeIcon />}
+            title={text.nodesNav}
+            description={text.nodesNavDescription}
+            badge={text.local}
+            onClick={() => onTabChange("nodes")}
+          />
+          <SettingsNavigationItem
             active={tab === "language"}
             icon={<LanguageIcon />}
             title={text.languageNav}
@@ -323,6 +371,8 @@ export function SettingsView({
             <SamSettingsPanel locale={locale} text={text} onSamSettingsChange={onSamSettingsChange} />
           ) : tab === "ftp" ? (
             <FtpSettingsPanel text={text} />
+          ) : tab === "nodes" ? (
+            <TrainingNodesPanel text={text} />
           ) : (
             <LanguageSettingsPanel locale={locale} text={text} onLocaleChange={onLocaleChange} />
           )}
@@ -867,6 +917,153 @@ function FtpSettingsPanel({ text }: { text: SettingsText }) {
   );
 }
 
+type NodeFormState = { name: string; url: string; token: string };
+
+function TrainingNodesPanel({ text }: { text: SettingsText }) {
+  const [form, setForm] = useState<NodeFormState>({ name: "", url: "", token: "" });
+  const [nodes, setNodes] = useState<TrainingNode[]>([]);
+  const [statuses, setStatuses] = useState<Record<string, TrainingNodeStatus>>({});
+  const [busy, setBusy] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string>();
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const reload = async () => {
+    try {
+      const [list, devices] = await Promise.all([api.listTrainingNodes(), api.listTrainingDevices()]);
+      setNodes(list);
+      setStatuses(Object.fromEntries((devices.nodes ?? []).map((node) => [node.id, node])));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : text.error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const add = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!form.name.trim() || !form.url.trim()) return;
+    setAdding(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.createTrainingNode(form.name.trim(), form.url.trim(), form.token.trim());
+      setForm({ name: "", url: "", token: "" });
+      setMessage(text.nodeAdded);
+      await reload();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : text.error);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const test = async () => {
+    if (!form.url.trim()) return;
+    setTesting(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api.testTrainingNode(form.url.trim(), form.token.trim());
+      if (result.ok) {
+        setMessage(text.nodeTestOk.replace("{hostname}", result.hostname ?? "-").replace("{count}", String(result.device_count)).replace("{types}", result.device_types.join(", ")));
+      } else {
+        setError(`${text.nodeTestFail}：${result.message}`);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : text.error);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const remove = async (nodeId: string) => {
+    setError("");
+    setMessage("");
+    try {
+      await api.deleteTrainingNode(nodeId);
+      setConfirmDeleteId(undefined);
+      setMessage(text.nodeDeleted);
+      await reload();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : text.error);
+    }
+  };
+
+  if (busy) return <section className="panel settings-card"><p className="muted settings-loading">{text.loading}</p></section>;
+  return (
+    <section className="panel settings-card">
+      <header className="settings-card-head">
+        <div className="settings-card-icon"><NodeIcon /></div>
+        <div>
+          <h2>{text.nodesTitle}</h2>
+          <p>{text.nodesSubtitle}</p>
+        </div>
+        <span className={`settings-status ${nodes.length ? "ready" : "disabled"}`}>
+          {nodes.length ? text.nodesRegistered.replace("{count}", String(nodes.length)) : text.ftpNotConfigured}
+        </span>
+      </header>
+      {error ? <div className="validation invalid"><span>{error}</span></div> : null}
+      {message ? <div className="validation valid"><span>{message}</span></div> : null}
+      {nodes.length ? (
+        <div className="training-node-list">
+          {nodes.map((node) => {
+            const status = statuses[node.id];
+            return (
+              <div key={node.id} className="training-node-row">
+                <div className="training-node-meta">
+                  <strong>{node.name}</strong>
+                  <small>{node.url}{node.token_configured ? " · 🔑" : ""}</small>
+                  {status ? (
+                    <small>{status.status === "online" ? `在线 · ${status.device_count} 个设备` : `不可达：${status.error ?? ""}`}</small>
+                  ) : null}
+                </div>
+                <span className={`status ${status?.status === "online" ? "ready" : "disabled"}`}>
+                  {status?.status === "online" ? "在线" : "离线"}
+                </span>
+                {confirmDeleteId === node.id ? (
+                  <button type="button" className="button danger" onClick={() => void remove(node.id)}>{text.nodeConfirmDelete}</button>
+                ) : (
+                  <button type="button" className="button" onClick={() => setConfirmDeleteId(node.id)}>{text.nodeDelete}</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="muted">{text.nodesEmpty}</p>
+      )}
+      <form className="training-node-form" onSubmit={(event) => void add(event)}>
+        <label>
+          <span>{text.nodeName}</span>
+          <input value={form.name} placeholder="gpu-server-01" onChange={(event) => setForm({ ...form, name: event.target.value })} />
+        </label>
+        <label>
+          <span>{text.nodeUrl}</span>
+          <input value={form.url} placeholder="http://10.12.42.125:8010" onChange={(event) => setForm({ ...form, url: event.target.value })} />
+          <small>{text.nodeUrlHint}</small>
+        </label>
+        <label>
+          <span>{text.nodeToken}</span>
+          <input type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} />
+          <small>{text.nodeTokenHint}</small>
+        </label>
+        <div className="training-node-form-actions">
+          <button type="button" className="button" disabled={testing || !form.url.trim()} onClick={() => void test()}>{testing ? text.nodeTesting : text.nodeTest}</button>
+          <button type="submit" className="button primary" disabled={adding || !form.name.trim() || !form.url.trim()}>{text.nodeAdd}</button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 function LanguageSettingsPanel({
   locale,
   text,
@@ -899,6 +1096,14 @@ function LanguageSettingsPanel({
       </div>
       <footer className="settings-footer"><span>{text.applied}</span></footer>
     </section>
+  );
+}
+
+function NodeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5h16v6H4zM4 13h16v6H4zM7.5 8h.01M7.5 16h.01" />
+    </svg>
   );
 }
 

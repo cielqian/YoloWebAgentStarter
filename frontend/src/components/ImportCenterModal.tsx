@@ -43,7 +43,7 @@ export function ImportCenterModal({
 
   return <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="dataset-dialog data-exchange-dialog import-center-dialog" role="dialog" aria-modal="true" aria-labelledby="import-center-title" onMouseDown={(event) => event.stopPropagation()}>
-      <header className="data-exchange-header"><div><span className="eyebrow">IMPORT CENTER</span><h2 id="import-center-title">导入数据</h2><p>选择数据来源。视频会先预检，确认后才在本机后台抽帧创建标注任务。</p></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></header>
+      <header className="data-exchange-header"><div><span className="eyebrow">IMPORT CENTER</span><h2 id="import-center-title">导入数据</h2><p>选择数据来源。视频会先预检，确认后才在本机后台抽帧创建数据集。</p></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></header>
       <div className="import-center-layout">
         <aside className="import-center-sources" aria-label="导入来源">
           <span className="exchange-label">导入来源</span>
@@ -52,7 +52,7 @@ export function ImportCenterModal({
         <section className="import-center-panel">
           {source === "video" ? <VideoImportContent onClose={onClose} onCompleted={onVideoCompleted} /> : <>
             <div className="import-center-step"><span>1</span><div><strong>{activeSource.title}</strong><p>{activeSource.detail}</p></div></div>
-            <div className="exchange-fields"><label>标注任务名称<input value={name} placeholder="例如：road-signs" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option></select></label></div>
+            <div className="exchange-fields"><label>数据集名称<input value={name} placeholder="例如：road-signs" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option></select></label></div>
             <input ref={inputRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => { setArchive(event.target.files?.[0]); event.currentTarget.value = ""; }} />
             <button type="button" className={dragging ? "exchange-dropzone dragging" : "exchange-dropzone"} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); setArchive(event.dataTransfer.files[0]); }}><span className="exchange-dropzone-icon">⇧</span><strong>{archive?.name ?? `拖放或选择 ${source.toUpperCase()} ZIP 文件`}</strong><small>{archive ? `${Math.ceil(archive.size / 1024)} KB · 已准备导入` : source === "yolo" ? "ZIP 内应包含 data.yaml、images 和 labels" : "ZIP 内应包含 annotations.json/instances.json 与 images"}</small></button>
             <footer className="data-exchange-footer"><span>文件仅导入到本机受管数据目录。</span><div><button className="button" onClick={onClose}>取消</button><button className="button primary" disabled={busy || !name.trim() || !archive} onClick={importArchive}>开始导入</button></div></footer>

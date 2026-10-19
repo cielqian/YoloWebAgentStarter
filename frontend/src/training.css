@@ -2353,3 +2353,18 @@
     grid-template-columns: 1fr;
   }
 }
+
+.training-remote-compute-card { margin-top: 12px; }
+.training-remote-node-offline { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid #f0d9a8; border-radius: 9px; background: #fff8e8; font-size: 12px; }
+.training-remote-node-offline strong { color: #7a5200; }
+.training-remote-node-offline span { color: #8994a8; }
+.training-remote-node-offline em { font-style: normal; color: #b4232a; }
+.training-remote-node-group { display: grid; gap: 8px; margin-top: 10px; }
+.training-remote-node-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.training-remote-node-head strong { color: #3b4860; }
+.training-remote-device-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.training-remote-device-card { display: grid; gap: 3px; padding: 9px 11px; border: 1px solid #e4e9f2; border-radius: 9px; background: #fbfcfe; font-size: 12px; }
+.training-remote-device-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.training-remote-device-top strong { color: #3157d5; font-size: 12px; }
+.training-remote-device-top span { color: #23733a; }
+.training-remote-device-card > span { color: #536077; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

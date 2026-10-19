@@ -58,7 +58,7 @@ class MockAgentProvider:
 
         if structured.risks:
             return ProviderResponse(
-                content="；".join(structured.risks) + " 可改为查询标注任务/训练/模型，或说明要创建的受管任务。",
+                content="；".join(structured.risks) + " 可改为查询数据集/训练/模型，或说明要创建的受管任务。",
                 tool_calls=[],
             )
 
@@ -66,8 +66,8 @@ class MockAgentProvider:
         if len(preview) > 120:
             preview = preview[:117] + "..."
         content = (
-            "我是本地 Agent 助手：可查询标注任务/训练/模型，也可在人工确认后提交训练、评估或自动标注任务。"
-            "请提供标注任务/训练/模型 ID，或说明要查询/创建的操作。"
+            "我是本地 Agent 助手：可查询数据集/训练/模型，也可在人工确认后提交训练、评估或自动标注任务。"
+            "请提供数据集/训练/模型 ID，或说明要查询/创建的操作。"
             f" 收到：{preview or '(empty)'}"
         )
         return ProviderResponse(content=content, tool_calls=[])

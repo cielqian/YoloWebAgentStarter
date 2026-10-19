@@ -13,7 +13,7 @@ export function saveLocale(locale: AppLocale): void {
 
 export const localeText = {
   zh: {
-    datasets: "标注任务",
+    datasets: "数据集",
     dataSources: "数据源",
     classLibrary: "类别库",
     ftp: "FTP 管理",
@@ -28,14 +28,14 @@ export const localeText = {
     community: "社区版",
     settingsGroup: "设置",
     workspaceGroup: "工作区",
-    backToDatasets: "返回标注任务",
+    backToDatasets: "返回数据集",
     mainNav: "主导航",
-    currentDataset: "当前标注任务：",
+    currentDataset: "当前数据集：",
     sidebarNoteTitle: "本地 YOLO 工作台",
     sidebarNoteBody: "数据和模型仅保存在此设备。",
   },
   en: {
-    datasets: "Annotation tasks",
+    datasets: "Datasets",
     dataSources: "Data sources",
     classLibrary: "Classes",
     ftp: "FTP",
@@ -50,9 +50,9 @@ export const localeText = {
     community: "Community",
     settingsGroup: "Settings",
     workspaceGroup: "Workspace",
-    backToDatasets: "Back to annotation tasks",
+    backToDatasets: "Back to datasets",
     mainNav: "Main navigation",
-    currentDataset: "Current annotation task: ",
+    currentDataset: "Current dataset: ",
     sidebarNoteTitle: "Local YOLO workspace",
     sidebarNoteBody: "Data and models stay on this device.",
   },

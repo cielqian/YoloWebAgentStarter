@@ -423,17 +423,17 @@ class RuleBasedPlanner:
 
     def _description(self, tool_name: str) -> str:
         return {
-            "global_summary": "汇总本地标注任务、训练与模型概况",
-            "dataset_summary": "查看标注任务概览",
-            "dataset_quality_report": "生成标注任务质量报告",
-            "dataset_validate": "校验标注任务是否存在阻塞训练的问题",
+            "global_summary": "汇总本地数据集、训练与模型概况",
+            "dataset_summary": "查看数据集概览",
+            "dataset_quality_report": "生成数据集质量报告",
+            "dataset_validate": "校验数据集是否存在阻塞训练的问题",
             "training_list": "列出训练任务",
             "training_status": "查看训练任务状态",
             "training_latest_result": "查看最近一次训练结果",
             "training_logs": "查看训练日志尾部",
             "model_list": "列出受管模型",
             "model_get": "查看受管模型详情",
-            "model_latest_for_dataset": "查看标注任务最近的受管 PT",
+            "model_latest_for_dataset": "查看数据集最近的受管 PT",
             "model_compare": "对比两个受管模型指标",
             "evaluation_list": "列出模型评估记录",
             "evaluation_summary": "查看评估摘要",

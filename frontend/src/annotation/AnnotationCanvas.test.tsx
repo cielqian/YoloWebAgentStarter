@@ -122,7 +122,7 @@ describe("AnnotationCanvas OBB interactions", () => {
   it("selects an existing OBB, applies a transform and angle edit, then removes it", async () => {
     const onChange = vi.fn();
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[annotation]} activeClassId="cls-1" taskType="obb" onChange={onChange} />);
+      root?.render(<AnnotationCanvas image={image} annotations={[annotation]} activeClassId="cls-1" taskType="obb" onChange={onChange} />);
     });
 
     const select = container?.querySelector<HTMLButtonElement>("[aria-label='选择 OBB']");
@@ -155,7 +155,7 @@ describe("AnnotationCanvas OBB interactions", () => {
   it("does not cancel a normal drag when pointerup precedes mouseup", async () => {
     const onChange = vi.fn();
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[]} activeClassId="cls-1" taskType="detect" onChange={onChange} />);
+      root?.render(<AnnotationCanvas image={image} annotations={[]} activeClassId="cls-1" taskType="detect" onChange={onChange} />);
     });
 
     const stage = container?.querySelector<HTMLDivElement>("[data-testid='stage']") as (HTMLDivElement & { getStage?: () => unknown; getClassName?: () => string; getPointerPosition?: () => { x: number; y: number } }) | null;
@@ -178,7 +178,7 @@ describe("AnnotationCanvas OBB interactions", () => {
     const onChange = vi.fn();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[annotation]} activeClassId="cls-1" taskType="obb" onChange={onChange} />);
+      root?.render(<AnnotationCanvas image={image} annotations={[annotation]} activeClassId="cls-1" taskType="obb" onChange={onChange} />);
     });
 
     const clear = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "清空全部草稿");
@@ -191,7 +191,7 @@ describe("AnnotationCanvas OBB interactions", () => {
   it("blocks drawing until a class is selected", async () => {
     const onChange = vi.fn();
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={[]} annotations={[]} activeClassId="" taskType="detect" onChange={onChange} />);
+      root?.render(<AnnotationCanvas image={image} annotations={[]} activeClassId="" taskType="detect" onChange={onChange} />);
     });
 
     const stage = container?.querySelector<HTMLDivElement>("[data-testid='stage']") as (HTMLDivElement & { getStage?: () => unknown; getClassName?: () => string; getPointerPosition?: () => { x: number; y: number } }) | null;
@@ -208,7 +208,7 @@ describe("AnnotationCanvas OBB interactions", () => {
   it("zooms with ctrl+wheel, pans with ctrl+drag, and keeps drawn coordinates in image space", async () => {
     const onChange = vi.fn();
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[]} activeClassId="cls-1" taskType="detect" onChange={onChange} />);
+      root?.render(<AnnotationCanvas image={image} annotations={[]} activeClassId="cls-1" taskType="detect" onChange={onChange} />);
     });
 
     const stage = container?.querySelector<HTMLDivElement>("[data-testid='stage']") as (HTMLDivElement & { getStage?: () => unknown; getClassName?: () => string; getPointerPosition?: () => { x: number; y: number } }) | null;
@@ -255,7 +255,7 @@ describe("AnnotationCanvas OBB interactions", () => {
     const polygonAnnotation: Annotation = { ...annotation, id: "ann-poly", type: "polygon", bbox: null, obb: null, polygon: [[10, 10], [50, 10], [50, 40], [10, 40], [20, 30]] };
     const onChange = vi.fn();
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[polygonAnnotation]} activeClassId="cls-1" taskType="segment" onChange={onChange} selectedAnnotationId="ann-poly" />);
+      root?.render(<AnnotationCanvas image={image} annotations={[polygonAnnotation]} activeClassId="cls-1" taskType="segment" onChange={onChange} selectedAnnotationId="ann-poly" />);
     });
 
     expect(container?.textContent).toContain("已选中多边形");
@@ -272,7 +272,7 @@ describe("AnnotationCanvas OBB interactions", () => {
     // 只剩 3 个点时拒绝继续删除
     const calls = onChange.mock.calls.length;
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[{ ...polygonAnnotation, polygon: [[10, 10], [50, 10], [50, 40]] }]} activeClassId="cls-1" taskType="segment" onChange={onChange} selectedAnnotationId="ann-poly" />);
+      root?.render(<AnnotationCanvas image={image} annotations={[{ ...polygonAnnotation, polygon: [[10, 10], [50, 10], [50, 40]] }]} activeClassId="cls-1" taskType="segment" onChange={onChange} selectedAnnotationId="ann-poly" />);
     });
     act(() => container?.querySelectorAll<HTMLButtonElement>("[aria-label='删除顶点']")[1]?.click());
     expect(onChange).toHaveBeenCalledTimes(calls);
@@ -281,7 +281,7 @@ describe("AnnotationCanvas OBB interactions", () => {
   it("adjusts placed vertices while drawing a polygon", async () => {
     const onChange = vi.fn();
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[]} activeClassId="cls-1" taskType="segment" onChange={onChange} />);
+      root?.render(<AnnotationCanvas image={image} annotations={[]} activeClassId="cls-1" taskType="segment" onChange={onChange} />);
     });
 
     const stage = container?.querySelector<HTMLDivElement>("[data-testid='stage']") as (HTMLDivElement & { getStage?: () => unknown; getClassName?: () => string; getPointerPosition?: () => { x: number; y: number } }) | null;
@@ -316,7 +316,7 @@ describe("AnnotationCanvas OBB interactions", () => {
   it("closes the polygon automatically when clicking near the first vertex", async () => {
     const onChange = vi.fn();
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[]} activeClassId="cls-1" taskType="segment" onChange={onChange} />);
+      root?.render(<AnnotationCanvas image={image} annotations={[]} activeClassId="cls-1" taskType="segment" onChange={onChange} />);
     });
 
     const stage = container?.querySelector<HTMLDivElement>("[data-testid='stage']") as (HTMLDivElement & { getStage?: () => unknown; getClassName?: () => string; getPointerPosition?: () => { x: number; y: number } }) | null;
@@ -350,7 +350,7 @@ describe("AnnotationCanvas OBB interactions", () => {
     const polygonAnnotation: Annotation = { ...annotation, id: "ann-poly", type: "polygon", bbox: null, obb: null, polygon: [[10, 10], [50, 10], [50, 40]] };
     const onChange = vi.fn();
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[polygonAnnotation]} activeClassId="cls-1" taskType="segment" onChange={onChange} selectedAnnotationId="ann-poly" />);
+      root?.render(<AnnotationCanvas image={image} annotations={[polygonAnnotation]} activeClassId="cls-1" taskType="segment" onChange={onChange} selectedAnnotationId="ann-poly" />);
     });
 
     // 双击边线：点击 (30,15) 投影到第一条边 (10,10)-(50,10) 的 (30,10)
@@ -360,7 +360,7 @@ describe("AnnotationCanvas OBB interactions", () => {
     // 简化顶点：默认 2px 容差抽稀密集轮廓
     const dense: Annotation = { ...polygonAnnotation, polygon: [[0, 0], [5, 0], [10, 0], [15, 0], [20, 0], [20, 20], [10, 22], [0, 20]] };
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[dense]} activeClassId="cls-1" taskType="segment" onChange={onChange} selectedAnnotationId="ann-poly" />);
+      root?.render(<AnnotationCanvas image={image} annotations={[dense]} activeClassId="cls-1" taskType="segment" onChange={onChange} selectedAnnotationId="ann-poly" />);
     });
     const simplify = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "简化顶点");
     act(() => simplify?.click());
@@ -375,7 +375,7 @@ describe("AnnotationCanvas SAM tool reset and mask panning", () => {
   it("returns to the neutral tool after one SAM point request", async () => {
     const onSamPoints = vi.fn(async () => undefined);
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[]} activeClassId="cls-1" taskType="segment" onChange={vi.fn()} onSamPoints={onSamPoints} samCapabilities={capabilities} />);
+      root?.render(<AnnotationCanvas image={image} annotations={[]} activeClassId="cls-1" taskType="segment" onChange={vi.fn()} onSamPoints={onSamPoints} samCapabilities={capabilities} />);
     });
 
     const samButton = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "SAM 点选");
@@ -399,7 +399,7 @@ describe("AnnotationCanvas SAM tool reset and mask panning", () => {
   it("pans with ctrl+drag started on a mask without selecting it", async () => {
     const onChange = vi.fn();
     await act(async () => {
-      root?.render(<AnnotationCanvas image={image} classes={classes} annotations={[polygonAnnotation]} activeClassId="cls-1" taskType="segment" onChange={onChange} />);
+      root?.render(<AnnotationCanvas image={image} annotations={[polygonAnnotation]} activeClassId="cls-1" taskType="segment" onChange={onChange} />);
     });
 
     const stage = container?.querySelector<HTMLDivElement>("[data-testid='stage']") as (HTMLDivElement & { getStage?: () => unknown; getClassName?: () => string; getPointerPosition?: () => { x: number; y: number } }) | null;

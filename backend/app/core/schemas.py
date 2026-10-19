@@ -46,8 +46,57 @@ class DatasetResponse(ORMModel):
     image_count: int
     annotated_image_count: int
     class_count: int
+    latest_version_number: int | None = None
+    active_version_number: int | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class DatasetVersionCreate(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("note")
+    @classmethod
+    def strip_note(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+
+class DatasetVersionResponse(ORMModel):
+    id: str
+    dataset_id: str
+    version_number: int
+    note: str | None
+    is_active: bool
+    image_count: int
+    annotation_count: int
+    class_count: int
+    has_pending_changes: bool | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DatasetVersionActivateResponse(BaseModel):
+    version: DatasetVersionResponse
+    restored_images: int
+    skipped_images: int
+
+
+class DatasetVersionCloneCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    version_id: str | None = None
+
+    @field_validator("name", "description")
+    @classmethod
+    def strip_fields(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+
+class DatasetVersionCloneResponse(BaseModel):
+    dataset: DatasetResponse
+    imported_images: int
+    imported_annotations: int
+    skipped_images: int
 
 
 class ClassLabelCreate(BaseModel):

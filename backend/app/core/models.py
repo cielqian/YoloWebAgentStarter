@@ -32,6 +32,7 @@ class Dataset(Base, TimestampMixin):
     training_tasks: Mapped[list["TrainingTask"]] = relationship(back_populates="dataset", cascade="all, delete-orphan")
     auto_annotation_tasks: Mapped[list["AutoAnnotationTask"]] = relationship(back_populates="dataset", cascade="all, delete-orphan")
     model_versions: Mapped[list["ModelVersion"]] = relationship(back_populates="dataset")
+    versions: Mapped[list["DatasetVersion"]] = relationship(back_populates="dataset", cascade="all, delete-orphan")
 
 
 class ClassLabel(Base, TimestampMixin):
@@ -122,6 +123,28 @@ class VideoImportTask(Base, TimestampMixin):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class DatasetVersion(Base, TimestampMixin):
+    """Immutable snapshot of a dataset's classes, images, and annotations.
+
+    The snapshot payload lives in a JSON file under the dataset directory;
+    activating a version rewrites the live workspace tables from that file.
+    """
+
+    __tablename__ = "dataset_versions"
+    __table_args__ = (UniqueConstraint("dataset_id", "version_number", name="uq_dataset_version_number"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True, nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    image_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    annotation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    class_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    dataset: Mapped[Dataset] = relationship(back_populates="versions")
+
+
 class Annotation(Base, TimestampMixin):
     __tablename__ = "annotations"
     __table_args__ = (CheckConstraint("type IN ('bbox', 'polygon', 'obb', 'classify')", name="ck_annotation_type"),)
@@ -187,6 +210,7 @@ class TrainingTask(Base, TimestampMixin):
     img_size: Mapped[int] = mapped_column(Integer, nullable=False)
     batch_size: Mapped[int] = mapped_column(Integer, nullable=False)
     device: Mapped[str] = mapped_column(String(64), nullable=False)
+    node_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     workers: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     val_ratio: Mapped[float] = mapped_column(Float, default=0.2, nullable=False)
     seed: Mapped[int] = mapped_column(Integer, default=42, nullable=False)

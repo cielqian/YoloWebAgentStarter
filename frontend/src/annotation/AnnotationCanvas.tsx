@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage, Transformer } from "react-konva";
-import type { Annotation, BBox, ClassLabel, ImageItem, OBB, SamCapabilities, TaskType } from "../types";
+import type { Annotation, BBox, ImageItem, OBB, SamCapabilities, TaskType } from "../types";
 import { clamp, clampBBoxToImage, clampOBBToImage, MIN_SHAPE_SIZE, nearestEdgeOnPolygon, normalizeAngle, normalizeBBox, simplifyPolygon, toOriginalPoint } from "../utils/geometry";
 
 export type AnnotationDraft = {
@@ -17,7 +17,6 @@ export type AnnotationDraft = {
 
 interface Props {
   image: ImageItem;
-  classes: ClassLabel[];
   annotations: Annotation[];
   activeClassId: string;
   selectedAnnotationId?: string | null;
@@ -30,6 +29,8 @@ interface Props {
   samCapabilities?: SamCapabilities;
   /** 仅影响画布渲染（查看辅助），不会从草稿数据中移除。 */
   hiddenAnnotationIds?: Set<string>;
+  /** 只读模式（激活历史版本）：禁止绘制与编辑，仅查看；平移缩放仍可用。 */
+  readOnly?: boolean;
 }
 
 const MAX_WIDTH = 900;
@@ -49,7 +50,7 @@ function panModifierActive(event: { ctrlKey?: boolean; metaKey?: boolean }): boo
   return Boolean(event.ctrlKey || event.metaKey);
 }
 
-export function AnnotationCanvas({ image, classes, annotations, activeClassId, selectedAnnotationId, onSelectAnnotation, taskType, onChange, onSamBox, onSamPoints, samBusy = false, samCapabilities, hiddenAnnotationIds }: Props) {
+export function AnnotationCanvas({ image, annotations, activeClassId, selectedAnnotationId, onSelectAnnotation, taskType, onChange, onSamBox, onSamPoints, samBusy = false, samCapabilities, hiddenAnnotationIds, readOnly = false }: Props) {
   const [imageElement, setImageElement] = useState<HTMLImageElement>();
   const [tool, setTool] = useState<DrawingTool>(() => taskTool(taskType));
   const [dragStart, setDragStart] = useState<[number, number]>();
@@ -135,7 +136,7 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
 
   useEffect(() => {
     const node = selectedObb ? obbRefs.current[selectedObb.id] : selectedBbox ? bboxRefs.current[selectedBbox.id] : null;
-    transformerRef.current?.nodes(node ? [node] : []);
+    transformerRef.current?.nodes(!readOnly && node ? [node] : []);
     transformerRef.current?.getLayer()?.batchDraw();
   }, [annotations, selectedBbox, selectedObb, hiddenAnnotationIds]);
 
@@ -277,7 +278,7 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
   };
   const samConfigured = samCapabilities?.model_configured ?? false;
   const pointPromptAvailable = samCapabilities?.point_prompt_available ?? false;
-  const canAnnotate = Boolean(activeClassId);
+  const canAnnotate = Boolean(activeClassId) && !readOnly;
   const selectedAngle = selectedObb?.obb?.angle ?? angle;
   const draftObb = dragStart && dragEnd && tool === "obb" ? normalizeBBox(dragStart, dragEnd) : undefined;
   const [samElapsed, setSamElapsed] = useState(0);
@@ -291,24 +292,52 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
     const timer = window.setInterval(() => setSamElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
     return () => window.clearInterval(timer);
   }, [samBusy]);
+  const guide = readOnly
+    ? "只读模式：仅可查看，无法绘制或编辑。"
+    : samBusy
+      ? `SAM 推理中，已用 ${samElapsed} 秒；远程 SAM3 单次推理一般需要 20~60 秒，完成后会自动生成多边形建议。`
+      : !canAnnotate
+        ? "请先在右侧新增一个类别，再开始绘制。"
+        : taskType === "obb"
+          ? selectedObb ? "已选中 OBB：拖动可移动，四角手柄可缩放，顶部圆形手柄可旋转。" : "拖拽创建 OBB；点击既有框即可选择、旋转、缩放或删除。"
+          : taskType === "detect" && selectedBbox
+            ? "已选中框：拖动可移动，四角手柄可调整大小；BBox 不支持旋转。"
+            : selectedPolygon
+              ? "已选中多边形：拖动顶点调整形状，双击边线添加顶点，双击顶点删除（至少保留 3 个点）；SAM 生成的密集轮廓可先“简化顶点”再微调。"
+              : tool === "select"
+                ? "已退出绘制：点击既有标注可选中并编辑；点选上方工具继续绘制。"
+                : tool === "sam"
+                  ? samConfigured ? "拖拽一个提示框，SAM 会返回一个或多个可确认的多边形建议。" : "未配置 SAM：框选只会生成可审阅的矩形建议，不会运行模型推理。"
+                  : tool === "sam_point"
+                    ? "点击图片任意位置触发推理，SAM 会把图中该类别的全部实例生成为多边形建议；只标注单个对象请用 SAM 框选。"
+                    : taskType === "segment" && !samConfigured ? "SAM 未配置；可使用 Polygon，或使用仅供审阅的框形建议。" : "";
+  const polygonTip = tool === "polygon" && polygonPoints.length > 0 ? "已放置的顶点可直接拖动调整、双击删除；靠近第一个点点击可自动闭合多边形。" : "";
 
   return (
     <section className="canvas-card">
       <div className="canvas-toolbar">
-        <div>
-          <span className="eyebrow">ANNOTATION</span>
-          <h2>{image.file_name}</h2>
-        </div>
         <div className="tool-group">
           {taskType === "detect" && <button className={tool === "bbox" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("bbox"); setPolygonPoints([]); }}>BBox</button>}
           {taskType === "segment" && <><button className={tool === "polygon" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("polygon"); setDragStart(undefined); }}>Polygon</button><button className={`button${tool === "sam" ? " active" : ""}${samBusy ? " sam-busy" : ""}`} disabled={!canAnnotate || samBusy || !samCapabilities?.box_prompt_available} onClick={() => { setTool("sam"); setPolygonPoints([]); }}>{samBusy ? `推理中 ${samElapsed}s…` : samConfigured ? "SAM 框选" : "框形建议"}</button><button className={`button${tool === "sam_point" ? " active" : ""}${samBusy ? " sam-busy" : ""}`} disabled={!canAnnotate || samBusy || !pointPromptAvailable} title={pointPromptAvailable ? undefined : "配置 YWA_SAM_MODEL 后可用"} onClick={() => { setTool("sam_point"); setPolygonPoints([]); }}>{samBusy ? `推理中 ${samElapsed}s…` : pointPromptAvailable ? "SAM 点选" : "SAM 点选（需配置）"}</button></>}
-          {taskType === "obb" && <><button className={tool === "obb" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("obb"); setPolygonPoints([]); }}>OBB</button><label className="angle-input">角度<input aria-label="OBB angle" type="number" value={selectedAngle} onChange={(event) => { const nextAngle = Number(event.target.value); if (!Number.isFinite(nextAngle)) return; if (selectedObb?.obb) replaceObb(selectedObb.id, { ...toStageObb(selectedObb.obb), angle: nextAngle }); else setAngle(nextAngle); }} /></label>{selectedObb && <button className="button danger" onClick={removeSelectedObb}>删除所选 OBB</button>}</>}
+          {taskType === "obb" && <><button className={tool === "obb" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("obb"); setPolygonPoints([]); }}>OBB</button><label className="angle-input">角度<input aria-label="OBB angle" type="number" value={selectedAngle} disabled={readOnly} onChange={(event) => { const nextAngle = Number(event.target.value); if (!Number.isFinite(nextAngle)) return; if (selectedObb?.obb) replaceObb(selectedObb.id, { ...toStageObb(selectedObb.obb), angle: nextAngle }); else setAngle(nextAngle); }} /></label>{selectedObb && <button className="button danger" disabled={readOnly} onClick={removeSelectedObb}>删除所选 OBB</button>}</>}
           {tool === "polygon" && <button className="button primary" disabled={!canAnnotate} onClick={finishPolygon}>完成多边形</button>}
-          {selectedPolygon && <><select aria-label="简化精度" className="simplify-tolerance" value={simplifyTolerance} onChange={(event) => setSimplifyTolerance(Number(event.target.value))}><option value={1}>1px</option><option value={2}>2px</option><option value={4}>4px</option><option value={8}>8px</option></select><button className="button" onClick={simplifySelectedPolygon}>简化顶点</button></>}
-          <button className="button danger" disabled={!annotations.length} onClick={clearAllDrafts}>清空全部草稿</button>
+          {selectedPolygon && <><select aria-label="简化精度" className="simplify-tolerance" value={simplifyTolerance} onChange={(event) => setSimplifyTolerance(Number(event.target.value))}><option value={1}>1px</option><option value={2}>2px</option><option value={4}>4px</option><option value={8}>8px</option></select><button className="button" disabled={readOnly} onClick={simplifySelectedPolygon}>简化顶点</button></>}
+          <button className="button danger" disabled={!annotations.length || readOnly} onClick={clearAllDrafts}>清空全部草稿</button>
         </div>
       </div>
-      <p className="hint">Ctrl/⌘ + 滚轮缩放，Ctrl/⌘ + 拖动平移画布。当前类别：{classes.find((item) => item.id === activeClassId)?.name ?? "未选择"}。{samBusy ? `SAM 推理中，已用 ${samElapsed} 秒；远程 SAM3 单次推理一般需要 20~60 秒，完成后会自动生成多边形建议。` : !canAnnotate ? "请先在右侧新增一个类别，再开始绘制。" : taskType === "obb" ? selectedObb ? "已选中 OBB：拖动可移动，四角手柄可缩放，顶部圆形手柄可旋转。" : "拖拽创建 OBB；点击既有框即可选择、旋转、缩放或删除。" : taskType === "detect" && selectedBbox ? "已选中框：拖动可移动，四角手柄可调整大小；BBox 不支持旋转。" : selectedPolygon ? "已选中多边形：拖动顶点调整形状，双击边线添加顶点，双击顶点删除（至少保留 3 个点）；SAM 生成的密集轮廓可先“简化顶点”再微调。" : tool === "select" ? "已退出绘制：点击既有标注可选中并编辑，Ctrl/⌘ 拖动可平移；点选上方工具继续绘制。" : tool === "sam" ? samConfigured ? "拖拽一个提示框，SAM 会返回一个或多个可确认的多边形建议。" : "未配置 SAM：框选只会生成可审阅的矩形建议，不会运行模型推理。" : tool === "sam_point" ? "点击图片任意位置触发推理，SAM 会把图中该类别的全部实例生成为多边形建议；只标注单个对象请用 SAM 框选。" : taskType === "segment" && !samConfigured ? "SAM 未配置；可使用 Polygon，或使用仅供审阅的框形建议。" : "坐标以原图像素保存。"}{tool === "polygon" && polygonPoints.length > 0 ? "已放置的顶点可直接拖动调整、双击删除；靠近第一个点点击可自动闭合多边形。" : ""}</p>
+      <p className="hint interaction-summary" aria-label="交互说明">
+        <span><b>Ctrl/⌘ + 滚轮</b>缩放</span>
+        <span><b>Ctrl/⌘ + 拖动</b>平移</span>
+        <span><b>← / →</b>切换图片（→ 保存并下一张）</span>
+        <span><b>⌘/Ctrl + S</b>保存标注</span>
+        <span><b>Esc</b>取消选中 / 退出专注</span>
+      </p>
+      {(guide || polygonTip) && (
+        <p className="hint interaction-guide">
+          {guide}
+          {polygonTip}
+        </p>
+      )}
       <div className="stage-wrap" ref={stageWrapRef}>
         {imageElement ? (
           <Stage
@@ -326,7 +355,7 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
                 setDragEnd(undefined);
                 return;
               }
-              if (tool === "select" || !activeClassId) return;
+              if (readOnly || tool === "select" || !activeClassId) return;
               const point = pointer(event);
               if (!point) return;
               if (tool !== "polygon" && !["Stage", "Layer"].includes(event.target.getClassName())) return;
@@ -402,7 +431,7 @@ export function AnnotationCanvas({ image, classes, annotations, activeClassId, s
           >
             <Layer x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom}>
               <KonvaImage image={imageElement} width={displaySize.width} height={displaySize.height} listening={false} />
-              {annotations.filter((annotation) => !hiddenAnnotationIds?.has(annotation.id)).map((annotation) => annotation.type === "obb" && annotation.obb ? <EditableObb key={annotation.id} annotation={annotation} stageObb={toStageObb(annotation.obb)} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { obbRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedObbId(annotation.id); setSelectedBboxId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier} onChange={(updated) => replaceObb(annotation.id, updated)} /> : annotation.type === "bbox" && annotation.bbox ? <EditableBbox key={annotation.id} annotation={annotation} scale={scale} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { bboxRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedBboxId(annotation.id); setSelectedObbId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier} onChange={(updated) => replaceBbox(annotation.id, updated)} /> : annotation.type === "polygon" && annotation.polygon && annotation.id === selectedPolygon?.id ? <EditablePolygon key={annotation.id} annotation={annotation} scale={scale} zoom={zoom} onSelect={() => { setSelectedPolygonId(annotation.id); setSelectedObbId(undefined); setSelectedBboxId(undefined); onSelectAnnotation?.(annotation.id); }} onMoveVertex={(index, point) => movePolygonVertex(annotation.id, index, point)} onDeleteVertex={(index) => deletePolygonVertex(annotation.id, index)} onInsertVertex={(point) => insertPolygonVertex(annotation.id, point)} panModifier={panModifier} /> : <AnnotationShape key={annotation.id} annotation={annotation} scale={scale} onSelect={() => { setSelectedPolygonId(annotation.type === "polygon" ? annotation.id : undefined); onSelectAnnotation?.(annotation.id); }} />)}
+              {annotations.filter((annotation) => !hiddenAnnotationIds?.has(annotation.id)).map((annotation) => annotation.type === "obb" && annotation.obb ? <EditableObb key={annotation.id} annotation={annotation} stageObb={toStageObb(annotation.obb)} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { obbRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedObbId(annotation.id); setSelectedBboxId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier || readOnly} onChange={(updated) => replaceObb(annotation.id, updated)} /> : annotation.type === "bbox" && annotation.bbox ? <EditableBbox key={annotation.id} annotation={annotation} scale={scale} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { bboxRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedBboxId(annotation.id); setSelectedObbId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier || readOnly} onChange={(updated) => replaceBbox(annotation.id, updated)} /> : annotation.type === "polygon" && annotation.polygon && annotation.id === selectedPolygon?.id ? <EditablePolygon key={annotation.id} annotation={annotation} scale={scale} zoom={zoom} onSelect={() => { setSelectedPolygonId(annotation.id); setSelectedObbId(undefined); setSelectedBboxId(undefined); onSelectAnnotation?.(annotation.id); }} onMoveVertex={(index, point) => movePolygonVertex(annotation.id, index, point)} onDeleteVertex={(index) => deletePolygonVertex(annotation.id, index)} onInsertVertex={(point) => insertPolygonVertex(annotation.id, point)} panModifier={panModifier || readOnly} /> : <AnnotationShape key={annotation.id} annotation={annotation} scale={scale} onSelect={() => { setSelectedPolygonId(annotation.type === "polygon" ? annotation.id : undefined); onSelectAnnotation?.(annotation.id); }} />)}
               {dragStart && dragEnd && tool !== "obb" && <Rect {...displayBox(normalizeBBox(dragStart, dragEnd))} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
               {draftObb && <Rect x={draftObb.x + draftObb.width / 2} y={draftObb.y + draftObb.height / 2} width={draftObb.width} height={draftObb.height} offsetX={draftObb.width / 2} offsetY={draftObb.height / 2} rotation={angle} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
               {polygonPoints.length > 0 && <Line points={polygonPoints.flat()} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} closed={false} dash={[6, 4]} />}

@@ -13,7 +13,7 @@ from app.class_library.service import import_templates_into_dataset, update_clas
 from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationError
 from app.core.ids import new_id
-from app.core.models import Annotation, ClassLabel, Dataset, ImageItem
+from app.core.models import Annotation, ClassLabel, Dataset, DatasetVersion, ImageItem
 from app.core.schemas import (
     AnnotationResponse,
     AutoSplitRequest,
@@ -24,6 +24,11 @@ from app.core.schemas import (
     DatasetDetailResponse,
     DatasetResponse,
     DatasetUpdate,
+    DatasetVersionActivateResponse,
+    DatasetVersionCloneCreate,
+    DatasetVersionCloneResponse,
+    DatasetVersionCreate,
+    DatasetVersionResponse,
     DuplicateReport,
     ImageItemResponse,
     ImagePage,
@@ -72,13 +77,32 @@ from app.dataset.service import (
     update_dataset,
 )
 from app.dataset.validation import validate_dataset
+from app.dataset.versions import (
+    activate_version as activate_dataset_version,
+    clone_version as clone_dataset_version,
+    create_version as create_dataset_version,
+    delete_version as delete_dataset_version,
+    ensure_editable,
+    list_versions as list_dataset_versions,
+    workspace_counts,
+)
 
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 file_router = APIRouter(prefix="/images", tags=["images"])
 
 
-def _dataset_response(dataset: Dataset, *, annotated_image_count: int = 0) -> DatasetResponse:
+def require_editable(dataset_id: str, session: Session = Depends(get_session)) -> None:
+    ensure_editable(session, dataset_id)
+
+
+def _dataset_response(
+    dataset: Dataset,
+    *,
+    annotated_image_count: int = 0,
+    latest_version_number: int | None = None,
+    active_version_number: int | None = None,
+) -> DatasetResponse:
     return DatasetResponse(
         id=dataset.id,
         name=dataset.name,
@@ -87,6 +111,8 @@ def _dataset_response(dataset: Dataset, *, annotated_image_count: int = 0) -> Da
         image_count=dataset.image_count,
         annotated_image_count=annotated_image_count,
         class_count=dataset.class_count,
+        latest_version_number=latest_version_number,
+        active_version_number=active_version_number,
         created_at=dataset.created_at,
         updated_at=dataset.updated_at,
     )
@@ -103,7 +129,25 @@ def _dataset_responses(session: Session, datasets: list[Dataset]) -> list[Datase
             .group_by(Annotation.dataset_id)
         ).all()
     )
-    return [_dataset_response(dataset, annotated_image_count=annotated.get(dataset.id, 0)) for dataset in datasets]
+    latest: dict[str, int] = {}
+    active: dict[str, int] = {}
+    for dataset_id, number, is_active in session.execute(
+        select(DatasetVersion.dataset_id, DatasetVersion.version_number, DatasetVersion.is_active).where(
+            DatasetVersion.dataset_id.in_(ids)
+        )
+    ).all():
+        latest[dataset_id] = max(latest.get(dataset_id, 0), number)
+        if is_active:
+            active[dataset_id] = number
+    return [
+        _dataset_response(
+            dataset,
+            annotated_image_count=annotated.get(dataset.id, 0),
+            latest_version_number=latest.get(dataset.id),
+            active_version_number=active.get(dataset.id),
+        )
+        for dataset in datasets
+    ]
 
 
 def _class_response(item: ClassLabel) -> ClassLabelResponse:
@@ -229,12 +273,102 @@ def remove_dataset(dataset_id: str, session: Session = Depends(get_session), sto
     delete_dataset(session, storage, dataset_id)
 
 
+@router.get("/{dataset_id}/versions", response_model=list[DatasetVersionResponse])
+def get_dataset_versions(dataset_id: str, session: Session = Depends(get_session)) -> list[DatasetVersionResponse]:
+    versions = list_dataset_versions(session, dataset_id)
+    responses = [DatasetVersionResponse.model_validate(item) for item in versions]
+    index = next((i for i, item in enumerate(responses) if item.is_active), None)
+    if index is not None:
+        # 激活中的版本展示工作区实时统计，快照数字保持冻结以保证回滚语义
+        live = workspace_counts(session, dataset_id)
+        snapshot = versions[index]
+        responses[index].image_count, responses[index].annotation_count, responses[index].class_count = live
+        responses[index].has_pending_changes = live != (
+            snapshot.image_count,
+            snapshot.annotation_count,
+            snapshot.class_count,
+        )
+    return responses
+
+
+@router.post("/{dataset_id}/clone", response_model=DatasetVersionCloneResponse, status_code=201)
+def post_clone_dataset(
+    dataset_id: str,
+    payload: DatasetVersionCloneCreate,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+) -> DatasetVersionCloneResponse:
+    dataset, imported, annotations, skipped = clone_dataset_version(
+        session, storage, dataset_id, payload.version_id, payload.name, payload.description
+    )
+    return DatasetVersionCloneResponse(
+        dataset=_dataset_responses(session, [dataset])[0],
+        imported_images=imported,
+        imported_annotations=annotations,
+        skipped_images=skipped,
+    )
+
+
+@router.post("/{dataset_id}/versions", response_model=DatasetVersionResponse, status_code=201)
+def post_dataset_version(
+    dataset_id: str,
+    payload: DatasetVersionCreate,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+) -> DatasetVersionResponse:
+    return create_dataset_version(session, storage, dataset_id, payload.note)
+
+
+@router.post("/{dataset_id}/versions/{version_id}/activate", response_model=DatasetVersionActivateResponse)
+def post_activate_dataset_version(
+    dataset_id: str,
+    version_id: str,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+) -> DatasetVersionActivateResponse:
+    version, restored, skipped = activate_dataset_version(session, storage, dataset_id, version_id)
+    return DatasetVersionActivateResponse(
+        version=DatasetVersionResponse.model_validate(version),
+        restored_images=restored,
+        skipped_images=skipped,
+    )
+
+
+@router.post("/{dataset_id}/versions/{version_id}/clone", response_model=DatasetVersionCloneResponse, status_code=201)
+def post_clone_dataset_version(
+    dataset_id: str,
+    version_id: str,
+    payload: DatasetVersionCloneCreate,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+) -> DatasetVersionCloneResponse:
+    dataset, imported, annotations, skipped = clone_dataset_version(
+        session, storage, dataset_id, version_id, payload.name, payload.description
+    )
+    return DatasetVersionCloneResponse(
+        dataset=_dataset_responses(session, [dataset])[0],
+        imported_images=imported,
+        imported_annotations=annotations,
+        skipped_images=skipped,
+    )
+
+
+@router.delete("/{dataset_id}/versions/{version_id}", status_code=204, response_class=Response, response_model=None)
+def remove_dataset_version(
+    dataset_id: str,
+    version_id: str,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+) -> None:
+    delete_dataset_version(session, storage, dataset_id, version_id)
+
+
 @router.get("/{dataset_id}/classes", response_model=list[ClassLabelResponse])
 def get_classes(dataset_id: str, session: Session = Depends(get_session)) -> list[ClassLabelResponse]:
     return [_class_response(item) for item in list_classes(session, dataset_id)]
 
 
-@router.post("/{dataset_id}/classes", response_model=ClassLabelResponse, status_code=201)
+@router.post("/{dataset_id}/classes", response_model=ClassLabelResponse, status_code=201, dependencies=[Depends(require_editable)])
 def post_class(
     dataset_id: str,
     payload: ClassLabelCreate,
@@ -244,7 +378,7 @@ def post_class(
     return _class_response(create_class(session, dataset_id, payload, settings))
 
 
-@router.patch("/{dataset_id}/classes/{class_id}", response_model=ClassLabelResponse)
+@router.patch("/{dataset_id}/classes/{class_id}", response_model=ClassLabelResponse, dependencies=[Depends(require_editable)])
 def patch_class(
     dataset_id: str,
     class_id: str,
@@ -254,7 +388,7 @@ def patch_class(
     return _class_response(update_class_label(session, dataset_id, class_id, payload))
 
 
-@router.post("/{dataset_id}/classes/import", response_model=ClassImportResponse)
+@router.post("/{dataset_id}/classes/import", response_model=ClassImportResponse, dependencies=[Depends(require_editable)])
 def import_classes(
     dataset_id: str,
     payload: ClassImportRequest,
@@ -268,7 +402,7 @@ def import_classes(
     )
 
 
-@router.delete("/{dataset_id}/classes/{class_id}", status_code=204, response_class=Response, response_model=None)
+@router.delete("/{dataset_id}/classes/{class_id}", status_code=204, response_class=Response, response_model=None, dependencies=[Depends(require_editable)])
 def remove_class(dataset_id: str, class_id: str, session: Session = Depends(get_session)) -> None:
     delete_class(session, dataset_id, class_id)
 
@@ -284,7 +418,7 @@ def get_images(
     return ImagePage(items=[_image_response(item) for item in items[offset : offset + limit]], total=len(items))
 
 
-@router.post("/{dataset_id}/images/upload", response_model=UploadImagesResponse, status_code=201)
+@router.post("/{dataset_id}/images/upload", response_model=UploadImagesResponse, status_code=201, dependencies=[Depends(require_editable)])
 async def upload_images(
     dataset_id: str,
     files: list[UploadFile] = File(...),
@@ -305,7 +439,7 @@ async def upload_images(
     return UploadImagesResponse(imported=len(items), items=[_image_response(item) for item in items])
 
 
-@router.post("/{dataset_id}/images/from-source", response_model=SourceImportResponse, status_code=201)
+@router.post("/{dataset_id}/images/from-source", response_model=SourceImportResponse, status_code=201, dependencies=[Depends(require_editable)])
 def import_images_from_source(
     dataset_id: str,
     payload: SourceImportRequest,
@@ -325,7 +459,7 @@ def import_images_from_source(
     return SourceImportResponse(imported=len(items), skipped=skipped)
 
 
-@router.post("/{dataset_id}/images/scan", response_model=ScanImagesResponse)
+@router.post("/{dataset_id}/images/scan", response_model=ScanImagesResponse, dependencies=[Depends(require_editable)])
 def scan_dataset_images(
     dataset_id: str,
     payload: ScanImagesRequest,
@@ -335,7 +469,7 @@ def scan_dataset_images(
     return scan_images(session, storage, dataset_id, payload.path, payload.recursive, payload.split)
 
 
-@router.patch("/{dataset_id}/images/{image_id}", response_model=ImageItemResponse)
+@router.patch("/{dataset_id}/images/{image_id}", response_model=ImageItemResponse, dependencies=[Depends(require_editable)])
 def patch_image(
     dataset_id: str,
     image_id: str,
@@ -348,17 +482,17 @@ def patch_image(
     return _image_response(update_image_split(session, image_id, payload.split))
 
 
-@router.post("/{dataset_id}/images/bulk-split", response_model=SplitOperationResponse)
+@router.post("/{dataset_id}/images/bulk-split", response_model=SplitOperationResponse, dependencies=[Depends(require_editable)])
 def bulk_update_image_split(dataset_id: str, payload: BulkImageSplitUpdate, session: Session = Depends(get_session)) -> SplitOperationResponse:
     return update_image_splits(session, dataset_id, payload)
 
 
-@router.post("/{dataset_id}/images/auto-split", response_model=SplitOperationResponse)
+@router.post("/{dataset_id}/images/auto-split", response_model=SplitOperationResponse, dependencies=[Depends(require_editable)])
 def auto_split_dataset_images(dataset_id: str, payload: AutoSplitRequest, session: Session = Depends(get_session)) -> SplitOperationResponse:
     return auto_split_images(session, dataset_id, payload)
 
 
-@router.delete("/{dataset_id}/images/{image_id}", status_code=204, response_class=Response, response_model=None)
+@router.delete("/{dataset_id}/images/{image_id}", status_code=204, response_class=Response, response_model=None, dependencies=[Depends(require_editable)])
 def remove_image(
     dataset_id: str,
     image_id: str,
@@ -379,7 +513,7 @@ def get_image_annotations(dataset_id: str, image_id: str, session: Session = Dep
     return list_annotations(session, image_id)
 
 
-@router.put("/{dataset_id}/images/{image_id}/annotations", response_model=list[AnnotationResponse])
+@router.put("/{dataset_id}/images/{image_id}/annotations", response_model=list[AnnotationResponse], dependencies=[Depends(require_editable)])
 def put_image_annotations(
     dataset_id: str,
     image_id: str,
@@ -416,7 +550,7 @@ def get_duplicate_report(
     return DuplicateReport.model_validate(DuplicateDetector().analyze(list_images(session, dataset_id), storage, phash_distance))
 
 
-@router.post("/{dataset_id}/tile", response_model=TileDatasetResponse, status_code=201)
+@router.post("/{dataset_id}/tile", response_model=TileDatasetResponse, status_code=201, dependencies=[Depends(require_editable)])
 def tile_dataset(
     dataset_id: str,
     payload: TileDatasetRequest,

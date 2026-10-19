@@ -3,6 +3,7 @@ import type {
   ClassLabel,
   ClassTemplate,
   Dataset,
+  DatasetVersion,
   DatasetQualityReport,
   DuplicateReport,
   ImageItem,
@@ -34,6 +35,9 @@ import type {
   RuntimeLogResponse,
   VideoImportTask,
   TrainingDevice,
+  TrainingNode,
+  TrainingNodeStatus,
+  TrainingNodeTestResult,
   ValidationReport,
 } from "../types";
 
@@ -194,6 +198,26 @@ export const api = {
   createDataset: (name: string, taskType: TaskType, description?: string) =>
     request<Dataset>("/api/datasets", json({ name, task_type: taskType, description: description || null })),
   deleteDataset: (datasetId: string) => request<void>(`/api/datasets/${datasetId}`, { method: "DELETE" }),
+  listDatasetVersions: (datasetId: string) => request<DatasetVersion[]>(`/api/datasets/${datasetId}/versions`),
+  createDatasetVersion: (datasetId: string, note?: string) =>
+    request<DatasetVersion>(`/api/datasets/${datasetId}/versions`, json({ note: note?.trim() || null })),
+  activateDatasetVersion: (datasetId: string, versionId: string) =>
+    request<{ version: DatasetVersion; restored_images: number; skipped_images: number }>(
+      `/api/datasets/${datasetId}/versions/${versionId}/activate`,
+      json({}),
+    ),
+  cloneDatasetVersion: (datasetId: string, versionId: string, name: string, description?: string) =>
+    request<{ dataset: Dataset; imported_images: number; imported_annotations: number; skipped_images: number }>(
+      `/api/datasets/${datasetId}/versions/${versionId}/clone`,
+      json({ name, description: description?.trim() || null }),
+    ),
+  cloneDataset: (datasetId: string, name: string, description?: string) =>
+    request<{ dataset: Dataset; imported_images: number; imported_annotations: number; skipped_images: number }>(
+      `/api/datasets/${datasetId}/clone`,
+      json({ version_id: null, name, description: description?.trim() || null }),
+    ),
+  deleteDatasetVersion: (datasetId: string, versionId: string) =>
+    request<void>(`/api/datasets/${datasetId}/versions/${versionId}`, { method: "DELETE" }),
   listClasses: (datasetId: string) => request<ClassLabel[]>(`/api/datasets/${datasetId}/classes`),
   createClass: (datasetId: string, name: string, color = "#22c55e", sam3Prompt?: string) =>
     request<ClassLabel>(`/api/datasets/${datasetId}/classes`, json({ name, color, ...(sam3Prompt !== undefined ? { sam3_prompt: sam3Prompt } : {}) })),
@@ -290,7 +314,14 @@ export const api = {
   tileDataset: (datasetId: string, data: { name: string; description?: string; tile_size: number; overlap: number; keep_empty_tiles: boolean }) => request<{ dataset_id: string; source_dataset_id: string; generated_images: number; generated_annotations: number; skipped_empty_tiles: number }>(`/api/datasets/${datasetId}/tile`, json(data)),
   listTrainingTasks: (datasetId?: string) =>
     request<{ items: TrainingTask[] }>(`/api/training/tasks${datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : ""}`),
-  listTrainingDevices: () => request<{ items: TrainingDevice[] }>("/api/training/devices"),
+  listTrainingDevices: () =>
+    request<{ items: TrainingDevice[]; nodes: TrainingNodeStatus[] }>("/api/training/devices"),
+  listTrainingNodes: () => request<TrainingNode[]>("/api/training/nodes"),
+  createTrainingNode: (name: string, url: string, token: string, enabled = true) =>
+    request<TrainingNode>("/api/training/nodes", json({ name, url, token, enabled })),
+  deleteTrainingNode: (nodeId: string) => request<void>(`/api/training/nodes/${nodeId}`, { method: "DELETE" }),
+  testTrainingNode: (url: string, token: string) =>
+    request<TrainingNodeTestResult>("/api/training/nodes/test", json({ url, token })),
   createTrainingTask: (payload: {
     dataset_id: string;
     name: string;

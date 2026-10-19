@@ -15,6 +15,7 @@ class TrainingTaskCreate(BaseModel):
     name: str = Field(default="local-yolo-training", min_length=1, max_length=255)
     model: str = Field(default="yolo11n.pt", min_length=1, max_length=255)
     task_type: TaskType | None = None
+    node_id: str | None = Field(default=None, max_length=64)
     epochs: int = Field(default=50, ge=1, le=10000)
     img_size: int = Field(default=640, ge=32, le=4096)
     batch_size: int = Field(default=16, ge=1, le=4096)
@@ -54,6 +55,7 @@ class TrainingTaskResponse(BaseModel):
     optimizer: str | None
     lr0: float | None
     patience: int | None
+    node_id: str | None = None
     command_preview: str | None
     export_path: str | None
     data_yaml_path: str | None
@@ -86,16 +88,29 @@ class TrainingLogResponse(BaseModel):
 
 class TrainingDeviceResponse(BaseModel):
     id: str
-    type: Literal["cpu", "mps", "cuda"]
+    type: Literal["cpu", "mps", "cuda", "npu"]
     name: str
     index: int | None = None
     memory_total_mb: int | None = None
     memory_free_mb: int | None = None
     status: Literal["available", "idle", "busy", "unavailable", "unknown"] = "unknown"
+    node_id: str | None = None
+    node_name: str | None = None
+
+
+class TrainingNodeStatus(BaseModel):
+    id: str
+    name: str
+    url: str
+    enabled: bool = True
+    status: Literal["online", "offline"]
+    device_count: int = 0
+    error: str | None = None
 
 
 class TrainingDeviceListResponse(BaseModel):
     items: list[TrainingDeviceResponse]
+    nodes: list[TrainingNodeStatus] = Field(default_factory=list)
 
 
 class TrainingSummaryResponse(BaseModel):

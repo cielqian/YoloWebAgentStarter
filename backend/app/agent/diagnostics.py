@@ -23,7 +23,7 @@ def diagnostic_handlers(handlers):
         stats = validation.get("summary") or validation
         errors = stats.get("error_count")
         if dataset.get("image_count") == 0:
-            issues.append("标注任务没有图片。")
+            issues.append("数据集没有图片。")
         if dataset.get("class_count") == 0:
             issues.append("没有配置类别。")
         if dataset.get("annotated_image_count") == 0:
@@ -65,7 +65,7 @@ def diagnostic_handlers(handlers):
             (("out of memory", "cuda oom", "mps backend out of memory"), "memory_pressure", "日志含内存/显存不足信号。", "核对设备可用内存，逐步降低 batch 或输入尺寸后人工重试。"),
             (("no module named", "modulenotfounderror"), "missing_dependency", "日志含依赖缺失信号。", "检查训练进程使用的虚拟环境及项目依赖。"),
             (("filenotfounderror", "no such file", "dataset not found"), "data_or_artifact_path", "日志可能涉及数据或产物路径。", "检查受管数据导出与产物是否完整，不要使用外部权重路径。"),
-            (("no labels found", "no images found", "dataset is empty"), "empty_training_data", "日志含训练数据或标签缺失信号。", "查询标注任务校验与持久化 split，核对有效标注。"),
+            (("no labels found", "no images found", "dataset is empty"), "empty_training_data", "日志含训练数据或标签缺失信号。", "查询数据集校验与持久化 split，核对有效标注。"),
         ]
         for tokens, code, explanation, action in rules:
             matched = [token for token in tokens if token in text]

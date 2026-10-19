@@ -40,7 +40,11 @@ class TrainingQueue:
         from app.core.time import utc_now
 
         with self._session_factory() as session:
-            tasks = list(session.scalars(select(TrainingTask).where(TrainingTask.status == "running")))
+            tasks = list(
+                session.scalars(
+                    select(TrainingTask).where(TrainingTask.status == "running", TrainingTask.node_id.is_(None))
+                )
+            )
             for task in tasks:
                 task.status = "failed"
                 task.error_message = "Training process was interrupted by a service restart."
@@ -57,7 +61,7 @@ class TrainingQueue:
             with session_factory() as session:
                 next_id = session.scalar(
                     select(TrainingTask.id)
-                    .where(TrainingTask.status == "pending")
+                    .where(TrainingTask.status == "pending", TrainingTask.node_id.is_(None))
                     .order_by(TrainingTask.created_at.asc(), TrainingTask.id.asc())
                     .limit(1)
                 )

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_session, get_training_service
+from app.api.dependencies import get_session, get_settings, get_training_service
+from app.core.config import Settings
+from app.settings.schemas import TrainingNodeCreate, TrainingNodeOut, TrainingNodeTestRequest, TrainingNodeTestResult
+from app.settings.service import SettingsService
+from app.training.runtime.remote_nodes import merged_devices, probe_node
 from app.training.schemas import (
     TrainingLogResponse,
+    TrainingNodeStatus,
     TrainingProfileCreate,
     TrainingProfileResponse,
     TrainingProfileUpdate,
@@ -24,8 +29,34 @@ router = APIRouter(prefix="/training", tags=["training"])
 
 
 @router.get("/devices", response_model=TrainingDeviceListResponse)
-def list_devices(service: TrainingService = Depends(get_training_service)) -> TrainingDeviceListResponse:
-    return TrainingDeviceListResponse(items=service.devices())
+def list_devices(
+    service: TrainingService = Depends(get_training_service),
+    settings: Settings = Depends(get_settings),
+) -> TrainingDeviceListResponse:
+    items, nodes = merged_devices(settings)
+    return TrainingDeviceListResponse(items=items, nodes=[TrainingNodeStatus(**node) for node in nodes])
+
+
+@router.get("/nodes", response_model=list[TrainingNodeOut])
+def list_training_nodes(settings: Settings = Depends(get_settings)) -> list[TrainingNodeOut]:
+    return [TrainingNodeOut(**item) for item in SettingsService(settings).list_training_nodes_out()]
+
+
+@router.post("/nodes", response_model=TrainingNodeOut, status_code=201)
+def create_training_node(payload: TrainingNodeCreate, settings: Settings = Depends(get_settings)) -> TrainingNodeOut:
+    return TrainingNodeOut(**SettingsService(settings).add_training_node(payload))
+
+
+@router.post("/nodes/test", response_model=TrainingNodeTestResult)
+def test_training_node(payload: TrainingNodeTestRequest, settings: Settings = Depends(get_settings)) -> TrainingNodeTestResult:
+    if not payload.url.lower().startswith(("http://", "https://")):
+        return TrainingNodeTestResult(ok=False, message="节点地址必须以 http:// 或 https:// 开头。")
+    return TrainingNodeTestResult(**probe_node(payload.url, payload.token))
+
+
+@router.delete("/nodes/{node_id}", status_code=204, response_class=Response, response_model=None)
+def delete_training_node(node_id: str, settings: Settings = Depends(get_settings)) -> None:
+    SettingsService(settings).delete_training_node(node_id)
 
 
 @router.get("/profiles", response_model=list[TrainingProfileResponse])
@@ -70,8 +101,9 @@ def create_task(
     payload: TrainingTaskCreate,
     session: Session = Depends(get_session),
     service: TrainingService = Depends(get_training_service),
+    settings: Settings = Depends(get_settings),
 ) -> TrainingTaskResponse:
-    return service.create_task(session, payload)
+    return service.create_task(session, payload, settings=settings)
 
 
 @router.post("/tasks/{task_id}/resume", response_model=TrainingTaskResponse, status_code=201)
@@ -98,8 +130,9 @@ def stop_task(
     task_id: str,
     session: Session = Depends(get_session),
     service: TrainingService = Depends(get_training_service),
+    settings: Settings = Depends(get_settings),
 ) -> TrainingTaskResponse:
-    return service.stop_task(session, task_id)
+    return service.stop_task(session, task_id, settings=settings)
 
 
 @router.get("/tasks/{task_id}/logs", response_model=TrainingLogResponse)

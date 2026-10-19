@@ -40,6 +40,14 @@ class Storage:
     def dataset_dir(self, dataset_id: str) -> Path:
         return self.datasets_dir / dataset_id
 
+    def version_snapshot_path(self, dataset_id: str, version_id: str) -> Path:
+        """Snapshot JSON for a dataset version; lives under the dataset dir so
+        dataset deletion cleans up versions together with images."""
+
+        path = self.dataset_dir(dataset_id) / "versions" / f"{version_id}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
     def images_dir(self, dataset_id: str) -> Path:
         path = self.dataset_dir(dataset_id) / "images"
         path.mkdir(parents=True, exist_ok=True)

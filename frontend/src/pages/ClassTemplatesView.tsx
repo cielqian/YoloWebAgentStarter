@@ -109,7 +109,7 @@ export function ClassTemplatesView() {
     try {
       await api.deleteClassTemplate(deleteTarget.id);
       setTemplates((items) => items.filter((item) => item.id !== deleteTarget.id));
-      setNotice(`类别“${deleteTarget.name}”已从类别库删除（标注任务中的既有类别不受影响）`);
+      setNotice(`类别“${deleteTarget.name}”已从类别库删除（数据集中的既有类别不受影响）`);
       setDeleteTarget(undefined);
     } catch (reason) {
       setError(errorMessage(reason));
@@ -145,7 +145,7 @@ export function ClassTemplatesView() {
     </form>}
     <section className="dataset-overview">
       <div className="section-title-row"><div><span className="eyebrow">CLASS LIBRARY</span><h2>全部类别</h2></div><span className="dataset-total">{templates.length} 个类别</span></div>
-      {loading ? <p className="muted">加载中…</p> : !templates.length ? <section className="dataset-empty-card"><span className="dataset-empty-icon">◇</span><h2>类别库还是空的</h2><p>先在这里沉淀常用类别，标注时即可一键导入标注任务，不必每个标注任务重复录入。</p></section> : <div className="class-library-grid">
+      {loading ? <p className="muted">加载中…</p> : !templates.length ? <section className="dataset-empty-card"><span className="dataset-empty-icon">◇</span><h2>类别库还是空的</h2><p>先在这里沉淀常用类别，标注时即可一键导入数据集，不必每个数据集重复录入。</p></section> : <div className="class-library-grid">
         {templates.map((template) => <article key={template.id} className="class-library-card">
           {editState?.id === template.id ? (
             <form className="class-library-edit-form" onSubmit={(event) => void submitEdit(event)}>
@@ -176,7 +176,7 @@ export function ClassTemplatesView() {
     </section>
     {deleteTarget && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
       <section className="dataset-dialog dataset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="class-template-delete-title" aria-describedby="class-template-delete-description" onMouseDown={(event) => event.stopPropagation()}>
-        <header><div><span className="eyebrow">DELETE CLASS</span><h2 id="class-template-delete-title">删除类别“{deleteTarget.name}”？</h2><p id="class-template-delete-description">只从类别库移除模板，已导入标注任务的类别和标注不受影响。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
+        <header><div><span className="eyebrow">DELETE CLASS</span><h2 id="class-template-delete-title">删除类别“{deleteTarget.name}”？</h2><p id="class-template-delete-description">只从类别库移除模板，已导入数据集的类别和标注不受影响。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
         <footer><button className="button" disabled={busy} onClick={() => setDeleteTarget(undefined)}>取消</button><button className="button danger" disabled={busy} onClick={() => void confirmDelete()}>确认删除</button></footer>
       </section>
     </div>}

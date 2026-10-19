@@ -138,7 +138,7 @@ def update_class_label(
     if "sam3_prompt" in updates and dataset.task_type != "segment":
         raise ValidationError(
             "sam3_prompt_requires_segment",
-            "SAM3 提示词只对实例分割标注任务的类别生效。",
+            "SAM3 提示词只对实例分割数据集的类别生效。",
         )
     if "name" in updates:
         class_label.name = updates["name"]

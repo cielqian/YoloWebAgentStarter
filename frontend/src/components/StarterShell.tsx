@@ -15,7 +15,7 @@ interface Props {
 
 const navigation: Array<{ id: StarterSection; label: string; icon: ReactNode }> = [
   { id: "datasources", label: "数据源", icon: <SourceIcon /> },
-  { id: "workspace", label: "标注任务", icon: <DatasetIcon /> },
+  { id: "workspace", label: "数据集", icon: <DatasetIcon /> },
   { id: "classes", label: "类别库", icon: <ClassIcon /> },
   { id: "training", label: "训练", icon: <TrainingIcon /> },
   { id: "models", label: "模型", icon: <ModelIcon /> },

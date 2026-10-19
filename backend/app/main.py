@@ -12,6 +12,7 @@ from app.core.database import Database
 from app.core.migrations import upgrade_database
 from app.core.storage import Storage
 from app.training.runtime.queue import training_queue
+from app.training.runtime.remote_training import remote_training_poller
 from app.models.evaluation import YoloEvaluationRunner
 from app.logs.service import configure_runtime_logging
 from app.auto_annotation.queue import auto_annotation_queue
@@ -42,6 +43,7 @@ def create_app(settings: Settings | None = None, *, run_migrations: bool = True)
         auto_annotation_queue.recover_orphaned()
         video_import_queue.recover_orphaned()
         AgentService(database.session_factory, resolved).recover_orphaned()
+        remote_training_poller.start(database.session_factory, storage, resolved)
         app.state.agent_executor = AgentRunExecutor()
         import logging
 
@@ -49,6 +51,7 @@ def create_app(settings: Settings | None = None, *, run_migrations: bool = True)
         try:
             yield
         finally:
+            remote_training_poller.stop()
             app.state.agent_executor.shutdown()
             database.dispose()
 

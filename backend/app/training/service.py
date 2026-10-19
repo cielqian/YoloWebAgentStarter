@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import shlex
+import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -22,6 +25,17 @@ from app.training.observability.telemetry import TrainingTelemetryService
 from app.training.runtime.process_registry import process_registry
 from app.training.runtime.queue import TrainingQueue
 from app.training.runtime.device_service import DeviceService
+from app.training.runtime.remote_nodes import RemoteNodeUnavailable, fetch_node_snapshot
+from app.training.runtime.remote_training import (
+    RemoteTrainingError,
+    delete_remote_task,
+    dispatch_remote_task,
+    find_node,
+    stop_remote_task,
+)
+
+if TYPE_CHECKING:
+    from app.core.config import Settings
 from app.training.schemas import (
     TrainingLogResponse,
     TrainingProfileCreate,
@@ -42,8 +56,15 @@ class TrainingService:
         self.queue = queue
         self.queue.configure(session_factory, storage)
 
-    def create_task(self, session: Session, payload: TrainingTaskCreate, *, task_id: str | None = None) -> TrainingTaskResponse:
-        return self._create_task(session, payload, task_id=task_id)
+    def create_task(
+        self,
+        session: Session,
+        payload: TrainingTaskCreate,
+        *,
+        task_id: str | None = None,
+        settings: "Settings | None" = None,
+    ) -> TrainingTaskResponse:
+        return self._create_task(session, payload, task_id=task_id, settings=settings)
 
     def devices(self) -> list[dict[str, object]]:
         return [device.as_dict() for device in DeviceService().list_devices()]
@@ -61,6 +82,11 @@ class TrainingService:
             raise ValidationError(
                 "resume_epochs_fixed",
                 "Epoch-state resume keeps the source task's total epochs; use resume_epoch=false to train additional epochs.",
+            )
+        if payload.resume_epoch and previous.node_id:
+            raise ValidationError(
+                "remote_resume_epoch_unsupported",
+                "Remote tasks cannot restore epoch state; resume from last.pt with resume_epoch=false instead.",
             )
         checkpoint = checkpoint_paths(previous.run_dir or "").get("last")
         if checkpoint is None:
@@ -93,8 +119,11 @@ class TrainingService:
         resume_run_dir: Path | None = None,
         resume_epoch: bool = False,
         resume_source_task_id: str | None = None,
+        settings: "Settings | None" = None,
     ) -> TrainingTaskResponse:
-        payload.device = DeviceService().normalize_selector(payload.device)
+        node = self._resolve_remote_node(payload, settings)
+        if node is None:
+            payload.device = DeviceService().normalize_selector(payload.device)
         dataset = get_dataset(session, payload.dataset_id)
         task_type = payload.task_type or TaskType(dataset.task_type)
         if task_type.value != dataset.task_type:
@@ -111,6 +140,8 @@ class TrainingService:
         task_root = self.storage.training_task_dir(resolved_task_id)
         export_root = task_root / "dataset"
         run_dir = resume_run_dir if resume_run_dir is not None else task_root / "run"
+        dataset_zip: Path | None = None
+        weights_path: Path | None = None
         try:
             if resume_checkpoint is not None:
                 model_reference = str(resume_checkpoint)
@@ -127,7 +158,13 @@ class TrainingService:
                     "label_count",
                 )
             }
-            command = build_training_command(
+            if node is not None:
+                command_args, dataset_zip, weights_path = self._prepare_remote_dispatch(
+                    resolved_task_id, payload, task_type, model_reference, export_root
+                )
+                command_preview = shlex.join(command_args)
+            else:
+                command = build_training_command(
                 task_type=task_type,
                 model=model_reference,
                 data_yaml=data_yaml,
@@ -143,6 +180,8 @@ class TrainingService:
                 patience=payload.patience,
                 resume=resume_epoch,
             )
+                command_args = command.args
+                command_preview = command.readable
             task = TrainingTask(
                 id=resolved_task_id,
                 dataset_id=dataset.id,
@@ -155,6 +194,7 @@ class TrainingService:
                 img_size=payload.img_size,
                 batch_size=payload.batch_size,
                 device=payload.device,
+                node_id=node["id"] if node is not None else None,
                 workers=payload.workers,
                 val_ratio=payload.val_ratio,
                 seed=payload.seed,
@@ -165,8 +205,8 @@ class TrainingService:
                     **payload.model_dump(),
                     **({"resume_source_task_id": resume_source_task_id, "resume_epoch": resume_epoch} if resume_source_task_id else {}),
                 },
-                command_args_json=command.args,
-                command_preview=command.readable,
+                command_args_json=command_args,
+                command_preview=command_preview,
                 export_path=str(export["root"]),
                 data_yaml_path=data_yaml,
                 export_stats_json=export_stats,
@@ -182,7 +222,127 @@ class TrainingService:
             session.rollback()
             self.storage.remove_training_task(resolved_task_id)
             raise
+        if node is not None:
+            return self._dispatch_remote_task(session, task, node, dataset_zip, weights_path)
         self.queue.submit(resolved_task_id)
+        return task_response(task)
+
+    def _resolve_remote_node(self, payload: TrainingTaskCreate, settings: "Settings | None") -> dict | None:
+        if not payload.node_id:
+            return None
+        if settings is None:
+            raise ValidationError(
+                "training_node_settings_missing",
+                "Remote training requires backend settings; start the task from the training page.",
+            )
+        node = find_node(settings, payload.node_id)
+        if node is None or not node.get("enabled", True):
+            raise ValidationError("training_node_not_found", "Training node was not found or is disabled.")
+        try:
+            snapshot = fetch_node_snapshot(str(node.get("url") or ""), str(node.get("token") or ""))
+        except RemoteNodeUnavailable as exc:
+            raise ValidationError("training_node_unreachable", f"Training node is not reachable: {exc}") from exc
+        selector = payload.device.strip()
+        if selector != "auto":
+            available = sorted(
+                str(item.get("id"))
+                for item in snapshot["payload"].get("devices", [])
+                if isinstance(item, dict) and item.get("id")
+            )
+            if selector not in available:
+                raise ValidationError(
+                    "training_device_unavailable",
+                    f"The node does not expose device '{selector}'.",
+                    details={"available_devices": available},
+                )
+        return node
+
+    def _prepare_remote_dispatch(
+        self,
+        task_id: str,
+        payload: TrainingTaskCreate,
+        task_type: TaskType,
+        model_reference: str,
+        export_root: Path,
+    ) -> tuple[list[str], Path, Path | None]:
+        archive = self.storage.tmp_dir / f"{task_id}-dataset.zip"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for item in sorted(export_root.rglob("*")):
+                if item.is_file():
+                    zf.write(item, item.relative_to(export_root).as_posix())
+        weights_path = Path(model_reference) if Path(model_reference).is_absolute() else None
+        model_arg = weights_path.name if weights_path is not None else payload.model
+        args = [
+            "yolo",
+            task_type.value,
+            "train",
+            f"model={model_arg}",
+            "data=dataset/data.yaml",
+            f"epochs={payload.epochs}",
+            f"imgsz={payload.img_size}",
+            f"batch={payload.batch_size}",
+            "project=.",
+            "name=run",
+            "exist_ok=True",
+            f"workers={payload.workers}",
+            f"seed={payload.seed}",
+        ]
+        if payload.device != "auto":
+            args.append(f"device={payload.device}")
+        if payload.optimizer:
+            args.append(f"optimizer={payload.optimizer}")
+        if payload.lr0 is not None:
+            args.append(f"lr0={payload.lr0}")
+        if payload.patience is not None:
+            args.append(f"patience={payload.patience}")
+        return args, archive, weights_path
+
+    def _dispatch_remote_task(
+        self,
+        session: Session,
+        task: TrainingTask,
+        node: dict,
+        dataset_zip: Path | None,
+        weights_path: Path | None,
+    ) -> TrainingTaskResponse:
+        model_arg = Path(task.model_path).name if Path(task.model_path).is_absolute() else task.model_name
+        spec = {
+            "task_id": task.id,
+            "task_type": task.task_type,
+            "model": model_arg,
+            "epochs": task.epochs,
+            "img_size": task.img_size,
+            "batch_size": task.batch_size,
+            "device": task.device,
+            "workers": task.workers,
+            "seed": task.seed,
+            "optimizer": task.optimizer,
+            "lr0": task.lr0,
+            "patience": task.patience,
+        }
+        try:
+            if dataset_zip is None:
+                raise RemoteTrainingError("dataset archive was not prepared.")
+            dispatch_remote_task(node, spec, dataset_zip, weights_path)
+        except RemoteTrainingError as exc:
+            session.delete(task)
+            session.commit()
+            self.storage.remove_training_task(task.id)
+            raise ValidationError("remote_dispatch_failed", str(exc)) from exc
+        finally:
+            if dataset_zip is not None:
+                dataset_zip.unlink(missing_ok=True)
+        from app.core.time import utc_now
+
+        task.status = "running"
+        task.started_at = utc_now()
+        task.progress_total_epochs = task.epochs
+        session.commit()
+        session.refresh(task)
+        TrainingLogStore(task.logs_path or "train.log").append(
+            f"Remote training dispatched to node {node.get('name')} ({node.get('url')})."
+        )
         return task_response(task)
 
     def list_tasks(self, session: Session, dataset_id: str | None = None) -> TrainingTaskList:
@@ -205,9 +365,27 @@ class TrainingService:
         task = self.get_task(session, task_id)
         return task_response(TrainingTelemetryService().refresh_task(session, task))
 
-    def stop_task(self, session: Session, task_id: str) -> TrainingTaskResponse:
+    def stop_task(self, session: Session, task_id: str, *, settings: "Settings | None" = None) -> TrainingTaskResponse:
         task = self.get_task(session, task_id)
         if task.status in {"completed", "failed", "stopped"}:
+            return task_response(task)
+        if task.node_id:
+            node = find_node(settings, task.node_id) if settings is not None else None
+            if task.status == "pending":
+                if node is not None:
+                    delete_remote_task(node, task.id)
+                task.status = "stopped"
+                task.error_message = "Training stopped before it started."
+                from app.core.time import utc_now
+
+                task.finished_at = utc_now()
+                session.commit()
+                return task_response(task)
+            task.stop_requested = True
+            session.commit()
+            if node is not None:
+                stop_remote_task(node, task.id)
+            session.refresh(task)
             return task_response(task)
         if task.status == "pending":
             task.status = "stopped"

@@ -194,6 +194,37 @@ describe("AnnotationView persistence", () => {
     expect(onCreateClass).toHaveBeenCalledWith("person", "#ef4444");
   });
 
+  it("renders read-only with banner and disabled actions on a historical active version", () => {
+    const onSave = vi.fn();
+    act(() => {
+      root?.render(
+        <AnnotationView
+          dataset={{ ...dataset, active_version_number: 1, latest_version_number: 2 }}
+          image={image}
+          classes={classes}
+          annotations={[annotation]}
+          activeClassId="cls-1"
+          onClassChange={vi.fn()}
+          onBack={vi.fn()}
+          onSave={onSave}
+          onSam={vi.fn()}
+          onSamPoints={vi.fn()}
+          busy={false}
+          readOnly
+        />,
+      );
+    });
+
+    expect(container?.textContent).toContain("只读模式：当前激活的是历史版本 v1（最新 v2）");
+    const save = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) => button.textContent === "保存标注");
+    expect(save?.disabled).toBe(true);
+    act(() => save?.click());
+    expect(onSave).not.toHaveBeenCalled();
+    const deleteAnnotation = container?.querySelector<HTMLButtonElement>(".annotation-delete-button");
+    act(() => deleteAnnotation?.click());
+    expect(container?.querySelectorAll(".shape-row")).toHaveLength(1);
+  });
+
   it("toggles annotation visibility from the shape list", () => {
     act(() => {
       root?.render(<AnnotationView dataset={dataset} image={image} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);

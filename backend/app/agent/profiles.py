@@ -27,7 +27,7 @@ PROFILES = {
     "global": AgentProfile("global", "综合助手", "General assistant",
         "定位对象、回答跨领域问题。没有明确对象时先列出候选供用户选择，不要擅自选择写操作目标。",
         frozenset(DATA_READ | TRAIN_READ | MODEL_READ | {"create_training_task", "create_model_evaluation", "create_auto_annotation_task"})),
-    "dataset": AgentProfile("dataset", "标注任务助手", "Dataset assistant",
+    "dataset": AgentProfile("dataset", "数据集助手", "Dataset assistant",
         "重点分析数据质量与训练准备度。训练准备报告优先使用 dataset_readiness；可跨领域读取训练和模型证据。",
         frozenset(DATA_READ | TRAIN_READ | MODEL_READ | {"create_training_task", "create_auto_annotation_task"})),
     "training": AgentProfile("training", "训练助手", "Training assistant",

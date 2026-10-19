@@ -28,7 +28,7 @@ def test_mock_complete_help_without_tools():
         )
     )
     assert response.tool_calls == []
-    assert "Agent" in response.content or "标注任务" in response.content
+    assert "Agent" in response.content or "数据集" in response.content
 
 
 def test_mock_complete_plans_and_then_reports_tool_results():
@@ -67,7 +67,7 @@ def test_mock_complete_plans_and_then_reports_tool_results():
         )
     )
     assert reported.tool_calls == []
-    assert "标注任务列表" in reported.content
+    assert "数据集列表" in reported.content
 
 
 def test_mock_filters_unavailable_tools_from_plan():

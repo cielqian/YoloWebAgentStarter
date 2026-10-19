@@ -51,6 +51,7 @@ describe("DatasetHome source sync dialog", () => {
           datasets={[dataset]}
           busy={false}
           onCreate={vi.fn()}
+          onClone={vi.fn()}
           onImport={vi.fn()}
           onValidate={vi.fn().mockResolvedValue(undefined)}
           onQuality={vi.fn().mockResolvedValue(undefined)}

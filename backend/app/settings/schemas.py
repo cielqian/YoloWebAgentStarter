@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 SamFallbackMode = Literal["box", "disabled"]
@@ -105,3 +105,44 @@ class FtpConnectionTestResult(BaseModel):
     ok: bool
     message: str
     code: str = "ok"
+
+
+# --- Training nodes (remote compute agents) ---
+
+
+class TrainingNodeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    url: str = Field(min_length=1, max_length=512)
+    token: str = Field(default="", max_length=512)
+    enabled: bool = True
+
+    @field_validator("name", "url", "token")
+    @classmethod
+    def strip_fields(cls, value: str) -> str:
+        return value.strip()
+
+
+class TrainingNodeOut(BaseModel):
+    id: str
+    name: str
+    url: str
+    token_configured: bool
+    enabled: bool
+
+
+class TrainingNodeTestRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=512)
+    token: str = Field(default="", max_length=512)
+
+    @field_validator("url", "token")
+    @classmethod
+    def strip_fields(cls, value: str) -> str:
+        return value.strip()
+
+
+class TrainingNodeTestResult(BaseModel):
+    ok: bool
+    message: str
+    hostname: str | None = None
+    device_count: int = 0
+    device_types: list[str] = Field(default_factory=list)

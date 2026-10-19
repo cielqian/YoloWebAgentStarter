@@ -68,11 +68,11 @@ export function TrainingConfigPanel({
       <form id="dataset-training-ws-form" className="training-ws-form" onSubmit={onSubmit}>
         <section className="training-config-block">
           <div className="training-config-block-head">
-            <h3>标注任务</h3>
-            <p>任务类型由标注任务锁定；切换标注任务会重置表单默认值。</p>
+            <h3>数据集</h3>
+            <p>任务类型由数据集锁定；切换数据集会重置表单默认值。</p>
           </div>
           <label className="training-ws-field training-ws-field-wide">
-            <span>选择标注任务</span>
+            <span>选择数据集</span>
             <select
               value={dataset.id}
               onChange={(event) => {

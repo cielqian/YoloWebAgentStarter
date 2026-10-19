@@ -128,7 +128,7 @@ export function DataSourceView() {
             <div>
               <span className="eyebrow">DATA SOURCES</span>
               <h1>数据源</h1>
-              <p>管理原始图片集合：可从 FTP 同步或本地上传，用标签组织和检索图片，与标注任务互相独立。</p>
+              <p>管理原始图片集合：可从 FTP 同步或本地上传，用标签组织和检索图片，与数据集互相独立。</p>
             </div>
             <div className="header-actions">
               <button className="button primary" onClick={() => { setCreateName(""); setCreateDescription(""); setCreateOpen(true); }}>新建数据集</button>

@@ -40,7 +40,7 @@ def planner_message(request: ProviderRequest) -> str:
         return text
     if any(word in text.lower() for word in ("所有", "全部", "列出", "list ", "all ")):
         return text
-    for key, label in (("training_task_id", "训练任务"), ("model_id", "模型"), ("dataset_id", "标注任务")):
+    for key, label in (("training_task_id", "训练任务"), ("model_id", "模型"), ("dataset_id", "数据集")):
         if request.context.get(key):
             return f"{text}\n当前{label}：{request.context[key]}"
     return text

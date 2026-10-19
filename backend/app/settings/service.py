@@ -13,7 +13,8 @@ from app.agent.llm_auth import (
     validate_auth_config,
 )
 from app.core.config import Settings
-from app.core.errors import ValidationError
+from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.core.ids import new_id
 from app.settings.schemas import (
     FtpSettingsInternal,
     FtpSettingsOut,
@@ -288,6 +289,54 @@ class SettingsService:
         }
         self._write(data)
         return self.get_ftp_settings()
+
+    # --- Training nodes (remote compute agents) ---
+
+    def list_training_nodes(self) -> list[dict]:
+        nodes = self._read().get("training_nodes")
+        return [item for item in nodes if isinstance(item, dict)] if isinstance(nodes, list) else []
+
+    def list_training_nodes_out(self) -> list[dict]:
+        return [self._node_out(node) for node in self.list_training_nodes()]
+
+    def _node_out(self, node: dict) -> dict:
+        return {
+            "id": str(node.get("id", "")),
+            "name": str(node.get("name", "")),
+            "url": str(node.get("url", "")),
+            "token_configured": bool(str(node.get("token", "")).strip()),
+            "enabled": bool(node.get("enabled", True)),
+        }
+
+    def add_training_node(self, payload) -> dict:
+        url = payload.url.strip().rstrip("/")
+        if not url.lower().startswith(("http://", "https://")):
+            raise ValidationError("invalid_training_node_url", "节点地址必须以 http:// 或 https:// 开头。")
+        name = payload.name.strip()
+        data = self._read()
+        nodes = [item for item in data.get("training_nodes", []) if isinstance(item, dict)]
+        if any(item.get("url") == url for item in nodes):
+            raise ConflictError("training_node_exists", "该节点地址已注册。")
+        node = {
+            "id": new_id("node"),
+            "name": name,
+            "url": url,
+            "token": payload.token.strip(),
+            "enabled": payload.enabled,
+        }
+        nodes.append(node)
+        data["training_nodes"] = nodes
+        self._write(data)
+        return self._node_out(node)
+
+    def delete_training_node(self, node_id: str) -> None:
+        data = self._read()
+        nodes = [item for item in data.get("training_nodes", []) if isinstance(item, dict)]
+        remaining = [item for item in nodes if item.get("id") != node_id]
+        if len(remaining) == len(nodes):
+            raise NotFoundError("training_node_not_found", "训练节点不存在。")
+        data["training_nodes"] = remaining
+        self._write(data)
 
     def _read(self) -> dict:
         if not self.path.is_file():

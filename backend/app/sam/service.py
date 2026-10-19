@@ -190,7 +190,7 @@ def _predict_with_remote(
     结果贴回原图返回，因此返回图与原图同尺寸、同坐标系，可直接差分。
     """
     if not prompt_text.strip():
-        raise ValidationError("sam_model_not_configured", "远程 SAM3 依赖类别名作为概念提示，请先为标注任务配置类别。")
+        raise ValidationError("sam_model_not_configured", "远程 SAM3 依赖类别名作为概念提示，请先为数据集配置类别。")
     base = base_url.rstrip("/")
     form: dict[str, str] = {"prompt": prompt_text}
     if box is not None:

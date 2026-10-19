@@ -1,4 +1,4 @@
-import type { Dataset, TrainingDevice } from "../../types";
+import type { Dataset, TrainingDevice, TrainingNodeStatus } from "../../types";
 import {
   deviceStatusLabel,
   estimateMinutes,
@@ -15,6 +15,7 @@ interface Props {
   dataset: Dataset;
   form: TrainingFormState;
   devices: TrainingDevice[];
+  nodes?: TrainingNodeStatus[];
   busy: boolean;
   canSubmit: boolean;
   riskText: string;
@@ -22,10 +23,13 @@ interface Props {
   onSaveDraft: () => void;
 }
 
+const DEVICE_TYPE_LABELS: Record<string, string> = { cpu: "CPU", cuda: "CUDA", mps: "MPS", npu: "NPU" };
+
 export function TrainingComputeRail({
   dataset,
   form,
   devices,
+  nodes = [],
   busy,
   canSubmit,
   riskText,
@@ -33,8 +37,10 @@ export function TrainingComputeRail({
   onSaveDraft,
 }: Props) {
   const setForm = onFormChange;
-  const cudaDevices = devices.filter((item) => item.type === "cuda");
-  const hasMps = devices.some((item) => item.type === "mps" && item.status !== "unavailable");
+  const localDevices = devices.filter((item) => !item.node_id);
+  const remoteDevices = devices.filter((item) => item.node_id);
+  const cudaDevices = localDevices.filter((item) => item.type === "cuda");
+  const hasMps = localDevices.some((item) => item.type === "mps" && item.status !== "unavailable");
   const gpuCount = form.device_type === "cuda" ? Math.max(form.gpu_ids.length, 1) : 1;
   const totalBatch = form.batch_size * (form.compute_mode === "multi" ? Math.max(form.gpu_ids.length, 1) : 1);
   const steps = estimateOptimizerSteps(form.epochs, dataset.image_count, form.batch_size);
@@ -93,11 +99,11 @@ export function TrainingComputeRail({
           </button>
           <button type="button" className={`training-dataset-device-item${form.device_type === "cpu" ? " active" : ""}`} onClick={() => setDeviceType("cpu")}>
             <span className="training-dataset-device-name">CPU</span>
-            <span className="training-dataset-device-state">{deviceStatusLabel(devices.find((item) => item.type === "cpu"), "可用")}</span>
+            <span className="training-dataset-device-state">{deviceStatusLabel(localDevices.find((item) => item.type === "cpu"), "可用")}</span>
           </button>
           <button type="button" className={`training-dataset-device-item${form.device_type === "mps" ? " active" : ""}`} onClick={() => setDeviceType("mps")} disabled={!hasMps}>
             <span className="training-dataset-device-name">MPS</span>
-            <span className="training-dataset-device-state">{hasMps ? deviceStatusLabel(devices.find((item) => item.type === "mps"), "可用") : "不可用"}</span>
+            <span className="training-dataset-device-state">{hasMps ? deviceStatusLabel(localDevices.find((item) => item.type === "mps"), "可用") : "不可用"}</span>
           </button>
           <button type="button" className={`training-dataset-device-item${form.device_type === "cuda" ? " active" : ""}`} onClick={() => setDeviceType("cuda")} disabled={!cudaDevices.length}>
             <span className="training-dataset-device-name">CUDA</span>
@@ -162,6 +168,47 @@ export function TrainingComputeRail({
         )}
       </div>
 
+      {(nodes.length > 0 || remoteDevices.length > 0) && (
+        <div className="training-dataset-compute-card training-remote-compute-card">
+          <h3>远程算力（巡检）</h3>
+          <p className="training-dataset-compute-sub">来自已注册的算力服务器 Agent，当前仅用于设备巡检展示。</p>
+          {nodes.filter((node) => node.status === "offline").map((node) => (
+            <div key={`offline-${node.id}`} className="training-remote-node-offline">
+              <strong>{node.name}</strong>
+              <span>{node.url}</span>
+              <em>不可达：{node.error ?? "连接失败"}</em>
+            </div>
+          ))}
+          {Object.entries(
+            remoteDevices.reduce<Record<string, { name: string; items: TrainingDevice[] }>>((groups, device) => {
+              const key = device.node_id ?? "node";
+              groups[key] = groups[key] ?? { name: device.node_name ?? key, items: [] };
+              groups[key].items.push(device);
+              return groups;
+            }, {}),
+          ).map(([key, group]) => (
+            <div key={key} className="training-remote-node-group">
+              <div className="training-remote-node-head">
+                <strong>{group.name}</strong>
+                <span className="status ready">在线 · {group.items.length} 个设备</span>
+              </div>
+              <div className="training-remote-device-grid">
+                {group.items.map((device) => (
+                  <div key={device.id} className="training-remote-device-card">
+                    <div className="training-remote-device-top">
+                      <strong>{DEVICE_TYPE_LABELS[device.type] ?? device.type}{device.index != null ? ` ${device.index}` : ""}</strong>
+                      <span>{deviceStatusLabel(device, "未知")}</span>
+                    </div>
+                    <span>{device.name}</span>
+                    {(device.type === "cuda" || device.type === "npu") && <span>{formatGpuMemory(device)}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="training-dataset-summary-card">
         <h3>运行摘要</h3>
         <p className="training-dataset-summary-lead">确认后创建本地训练任务。</p>
@@ -202,7 +249,7 @@ export function TrainingComputeRail({
       <div className="training-dataset-preview-card training-dataset-preview-card--static">
         <div className="training-dataset-preview-gradient" aria-hidden />
         <div className="training-dataset-preview-text">
-          <span className="training-dataset-preview-label">当前标注任务</span>
+          <span className="training-dataset-preview-label">当前数据集</span>
           <strong>{dataset.name}</strong>
           <span className="training-dataset-preview-link">{dataset.image_count} 张 · {dataset.class_count} 类 · {taskTypeLabel(dataset.task_type)}</span>
         </div>

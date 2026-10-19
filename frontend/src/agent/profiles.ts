@@ -3,7 +3,7 @@ import type { AppLocale } from "../locale";
 
 export const PROFILE_IDS: AgentProfileId[] = ["global", "dataset", "training", "model"];
 const titles = {
-  global: ["综合助手", "General assistant"], dataset: ["标注任务助手", "Annotation task assistant"],
+  global: ["综合助手", "General assistant"], dataset: ["数据集助手", "Dataset assistant"],
   training: ["训练助手", "Training assistant"], model: ["模型助手", "Model assistant"],
 };
 export const profileTitle = (id: AgentProfileId, locale: AppLocale) => titles[id][locale === "zh" ? 0 : 1];
