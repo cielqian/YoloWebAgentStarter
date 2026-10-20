@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../api/client";
+import { Toast } from "../components/Toast";
 import type { AppLocale } from "../locale";
 import { saveLocale } from "../locale";
 import type { FtpSettings, LLMAuthScheme, LLMSettings, SamSettings, TrainingDevice, TrainingNode, TrainingNodeStatus } from "../types";
@@ -502,8 +503,8 @@ function LlmSettingsPanel({ text }: { locale: AppLocale; text: SettingsText }) {
         </div>
         <span className={`settings-status ${form.enabled ? "ready" : "disabled"}`}>{status}</span>
       </header>
-      {error ? <div className="validation invalid"><span>{error}</span></div> : null}
-      {message && !error ? <div className="validation valid"><span>{message}</span></div> : null}
+      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
+      {message && !error ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
 
       <label className="settings-toggle">
         <input
@@ -718,8 +719,8 @@ function SamSettingsPanel({ locale, text, onSamSettingsChange }: { locale: AppLo
         </div>
         <span className={`settings-status ${settings.enabled ? "ready" : "disabled"}`}>{status}</span>
       </header>
-      {error ? <div className="validation invalid"><span>{error}</span></div> : null}
-      {message ? <div className="validation valid"><span>{message}</span></div> : null}
+      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
+      {message ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
       <div className="settings-form-grid">
         <label className="settings-toggle">
           <input
@@ -867,8 +868,8 @@ function FtpSettingsPanel({ text }: { text: SettingsText }) {
           {form.host ? text.ftpConfigured : text.ftpNotConfigured}
         </span>
       </header>
-      {error ? <div className="validation invalid"><span>{error}</span></div> : null}
-      {message ? <div className="validation valid"><span>{message}</span></div> : null}
+      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
+      {message ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
       <div className="settings-form-grid">
         <label>
           <span>{text.ftpHost}</span>
@@ -1010,8 +1011,8 @@ function TrainingNodesPanel({ text }: { text: SettingsText }) {
           {nodes.length ? text.nodesRegistered.replace("{count}", String(nodes.length)) : text.ftpNotConfigured}
         </span>
       </header>
-      {error ? <div className="validation invalid"><span>{error}</span></div> : null}
-      {message ? <div className="validation valid"><span>{message}</span></div> : null}
+      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
+      {message ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
       {nodes.length ? (
         <div className="training-node-list">
           {nodes.map((node) => {

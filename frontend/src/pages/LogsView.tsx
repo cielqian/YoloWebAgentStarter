@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { Toast } from "../components/Toast";
 import type { RuntimeLogResponse } from "../types";
 import type { AppLocale } from "../locale";
 
@@ -33,7 +34,7 @@ export function LogsView({ locale }: { locale: AppLocale }) {
 
   return <main className="logs-layout">
     <header className="logs-head"><div><span className="eyebrow">{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.subtitle}</p></div><div className="header-actions"><button className="button" onClick={() => void load()} disabled={loading}>{copy.refresh}</button><button className="button" onClick={() => void copyPath()} disabled={!result.path}>{copy.copy}</button></div></header>
-    {error && <div className="validation invalid"><span>{error}</span></div>}
+    {error && <Toast kind="error" message={error} onClose={() => setError("")} />}
     <section className="logs-summary"><span><small>{copy.total}</small><strong>{result.lines.length}</strong></span><span><small>{copy.info}</small><strong>{counts.info}</strong></span><span><small>{copy.warn}</small><strong>{counts.warn}</strong></span><span><small>{copy.error}</small><strong>{counts.error}</strong></span></section>
     <section className="panel logs-toolbar"><label>{copy.search}<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.search} /></label><label>{copy.lines}<select value={lineCount} onChange={(event) => setLineCount(Number(event.target.value))}><option value={100}>100</option><option value={300}>300</option><option value={1000}>1000</option></select></label><div className="log-levels"><button className={!level ? "active" : ""} onClick={() => setLevel("")}>{copy.all}</button>{["INFO", "WARNING", "ERROR"].map((item) => <button key={item} className={level === item ? "active" : ""} onClick={() => setLevel(item)}>{item}</button>)}</div></section>
     <section className="panel logs-panel"><header><div><h2>{copy.viewer}</h2><p>{copy.loaded} {visibleLines.length}{search ? ` / ${result.lines.length}` : ""}</p></div><code title={result.path}>{copy.path}: {result.path || "—"}</code></header>{loading ? <p className="muted">…</p> : visibleLines.length ? <pre>{visibleLines.join("\n")}</pre> : <p className="logs-empty">{copy.empty}</p>}</section>

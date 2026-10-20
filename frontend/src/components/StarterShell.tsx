@@ -6,7 +6,6 @@ export type StarterSection = "workspace" | "classes" | "training" | "models" | "
 
 interface Props {
   active: StarterSection;
-  datasetName?: string;
   onNavigate: (section: StarterSection) => void;
   locale?: AppLocale;
   focusMode?: boolean;
@@ -25,11 +24,8 @@ const navigation: Array<{ id: StarterSection; label: string; icon: ReactNode }> 
   { id: "settings", label: "设置", icon: <SettingsIcon /> },
 ];
 
-/**
- * 社区版工作台外壳。视觉和信息层级参考 YoloWebAgent。
- * Agent MVP 为本地只读助手 + 人工确认提交；不含 Workflow / 无人值守入口。
- */
-export function StarterShell({ active, datasetName, onNavigate, locale = "zh", focusMode = false, children }: Props) {
+/** 应用外壳：顶栏 + 左侧导航 + 内容区。 */
+export function StarterShell({ active, onNavigate, locale = "zh", focusMode = false, children }: Props) {
   const text = localeText[locale];
   const labels: Record<StarterSection, string> = {
     workspace: text.datasets,
@@ -44,33 +40,14 @@ export function StarterShell({ active, datasetName, onNavigate, locale = "zh", f
   };
   return (
     <div className={focusMode ? "starter-shell focus-mode" : "starter-shell"}>
-      <header className="starter-topbar">
-        <button className="starter-topbar-brand" onClick={() => onNavigate("workspace")} aria-label={text.backToDatasets}>
-          <span className="starter-topbar-mark">Y</span>
-          <span>YoloWebAgent</span>
-          <span className="starter-version">Starter</span>
-        </button>
-        <div className="starter-topbar-spacer" />
-        {datasetName ? <span className="starter-current-dataset">{text.currentDataset}{datasetName}</span> : null}
-        <span className="starter-local-badge"><LocalIcon /> {text.localMode}</span>
-      </header>
       <div className="starter-layout">
         <aside className="starter-sidebar">
-          <div className="starter-workspace-brand">
-            <span className="starter-workspace-mark">Y</span>
-            <div><strong>{text.workspace}</strong><small>{text.community}</small></div>
-          </div>
           <nav className="starter-menu" aria-label={text.mainNav}>
             <span className="starter-menu-group-label">{text.workspaceGroup}</span>
             {navigation.slice(0, 8).map((item) => <NavigationButton key={item.id} item={item} active={active} labels={labels} onNavigate={onNavigate} />)}
             <span className="starter-menu-group-label">{text.settingsGroup}</span>
             {navigation.slice(8).map((item) => <NavigationButton key={item.id} item={item} active={active} labels={labels} onNavigate={onNavigate} />)}
           </nav>
-          <div className="starter-sidebar-note">
-            <strong>{text.sidebarNoteTitle}</strong>
-            <p>{text.sidebarNoteBody}</p>
-          </div>
-          <div className="starter-sidebar-version">YoloWebAgent Starter · v0.1</div>
         </aside>
         <div className="starter-main">{children}</div>
       </div>
@@ -88,7 +65,6 @@ function DatasetIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><pat
 function ClassIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4 2.1 4.6 5 .5-3.7 3.3 1 4.9L12 14.9l-4.4 2.4 1-4.9L4.9 9.1l5-.5L12 4Z" /><path d="M5 20.5h14" /></svg>; }
 function TrainingIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18V9m5 9V5m5 13v-7m4 7V8" /><path d="M3.5 20.5h17" /></svg>; }
 function ModelIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 4v10l-7 4-7-4V7l7-4Z" /><path d="m5 7 7 4 7-4M12 11v10" /></svg>; }
-function LocalIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v11H5z" /><path d="M9 19.5h6M12 15.5v4" /></svg>; }
 function SettingsIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" /><path d="m19 13.5 1.2 1-.2 1.7-1.5 1-1.7-.6-1 1.1.1 1.8-1.5.8-1.4-1.1h-1.5L10 20.3l-1.6-.8.1-1.8-1-1.1-1.7.6-1.5-1 .2-1.7 1.2-1v-1.5l-1.2-1 .2-1.7 1.5-1 1.7.6 1-1.1-.1-1.8L10 5l1.4 1.1h1.5L14.3 5l1.6.8-.1 1.8 1 1.1 1.7-.6 1.5 1-.2 1.7-1.2 1Z" /></svg>; }
 function FtpIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1.5" /><rect x="4" y="14" width="16" height="6" rx="1.5" /><circle cx="8" cy="7" r="1" /><circle cx="8" cy="17" r="1" /></svg>; }
 function SourceIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 4 8l8 4.5L20 8l-8-4.5Z" /><path d="m4 12.5 8 4.5 8-4.5" /><path d="m4 17 8 4.5 8-4.5" /></svg>; }

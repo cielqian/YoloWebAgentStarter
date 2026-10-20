@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { Toast } from "../components/Toast";
 import type { Dataset, ModelComparison, ModelEvaluationRecord, ModelVersion, SplitName } from "../types";
 import { ModelTestModal } from "../components/ModelTestModal";
 import { ModelComparisonBar } from "../components/model-list/ModelComparisonBar";
@@ -159,8 +160,8 @@ export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskA
   if (detailModel) {
     return (
       <main className="models-layout models-workspace-page">
-        {error && <div className="validation invalid"><strong>模型操作失败</strong><span>{error}</span></div>}
-        {notice && <p className="training-workspace-notice">{notice}</p>}
+        {error && <Toast kind="error" message={error} onClose={() => setError("")} />}
+        {notice && <Toast kind="success" message={notice} onClose={() => setNotice("")} />}
         {onAskAgent ? <button type="button" className="button" onClick={() => onAskAgent(detailModel)}>询问智能体：此模型</button> : null}
         <ModelDetailView
           dataset={dataset}
@@ -203,8 +204,8 @@ export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskA
         </div>
       </header>
 
-      {error && <div className="validation invalid"><strong>模型操作失败</strong><span>{error}</span></div>}
-      {notice && <p className="training-workspace-notice">{notice}</p>}
+      {error && <Toast kind="error" message={error} onClose={() => setError("")} />}
+      {notice && <Toast kind="success" message={notice} onClose={() => setNotice("")} />}
 
       <ModelLibraryStats
         total={models.length}

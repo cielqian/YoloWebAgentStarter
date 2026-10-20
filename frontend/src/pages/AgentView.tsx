@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { agentApi } from "../api/agent";
+import { Toast } from "../components/Toast";
 import {
   editableApprovalFields,
   expectedApprovalOutputs,
@@ -566,7 +567,7 @@ export function AgentView({ locale, context: pageContext, onOpenDataset, onOpenT
           <button className="button primary" onClick={() => void createSession()} disabled={busy}><IconPlus size={15} />{text.newChat}</button>
         </div>
       </header>
-      {error ? <div className="validation invalid"><span>{error}</span></div> : null}
+      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
 
       <AgentContextPicker locale={locale} profile={profileId} context={bindingContext} disabled={busy}
         onChange={(profile, next) => { setProfileId(profile); setBindingContext(next); setBindingConfirmed(false); }} />
