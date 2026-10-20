@@ -31,6 +31,8 @@ from app.training.runtime.remote_training import (
     delete_remote_task,
     dispatch_remote_task,
     find_node,
+    parse_remote_device_set,
+    remote_node_occupied_devices,
     stop_remote_task,
 )
 
@@ -69,7 +71,14 @@ class TrainingService:
     def devices(self) -> list[dict[str, object]]:
         return [device.as_dict() for device in DeviceService().list_devices()]
 
-    def resume_task(self, session: Session, task_id: str, payload: TrainingTaskResumeRequest) -> TrainingTaskResponse:
+    def resume_task(
+        self,
+        session: Session,
+        task_id: str,
+        payload: TrainingTaskResumeRequest,
+        *,
+        settings: "Settings | None" = None,
+    ) -> TrainingTaskResponse:
         previous = self.get_task(session, task_id)
         if previous.status not in {"completed", "failed", "stopped"}:
             raise ValidationError("resume_task_not_finished", "Only completed, failed, or stopped training tasks can be resumed.")
@@ -107,6 +116,7 @@ class TrainingService:
             resume_run_dir=source_run_dir if payload.resume_epoch else None,
             resume_epoch=payload.resume_epoch,
             resume_source_task_id=previous.id,
+            settings=settings,
         )
 
     def _create_task(
@@ -223,7 +233,7 @@ class TrainingService:
             self.storage.remove_training_task(resolved_task_id)
             raise
         if node is not None:
-            return self._dispatch_remote_task(session, task, node, dataset_zip, weights_path)
+            return self._submit_remote_task(session, task, node, dataset_zip, weights_path)
         self.queue.submit(resolved_task_id)
         return task_response(task)
 
@@ -249,10 +259,12 @@ class TrainingService:
                 for item in snapshot["payload"].get("devices", [])
                 if isinstance(item, dict) and item.get("id")
             )
-            if selector not in available:
+            requested = [part.strip() for part in selector.split(",") if part.strip()]
+            missing = [part for part in requested if part not in available]
+            if not requested or missing:
                 raise ValidationError(
                     "training_device_unavailable",
-                    f"The node does not expose device '{selector}'.",
+                    f"The node does not expose device(s) {', '.join(missing) or selector}.",
                     details={"available_devices": available},
                 )
         return node
@@ -297,6 +309,29 @@ class TrainingService:
         if payload.patience is not None:
             args.append(f"patience={payload.patience}")
         return args, archive, weights_path
+
+    def _submit_remote_task(
+        self,
+        session: Session,
+        task: TrainingTask,
+        node: dict,
+        dataset_zip: Path | None,
+        weights_path: Path | None,
+    ) -> TrainingTaskResponse:
+        try:
+            occupied = remote_node_occupied_devices(session, node, exclude_task_id=task.id)
+        except RemoteNodeUnavailable:
+            occupied = None
+        requested = parse_remote_device_set(task.device)
+        if occupied is None or (requested and requested & occupied):
+            if dataset_zip is not None:
+                dataset_zip.unlink(missing_ok=True)
+            reason = "训练节点暂不可达" if occupied is None else f"目标设备被占用（{', '.join(sorted(requested & occupied))}）"
+            session.commit()
+            TrainingLogStore(task.logs_path or "train.log").append(f"{reason}，任务加入排队队列，释放后自动下发。")
+            session.refresh(task)
+            return task_response(task)
+        return self._dispatch_remote_task(session, task, node, dataset_zip, weights_path)
 
     def _dispatch_remote_task(
         self,
@@ -401,6 +436,21 @@ class TrainingService:
         process_registry.request_stop(task_id)
         session.refresh(task)
         return task_response(task)
+
+    def delete_task(self, session: Session, task_id: str, *, settings: "Settings | None" = None) -> None:
+        task = self.get_task(session, task_id)
+        if task.status == "running":
+            raise ValidationError("training_task_running", "Stop the training task before deleting it.")
+        if task.status == "pending" and task.node_id and settings is not None:
+            node = find_node(settings, task.node_id)
+            if node is not None:
+                delete_remote_task(node, task.id)
+        # 已注册模型是独立受管产物，保留；仅解除与训练记录的关联。
+        for model in list(task.model_versions):
+            model.training_task_id = None
+        session.delete(task)
+        session.commit()
+        self.storage.remove_training_task(task_id)
 
     def logs(self, session: Session, task_id: str, tail: int = 200) -> TrainingLogResponse:
         task = self.get_task(session, task_id)

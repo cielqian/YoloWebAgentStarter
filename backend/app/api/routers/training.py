@@ -112,8 +112,19 @@ def resume_task(
     payload: TrainingTaskResumeRequest,
     session: Session = Depends(get_session),
     service: TrainingService = Depends(get_training_service),
+    settings: Settings = Depends(get_settings),
 ) -> TrainingTaskResponse:
-    return service.resume_task(session, task_id, payload)
+    return service.resume_task(session, task_id, payload, settings=settings)
+
+
+@router.delete("/tasks/{task_id}", status_code=204, response_class=Response, response_model=None)
+def delete_task(
+    task_id: str,
+    session: Session = Depends(get_session),
+    service: TrainingService = Depends(get_training_service),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    service.delete_task(session, task_id, settings=settings)
 
 
 @router.get("/tasks/{task_id}", response_model=TrainingTaskResponse)

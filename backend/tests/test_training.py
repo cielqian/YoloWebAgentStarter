@@ -675,3 +675,337 @@ def test_training_runner_reads_output_as_utf8(tmp_path, monkeypatch):
 
     assert captured["encoding"] == "utf-8"
     assert captured["errors"] == "replace"
+
+def test_resume_remote_task_redispatches_to_node(client, monkeypatch):
+    from app.core.models import TrainingTask as TrainingTaskModel
+    from app.core.time import utc_now
+    from app.training.runtime import remote_nodes
+    import app.training.service as training_service_module
+
+    snapshot = {
+        "payload": {
+            "hostname": "gpu-server-01",
+            "devices": [
+                {"id": "cpu", "type": "cpu", "name": "EPYC", "index": None, "memory_total_mb": None, "memory_free_mb": None, "status": "available"},
+                {"id": "cuda:0", "type": "cuda", "name": "RTX 4090", "index": 0, "memory_total_mb": 24564, "memory_free_mb": 23000, "status": "available"},
+            ],
+        }
+    }
+
+    def fake_snapshot(url, token, timeout=3.0, use_cache=True):
+        return snapshot
+
+    dispatched: list[dict] = []
+
+    def fake_dispatch(node, spec, dataset_zip, weights):
+        dispatched.append(dict(spec))
+
+    monkeypatch.setattr(remote_nodes, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "dispatch_remote_task", fake_dispatch)
+
+    node = client.post(
+        "/api/training/nodes",
+        json={"name": "gpu-01", "url": "http://gpu-01:8010", "token": "secret", "enabled": True},
+    ).json()
+    dataset_id, _ = prepared_dataset(client)
+
+    created = client.post(
+        "/api/training/tasks",
+        json={
+            "dataset_id": dataset_id,
+            "name": "remote-source",
+            "model": "yolo11n.pt",
+            "epochs": 1,
+            "batch_size": 1,
+            "node_id": node["id"],
+            "device": "cuda:0",
+        },
+    )
+    assert created.status_code == 201, created.text
+    source_id = created.json()["id"]
+    assert len(dispatched) == 1
+
+    # 模拟 poller 完成回收：终态 + 本机已有回传的 last.pt。
+    with client.app.state.database.session_factory() as db:
+        task = db.get(TrainingTaskModel, source_id)
+        weights_dir = Path(task.run_dir) / "weights"
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        (weights_dir / "best.pt").write_bytes(b"fake best")
+        (weights_dir / "last.pt").write_bytes(b"fake last")
+        task.status = "completed"
+        task.best_model_path = str(weights_dir / "best.pt")
+        task.last_model_path = str(weights_dir / "last.pt")
+        task.progress_epoch = task.epochs
+        task.progress_percent = 100.0
+        task.finished_at = utc_now()
+        db.commit()
+
+    resumed_response = client.post(
+        f"/api/training/tasks/{source_id}/resume",
+        json={"name": "remote-continued", "epochs": 2, "resume_epoch": False},
+    )
+    assert resumed_response.status_code == 201, resumed_response.text
+    resumed = resumed_response.json()
+    assert resumed["node_id"] == node["id"]
+    assert resumed["status"] == "running"
+    assert resumed["epochs"] == 2
+    assert len(dispatched) == 2
+    assert dispatched[1]["epochs"] == 2
+
+
+def test_stopped_remote_task_salvages_last_pt_and_resumes(client, monkeypatch):
+    from app.core.models import TrainingTask as TrainingTaskModel
+    from app.training.runtime import remote_nodes, remote_training
+    import app.training.service as training_service_module
+
+    snapshot = {
+        "payload": {
+            "hostname": "gpu-server-01",
+            "devices": [
+                {"id": "cuda:0", "type": "cuda", "name": "RTX 4090", "index": 0, "memory_total_mb": 24564, "memory_free_mb": 23000, "status": "available"},
+            ],
+        }
+    }
+
+    def fake_snapshot(url, token, timeout=3.0, use_cache=True):
+        return snapshot
+
+    dispatched: list[dict] = []
+
+    def fake_dispatch(node, spec, dataset_zip, weights):
+        dispatched.append(dict(spec))
+
+    monkeypatch.setattr(remote_nodes, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "dispatch_remote_task", fake_dispatch)
+
+    node = client.post(
+        "/api/training/nodes",
+        json={"name": "gpu-01", "url": "http://gpu-01:8010", "token": "secret", "enabled": True},
+    ).json()
+    dataset_id, _ = prepared_dataset(client)
+
+    created = client.post(
+        "/api/training/tasks",
+        json={
+            "dataset_id": dataset_id,
+            "name": "remote-interrupted",
+            "model": "yolo11n.pt",
+            "epochs": 5,
+            "batch_size": 1,
+            "node_id": node["id"],
+            "device": "cuda:0",
+        },
+    )
+    assert created.status_code == 201, created.text
+    task_id = created.json()["id"]
+
+    def fake_status(node, task_id_arg):
+        return {
+            "task_id": task_id_arg,
+            "status": "stopped",
+            "progress": {"epoch": 3, "total_epochs": 5, "percent": 60.0},
+            "metrics": {},
+            "artifacts": {"best": False, "last": True},
+            "error": "Training stopped by user.",
+        }
+
+    def fake_logs(node, task_id_arg, after=0):
+        return {"task_id": task_id_arg, "logs": "", "line_count": 0}
+
+    def fake_download(node, task_id_arg, name, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"partial last")
+
+    monkeypatch.setattr(remote_training, "fetch_task_status", fake_status)
+    monkeypatch.setattr(remote_training, "fetch_task_logs", fake_logs)
+    monkeypatch.setattr(remote_training, "download_artifact", fake_download)
+
+    app = client.app
+    with app.state.database.session_factory() as db:
+        task = db.get(TrainingTaskModel, task_id)
+        remote_training.sync_remote_task(db, app.state.storage, app.state.settings, task, {})
+        db.commit()
+        assert task.status == "stopped"
+        assert task.last_model_path and task.last_model_path.endswith("last.pt")
+        assert task.best_model_path is None
+
+    # 中断的远程任务现在可以像本机一样从 last.pt 续训
+    resumed = client.post(
+        f"/api/training/tasks/{task_id}/resume",
+        json={"resume_epoch": False},
+    )
+    assert resumed.status_code == 201, resumed.text
+    body = resumed.json()
+    assert body["node_id"] == node["id"]
+    assert body["status"] == "running"
+    assert len(dispatched) == 2
+    assert dispatched[1]["model"] == "last.pt"
+
+
+def test_remote_multi_gpu_device_selection(client, monkeypatch):
+    from app.training.runtime import remote_nodes
+    import app.training.service as training_service_module
+
+    snapshot = {
+        "payload": {
+            "hostname": "gpu-server-01",
+            "devices": [
+                {"id": "cpu", "type": "cpu", "name": "EPYC", "index": None, "memory_total_mb": None, "memory_free_mb": None, "status": "available"},
+                {"id": "cuda:0", "type": "cuda", "name": "RTX 5880", "index": 0, "memory_total_mb": 49140, "memory_free_mb": 49000, "status": "available"},
+                {"id": "cuda:1", "type": "cuda", "name": "RTX 5880", "index": 1, "memory_total_mb": 49140, "memory_free_mb": 49000, "status": "available"},
+            ],
+        }
+    }
+
+    def fake_snapshot(url, token, timeout=3.0, use_cache=True):
+        return snapshot
+
+    dispatched: list[dict] = []
+
+    def fake_dispatch(node, spec, dataset_zip, weights):
+        dispatched.append(dict(spec))
+
+    monkeypatch.setattr(remote_nodes, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "dispatch_remote_task", fake_dispatch)
+
+    node = client.post(
+        "/api/training/nodes",
+        json={"name": "gpu-01", "url": "http://gpu-01:8010", "token": "secret", "enabled": True},
+    ).json()
+    dataset_id, _ = prepared_dataset(client)
+
+    created = client.post(
+        "/api/training/tasks",
+        json={
+            "dataset_id": dataset_id,
+            "name": "remote-ddp",
+            "model": "yolo11n.pt",
+            "epochs": 1,
+            "batch_size": 1,
+            "node_id": node["id"],
+            "device": "cuda:0,cuda:1",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert dispatched[0]["device"] == "cuda:0,cuda:1"
+
+    invalid = client.post(
+        "/api/training/tasks",
+        json={
+            "dataset_id": dataset_id,
+            "name": "remote-bad-device",
+            "model": "yolo11n.pt",
+            "epochs": 1,
+            "batch_size": 1,
+            "node_id": node["id"],
+            "device": "cuda:0,cuda:9",
+        },
+    )
+    assert invalid.status_code == 422, invalid.text
+    assert invalid.json()["error"]["code"] == "training_device_unavailable"
+    assert "cuda:9" in invalid.json()["error"]["message"]
+
+
+def test_remote_task_queues_when_devices_busy(client, monkeypatch):
+    from app.core.models import TrainingTask as TrainingTaskModel
+    from app.training.runtime import remote_nodes, remote_training
+    import app.training.service as training_service_module
+
+    state = {"cuda0_busy": True}
+
+    def fake_snapshot(url, token, timeout=3.0, use_cache=True):
+        return {
+            "payload": {
+                "hostname": "gpu-server-01",
+                "devices": [
+                    {"id": "cpu", "type": "cpu", "name": "EPYC", "index": None, "memory_total_mb": None, "memory_free_mb": None, "status": "available"},
+                    {"id": "cuda:0", "type": "cuda", "name": "RTX 5880", "index": 0, "memory_total_mb": 49140, "memory_free_mb": 49000, "status": "busy" if state["cuda0_busy"] else "available"},
+                    {"id": "cuda:1", "type": "cuda", "name": "RTX 5880", "index": 1, "memory_total_mb": 49140, "memory_free_mb": 49000, "status": "available"},
+                ],
+            }
+        }
+
+    dispatched: list[dict] = []
+
+    def fake_dispatch(node, spec, dataset_zip, weights):
+        dispatched.append(dict(spec))
+
+    monkeypatch.setattr(remote_nodes, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "fetch_node_snapshot", fake_snapshot)
+    monkeypatch.setattr(training_service_module, "dispatch_remote_task", fake_dispatch)
+    monkeypatch.setattr(remote_training, "dispatch_remote_task", fake_dispatch)
+
+    node = client.post(
+        "/api/training/nodes",
+        json={"name": "gpu-01", "url": "http://gpu-01:8010", "token": "secret", "enabled": True},
+    ).json()
+    dataset_id, _ = prepared_dataset(client)
+
+    # cuda:0 被占用 → 入队等待
+    queued = client.post(
+        "/api/training/tasks",
+        json={"dataset_id": dataset_id, "name": "queued", "model": "yolo11n.pt", "epochs": 1, "batch_size": 1, "node_id": node["id"], "device": "cuda:0"},
+    )
+    assert queued.status_code == 201, queued.text
+    assert queued.json()["status"] == "pending"
+    assert dispatched == []
+
+    # cuda:1 空闲 → 立即下发
+    immediate = client.post(
+        "/api/training/tasks",
+        json={"dataset_id": dataset_id, "name": "immediate", "model": "yolo11n.pt", "epochs": 1, "batch_size": 1, "node_id": node["id"], "device": "cuda:1"},
+    )
+    assert immediate.status_code == 201, immediate.text
+    assert immediate.json()["status"] == "running"
+    assert [spec["device"] for spec in dispatched] == ["cuda:1"]
+
+    # 卡释放后调度器自动下发排队任务
+    state["cuda0_busy"] = False
+    app = client.app
+    with app.state.database.session_factory() as db:
+        remote_training.dispatch_due_remote_tasks(db, app.state.storage, app.state.settings)
+        task = db.get(TrainingTaskModel, queued.json()["id"])
+        assert task.status == "running"
+    assert [spec["device"] for spec in dispatched] == ["cuda:1", "cuda:0"]
+
+
+def test_delete_training_record(client, tmp_path, monkeypatch):
+    executable = tmp_path / "fake-yolo"
+    fake_yolo(executable)
+    monkeypatch.setenv("YWA_YOLO_EXECUTABLE", str(executable))
+    dataset_id, _ = prepared_dataset(client)
+
+    created = client.post(
+        "/api/training/tasks",
+        json={"dataset_id": dataset_id, "name": "to-delete", "model": "yolo11n.pt", "epochs": 1, "batch_size": 1},
+    )
+    task = wait_for_terminal(client, created.json()["id"])
+    assert task["status"] == "completed"
+    run_dir = Path(task["run_dir"])
+    assert run_dir.is_dir()
+
+    deleted = client.delete(f"/api/training/tasks/{task['id']}")
+    assert deleted.status_code == 204, deleted.text
+    assert client.get(f"/api/training/tasks/{task['id']}").status_code == 404
+    assert not run_dir.exists()
+
+    slow = tmp_path / "slow-yolo"
+    slow_yolo(slow)
+    monkeypatch.setenv("YWA_YOLO_EXECUTABLE", str(slow))
+    running = client.post(
+        "/api/training/tasks",
+        json={"dataset_id": dataset_id, "name": "running-keep", "model": "yolo11n.pt", "epochs": 20, "batch_size": 1},
+    )
+    running_id = running.json()["id"]
+    for _ in range(60):
+        if client.get(f"/api/training/tasks/{running_id}").json()["status"] == "running":
+            break
+        time.sleep(0.05)
+    rejected = client.delete(f"/api/training/tasks/{running_id}")
+    assert rejected.status_code == 422, rejected.text
+    assert rejected.json()["error"]["code"] == "training_task_running"
+    stop = client.post(f"/api/training/tasks/{running_id}/stop")
+    assert stop.status_code == 200

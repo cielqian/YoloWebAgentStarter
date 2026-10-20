@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from app.settings.service import SettingsService
 from app.training.observability.log_store import TrainingLogStore
 from app.training.observability.metrics import TrainingMetricsParser
 from app.training.observability.summary import write_training_summary
+from app.training.runtime import remote_nodes
 from app.training.runtime.remote_nodes import RemoteNodeUnavailable
 
 DISPATCH_TIMEOUT_SECONDS = 600.0
@@ -230,8 +232,25 @@ def sync_remote_task(session: Session, storage: Storage, settings: Settings, tas
             _complete_remote_task(session, storage, node, task, status)
         else:
             error = str(status.get("error") or "") or ("Training stopped by user." if remote_status == "stopped" else "远程训练失败。")
+            _salvage_checkpoints(storage, node, task, status)
             _finalize(session, task, remote_status, error)
     session.commit()
+
+
+def _salvage_checkpoints(storage: Storage, node: dict[str, Any], task: TrainingTask, status: dict[str, Any]) -> None:
+    """停止/失败的远程任务尽量回收 agent 上已有的 checkpoint，保留从 last.pt 续训的能力。"""
+    artifacts = status.get("artifacts") or {}
+    if not isinstance(artifacts, dict):
+        return
+    weights_dir = storage.managed_training_path(task.run_dir or "") / "weights"
+    for name in ("best", "last"):
+        if not artifacts.get(name) or getattr(task, f"{name}_model_path") is not None:
+            continue
+        try:
+            download_artifact(node, task.id, f"{name}.pt", weights_dir / f"{name}.pt")
+        except (RemoteTrainingError, RemoteNodeUnavailable):
+            continue
+        setattr(task, f"{name}_model_path", str(weights_dir / f"{name}.pt"))
 
 
 def _complete_remote_task(session: Session, storage: Storage, node: dict[str, Any], task: TrainingTask, status: dict[str, Any]) -> None:
@@ -269,6 +288,115 @@ def _finalize(session: Session, task: TrainingTask, status: str, error: str) -> 
     session.commit()
 
 
+def parse_remote_device_set(device: str | None) -> set[str]:
+    """拆出任务声明的 agent 设备号；auto/空无法定位具体卡，返回空集。"""
+    return {part.strip() for part in str(device or "").split(",") if part.strip() and part.strip() != "auto"}
+
+
+def _agent_busy_device_ids(node: dict[str, Any]) -> set[str]:
+    snapshot = remote_nodes.fetch_node_snapshot(str(node.get("url") or ""), str(node.get("token") or ""))
+    return {
+        str(item.get("id"))
+        for item in snapshot["payload"].get("devices", [])
+        if isinstance(item, dict) and item.get("id") and item.get("status") == "busy"
+    }
+
+
+def remote_node_occupied_devices(session: Session, node: dict[str, Any], exclude_task_id: str | None = None) -> set[str]:
+    """节点当前被占用的设备：agent 上报 busy + 本后端运行/排队中任务声明的设备。"""
+    occupied = _agent_busy_device_ids(node)
+    query = select(TrainingTask).where(
+        TrainingTask.node_id == str(node.get("id") or ""),
+        TrainingTask.status.in_(("pending", "running")),
+    )
+    for row in session.scalars(query):
+        if exclude_task_id is not None and row.id == exclude_task_id:
+            continue
+        occupied |= parse_remote_device_set(row.device)
+    return occupied
+
+
+def dispatch_task_from_row(session: Session, storage: Storage, node: dict[str, Any], task: TrainingTask) -> bool:
+    """把排队中的远程任务下发到 agent；成功转 running，失败转 failed。"""
+    export_root = Path(task.export_path) if task.export_path else None
+    if export_root is None or not export_root.is_dir():
+        _finalize(session, task, "failed", "排队任务的数据集导出已丢失，请重试该任务。")
+        return False
+    model_arg = Path(task.model_path).name if Path(task.model_path).is_absolute() else task.model_name
+    spec = {
+        "task_id": task.id,
+        "task_type": task.task_type,
+        "model": model_arg,
+        "epochs": task.epochs,
+        "img_size": task.img_size,
+        "batch_size": task.batch_size,
+        "device": task.device,
+        "workers": task.workers,
+        "seed": task.seed,
+        "optimizer": task.optimizer,
+        "lr0": task.lr0,
+        "patience": task.patience,
+    }
+    archive = storage.tmp_dir / f"{task.id}-dataset.zip"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for item in sorted(export_root.rglob("*")):
+            if item.is_file():
+                zf.write(item, item.relative_to(export_root).as_posix())
+    weights_path = Path(task.model_path) if Path(task.model_path).is_absolute() else None
+    try:
+        dispatch_remote_task(node, spec, archive, weights_path)
+    except RemoteTrainingError as exc:
+        _finalize(session, task, "failed", f"排队任务下发失败：{exc}")
+        return False
+    finally:
+        archive.unlink(missing_ok=True)
+    task.status = "running"
+    task.started_at = utc_now()
+    task.progress_total_epochs = task.epochs
+    session.commit()
+    TrainingLogStore(task.logs_path or "train.log").append("设备已释放，任务下发到远程节点开始训练。")
+    return True
+
+
+def dispatch_due_remote_tasks(session: Session, storage: Storage, settings: Settings) -> None:
+    """按 FIFO + 设备不重叠规则，把到期的排队任务下发到各节点。"""
+    pending = list(
+        session.scalars(
+            select(TrainingTask)
+            .where(TrainingTask.node_id.is_not(None), TrainingTask.status == "pending")
+            .order_by(TrainingTask.created_at.asc(), TrainingTask.id.asc())
+        )
+    )
+    if not pending:
+        return
+    by_node: dict[str, list[TrainingTask]] = {}
+    for task in pending:
+        by_node.setdefault(task.node_id or "", []).append(task)
+    for node_id, tasks in by_node.items():
+        node = find_node(settings, node_id)
+        if node is None:
+            for task in tasks:
+                _finalize(session, task, "failed", "训练节点已被删除，远程训练无法继续。")
+            session.commit()
+            continue
+        try:
+            occupied = _agent_busy_device_ids(node)
+        except RemoteNodeUnavailable:
+            continue
+        running_rows = session.scalars(
+            select(TrainingTask).where(TrainingTask.node_id == node_id, TrainingTask.status == "running")
+        )
+        for row in running_rows:
+            occupied |= parse_remote_device_set(row.device)
+        for task in tasks:
+            requested = parse_remote_device_set(task.device)
+            if requested & occupied:
+                continue
+            if dispatch_task_from_row(session, storage, node, task):
+                occupied |= requested
+
+
 class RemoteTrainingPoller:
     """Mirror agent-side task state into TrainingTask rows every few seconds."""
 
@@ -301,11 +429,12 @@ class RemoteTrainingPoller:
 
     def _tick(self, session_factory: sessionmaker[Session], storage: Storage, settings: Settings) -> None:
         with session_factory() as session:
+            dispatch_due_remote_tasks(session, storage, settings)
             tasks = list(
                 session.scalars(
                     select(TrainingTask).where(
                         TrainingTask.node_id.is_not(None),
-                        TrainingTask.status.in_(("pending", "running")),
+                        TrainingTask.status == "running",
                     )
                 )
             )
