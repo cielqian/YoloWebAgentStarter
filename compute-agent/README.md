@@ -7,18 +7,36 @@
 ## 部署（离线内网服务器）
 
 ```bash
-# 1. 把本目录拷到算力服务器（整个目录只有 agent.py + run.sh + README.md）
+# 1. 把本目录拷到算力服务器（agent.py + install.sh + run.sh + README.md）
 scp -r compute-agent/ user@服务器IP:~/compute-agent
 
-# 2. 启动（用服务器上带 torch/torch_npu 的那个 Python；没有 torch 也能跑，只上报 CPU）
+# 2. 以 systemd 服务安装（推荐：开机自启、崩溃自动拉起）
 cd ~/compute-agent
-chmod +x run.sh
-./run.sh                          # 0.0.0.0:8010，无鉴权（仅限内网可信环境）
-TOKEN=你的共享密钥 ./run.sh        # 推荐带 token
-PYTHON=/opt/venv/bin/python3 ./run.sh   # 指定解释器（或先 conda activate）
+chmod +x install.sh
+sudo ./install.sh -e yolo              # -e 指定 conda 环境名；不带参数会交互式询问
+# 可选：-p 端口（默认 8010）、-t 共享密钥（不填则自动生成并打印）
+# conda 装在非常规位置时：sudo CONDA_BASE=/path/to/conda ./install.sh -e yolo
+# 卸载：sudo ./install.sh --uninstall
 
-# 常驻后台
-TOKEN=xxx nohup ./run.sh > agent.log 2>&1 &
+# 临时调试（不入服务）
+./run.sh                              # 0.0.0.0:8010，无鉴权（仅限内网可信环境）
+TOKEN=你的共享密钥 ./run.sh            # 推荐带 token
+PYTHON=/opt/venv/bin/python3 ./run.sh  # 指定解释器（或先 conda activate）
+```
+
+## 多卡训练挂起排查
+
+单卡正常、多卡卡在首个 epoch 无输出，多为 NCCL P2P 问题（无 NVLink 的工作站跨 PCIe 根复合体不支持 P2P）。验证：
+
+```bash
+NCCL_P2P_DISABLE=1 torchrun --nproc_per_node=4 your_nccl_test.py   # 能跑通即确诊
+```
+
+修复：给服务加环境变量并重启（yolo 子进程会继承）：
+
+```bash
+systemctl edit ywa-agent      # [Service] 加 Environment="NCCL_P2P_DISABLE=1"
+systemctl daemon-reload && systemctl restart ywa-agent
 ```
 
 服务器自测：

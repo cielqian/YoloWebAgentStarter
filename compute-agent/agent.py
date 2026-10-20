@@ -32,7 +32,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.3.0"
+AGENT_VERSION = "0.3.1"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 MAX_BODY_BYTES = 32 * 1024 * 1024 * 1024
@@ -79,6 +79,7 @@ def list_devices() -> list[dict[str, Any]]:
     ]
     torch = _torch()
     if torch is None:
+        _mark_busy_devices(devices)
         return devices
 
     try:
@@ -100,6 +101,7 @@ def list_devices() -> list[dict[str, Any]]:
 
     devices.extend(_probe_accelerators(torch, "cuda", "CUDA GPU"))
     devices.extend(_probe_accelerators(torch, "npu", "NPU", require_plugin=True))
+    _mark_busy_devices(devices)
     return devices
 
 
@@ -578,6 +580,35 @@ class TaskManager:
 task_manager = TaskManager(WORKSPACE_ROOT)
 
 
+def _running_device_ids() -> set[str]:
+    """当前运行中任务声明的设备；auto 无法拆分，单独返回哨兵值。"""
+    with task_manager.lock:
+        records = [record for record in task_manager.tasks.values() if record.get("status") == "running"]
+    used: set[str] = set()
+    for record in records:
+        device = str((record.get("spec") or {}).get("device") or "").strip()
+        if device == "auto":
+            used.add("auto")
+            continue
+        if not device:
+            continue
+        used.update(part.strip() for part in device.split(",") if part.strip())
+    return used
+
+
+def _mark_busy_devices(devices: list[dict[str, Any]]) -> None:
+    running = _running_device_ids()
+    if not running:
+        return
+    accelerators = [item for item in devices if item.get("type") != "cpu"]
+    for item in devices:
+        if item.get("id") in running:
+            item["status"] = "busy"
+        elif "auto" in running and accelerators and item.get("id") == accelerators[0].get("id"):
+            # auto 模式由 Ultralytics 选卡，视为占用首张加速卡
+            item["status"] = "busy"
+
+
 # ---------------------------------------------------------------- HTTP 服务
 
 
@@ -789,6 +820,10 @@ def main() -> None:
     parser.add_argument("--token", default=os.environ.get("YWA_AGENT_TOKEN", os.environ.get("TOKEN", "")))
     parser.add_argument("--version", action="version", version=AGENT_VERSION)
     args = parser.parse_args()
+
+    # systemd 服务默认不带 HOME；补上以启用 torch kernel cache，避免首跑 JIT 编译极慢。
+    if not os.environ.get("HOME"):
+        os.environ["HOME"] = str(Path.home())
 
     task_manager.load_existing()
     server = ThreadingHTTPServer((args.host, args.port), make_handler(args.token.strip()))
