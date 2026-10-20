@@ -11,8 +11,12 @@ from app.settings.schemas import (
     LLMSettingsUpdate,
     SamSettingsResponse,
     SamSettingsUpdate,
+    WebhookDeliveryResult,
+    WebhookSettingsOut,
+    WebhookSettingsUpdate,
 )
 from app.settings.service import SettingsService
+from app.training.webhooks import TrainingWebhookNotifier
 
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -44,3 +48,18 @@ def test_llm_connection(
     settings: Settings = Depends(get_settings),
 ) -> LLMConnectionTestResult:
     return SettingsService(settings).test_llm_connection(payload)
+
+
+@router.get("/webhook", response_model=WebhookSettingsOut)
+def get_webhook_settings(settings: Settings = Depends(get_settings)) -> WebhookSettingsOut:
+    return SettingsService(settings).get_webhook_settings()
+
+
+@router.put("/webhook", response_model=WebhookSettingsOut)
+def update_webhook_settings(payload: WebhookSettingsUpdate, settings: Settings = Depends(get_settings)) -> WebhookSettingsOut:
+    return SettingsService(settings).update_webhook_settings(payload)
+
+
+@router.post("/webhook/test", response_model=WebhookDeliveryResult)
+def test_webhook(settings: Settings = Depends(get_settings)) -> WebhookDeliveryResult:
+    return TrainingWebhookNotifier(settings).test()

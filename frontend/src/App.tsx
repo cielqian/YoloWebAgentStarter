@@ -19,7 +19,7 @@ import { Toast } from "./components/Toast";
 import { readLocale, saveLocale, type AppLocale } from "./locale";
 import type { Annotation, BBox, ClassLabel, Dataset, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
 
-type View = "workspace" | "classes" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-language" | "logs" | "ftp" | "datasources";
+type View = "workspace" | "classes" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources";
 type CardReportKind = "validation" | "quality" | "duplicates";
 const ANNOTATION_IMAGE_PAGE_SIZE = 20;
 
@@ -215,7 +215,7 @@ export default function App() {
   const activeSection: StarterSection =
     view === "annotation"
       ? "workspace"
-      : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-language"
+      : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-webhook" || view === "settings-language"
         ? "settings"
         : view;
   const navigate = (section: StarterSection) => {
@@ -380,13 +380,13 @@ export default function App() {
           onFocusModelConsumed={() => setFocusModelId(undefined)}
           onAskAgent={(model) => { setAgentFocus({ ...(model.dataset_id ? { dataset: { id: model.dataset_id, name: datasets.find((d) => d.id === model.dataset_id)?.name ?? model.dataset_id } } : {}), model: { id: model.id, name: model.name } }); setView("agent"); }}
         />
-      ) : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-language" ? (
+      ) : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-webhook" || view === "settings-language" ? (
         <SettingsView
-          tab={view === "settings-llm" ? "llm" : view === "settings-sam" ? "sam" : view === "settings-ftp" ? "ftp" : view === "settings-nodes" ? "nodes" : "language"}
+          tab={view === "settings-llm" ? "llm" : view === "settings-sam" ? "sam" : view === "settings-ftp" ? "ftp" : view === "settings-nodes" ? "nodes" : view === "settings-webhook" ? "webhook" : "language"}
           locale={locale}
           onLocaleChange={setLocale}
           onTabChange={(tab) =>
-            setView(tab === "llm" ? "settings-llm" : tab === "sam" ? "settings-sam" : tab === "ftp" ? "settings-ftp" : tab === "nodes" ? "settings-nodes" : "settings-language")
+            setView(tab === "llm" ? "settings-llm" : tab === "sam" ? "settings-sam" : tab === "ftp" ? "settings-ftp" : tab === "nodes" ? "settings-nodes" : tab === "webhook" ? "settings-webhook" : "settings-language")
           }
           onSamSettingsChange={() => {
             api.getSystemInfo().then((info) => setSamCapabilities(info.sam)).catch(() => undefined);

@@ -196,6 +196,24 @@ export interface LLMConnectionTestResult {
   http_status?: number | null;
 }
 
+export type WebhookMethod = "GET" | "POST";
+export type WebhookEvent = "started" | "completed" | "failed" | "stopped";
+
+/** Webhook settings persisted in settings.json; fires on training lifecycle events. */
+export interface WebhookSettings {
+  enabled: boolean;
+  url: string;
+  method: WebhookMethod;
+  events: WebhookEvent[];
+}
+
+export interface WebhookDeliveryResult {
+  ok: boolean;
+  message: string;
+  code: string;
+  http_status?: number | null;
+}
+
 /** FTP settings persisted in settings.json; GET never returns the password. */
 export interface FtpSettings {
   host: string;

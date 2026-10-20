@@ -28,6 +28,7 @@ from app.training.observability.metrics import TrainingMetricsParser
 from app.training.observability.summary import write_training_summary
 from app.training.runtime import remote_nodes
 from app.training.runtime.remote_nodes import RemoteNodeUnavailable
+from app.training.webhooks import notify_training_status
 
 DISPATCH_TIMEOUT_SECONDS = 600.0
 POLL_TIMEOUT_SECONDS = 10.0
@@ -276,6 +277,7 @@ def _complete_remote_task(session: Session, storage: Storage, node: dict[str, An
         return
     write_training_summary(task, task.dataset)
     TrainingLogStore(task.logs_path or "train.log").append(f"Registered {len(registered)} model artifacts from remote node.")
+    notify_training_status("completed", task)
 
 
 def _finalize(session: Session, task: TrainingTask, status: str, error: str) -> None:
@@ -286,6 +288,7 @@ def _finalize(session: Session, task: TrainingTask, status: str, error: str) -> 
     store.append(error)
     write_training_summary(task, task.dataset)
     session.commit()
+    notify_training_status(task.status, task)
 
 
 def parse_remote_device_set(device: str | None) -> set[str]:
@@ -355,6 +358,7 @@ def dispatch_task_from_row(session: Session, storage: Storage, node: dict[str, A
     task.started_at = utc_now()
     task.progress_total_epochs = task.epochs
     session.commit()
+    notify_training_status("running", task)
     TrainingLogStore(task.logs_path or "train.log").append("设备已释放，任务下发到远程节点开始训练。")
     return True
 

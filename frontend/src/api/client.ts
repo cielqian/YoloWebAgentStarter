@@ -21,6 +21,8 @@ import type {
   AutoAnnotationTask,
   SamPrediction,
   SamSettings,
+  WebhookSettings,
+  WebhookDeliveryResult,
   LLMSettings,
   LLMConnectionTestResult,
   LLMAuthScheme,
@@ -91,6 +93,9 @@ export const api = {
   updateFtpSettings: (payload: Omit<FtpSettings, "password_configured"> & { password?: string }) =>
     request<FtpSettings>("/api/ftp/config", json(payload, "PUT")),
   testFtpConnection: () => request<FtpConnectionTestResult>("/api/ftp/config/test", json({})),
+  getWebhookSettings: () => request<WebhookSettings>("/api/settings/webhook"),
+  updateWebhookSettings: (payload: WebhookSettings) => request<WebhookSettings>("/api/settings/webhook", json(payload, "PUT")),
+  testWebhook: () => request<WebhookDeliveryResult>("/api/settings/webhook/test", json({})),
   listFtp: (path: string) => request<FtpListResult>(`/api/ftp/list?path=${encodeURIComponent(path)}`),
   ftpDownloadUrl: (path: string) => apiUrl(`/api/ftp/download?path=${encodeURIComponent(path)}`),
   uploadFtp: async (directory: string, files: File[]) => {

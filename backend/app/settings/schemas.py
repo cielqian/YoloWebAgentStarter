@@ -146,3 +146,38 @@ class TrainingNodeTestResult(BaseModel):
     hostname: str | None = None
     device_count: int = 0
     device_types: list[str] = Field(default_factory=list)
+
+
+# --- Webhook (training lifecycle notifications) ---
+
+
+WebhookMethod = Literal["GET", "POST"]
+WebhookEvent = Literal["started", "completed", "failed", "stopped"]
+
+WEBHOOK_EVENTS: tuple[WebhookEvent, ...] = ("started", "completed", "failed", "stopped")
+
+
+class WebhookSettingsOut(BaseModel):
+    enabled: bool = False
+    url: str = ""
+    method: WebhookMethod = "POST"
+    events: list[WebhookEvent] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
+
+
+class WebhookSettingsUpdate(BaseModel):
+    enabled: bool = False
+    url: str = Field(default="", max_length=2048)
+    method: WebhookMethod = "POST"
+    events: list[WebhookEvent] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
+
+    @field_validator("url")
+    @classmethod
+    def strip_url(cls, value: str) -> str:
+        return value.strip()
+
+
+class WebhookDeliveryResult(BaseModel):
+    ok: bool
+    message: str
+    code: str = "ok"
+    http_status: int | None = None

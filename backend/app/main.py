@@ -13,6 +13,7 @@ from app.core.migrations import upgrade_database
 from app.core.storage import Storage
 from app.training.runtime.queue import training_queue
 from app.training.runtime.remote_training import remote_training_poller
+from app.training.webhooks import configure_webhooks
 from app.models.evaluation import YoloEvaluationRunner
 from app.logs.service import configure_runtime_logging
 from app.auto_annotation.queue import auto_annotation_queue
@@ -35,6 +36,7 @@ def create_app(settings: Settings | None = None, *, run_migrations: bool = True)
         # Alembic's fileConfig replaces the root handlers, so install the
         # Starter runtime handler again after migrations have completed.
         configure_runtime_logging(resolved)
+        configure_webhooks(resolved)
         training_queue.configure(database.session_factory, storage)
         auto_annotation_queue.configure(database.session_factory, storage)
         video_import_queue.configure(database.session_factory, storage, resolved)

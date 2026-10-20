@@ -15,6 +15,7 @@ from app.core.local_compute import local_compute_gate
 from app.training.artifacts.checkpoints import checkpoint_paths
 from app.training.observability.log_store import TrainingLogStore
 from app.training.observability.metrics import TrainingMetricsParser
+from app.training.webhooks import notify_training_status
 from app.training.observability.summary import write_training_summary
 from app.training.runtime.process_registry import process_registry
 
@@ -95,6 +96,7 @@ class TrainingRunner:
                 task.finished_at = utc_now()
                 task.error_message = "Training stopped before the process started."
                 session.commit()
+                notify_training_status("stopped", task)
                 return None
             task.status = "running"
             task.started_at = utc_now()
@@ -103,6 +105,7 @@ class TrainingRunner:
             task.progress_percent = 0.0
             session.commit()
             session.refresh(task)
+            notify_training_status("running", task)
             return task
 
     def _command(self, task: TrainingTask) -> list[str]:
@@ -202,3 +205,4 @@ class TrainingRunner:
             dataset = task.dataset
             write_training_summary(task, dataset)
             session.commit()
+            notify_training_status(task.status, task)

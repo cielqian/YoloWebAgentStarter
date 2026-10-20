@@ -35,6 +35,7 @@ from app.training.runtime.remote_training import (
     remote_node_occupied_devices,
     stop_remote_task,
 )
+from app.training.webhooks import notify_training_status
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -375,6 +376,7 @@ class TrainingService:
         task.progress_total_epochs = task.epochs
         session.commit()
         session.refresh(task)
+        notify_training_status("running", task)
         TrainingLogStore(task.logs_path or "train.log").append(
             f"Remote training dispatched to node {node.get('name')} ({node.get('url')})."
         )
@@ -415,6 +417,7 @@ class TrainingService:
 
                 task.finished_at = utc_now()
                 session.commit()
+                notify_training_status("stopped", task)
                 return task_response(task)
             task.stop_requested = True
             session.commit()
@@ -430,6 +433,7 @@ class TrainingService:
             task.finished_at = utc_now()
             session.commit()
             self.queue.stop_pending(task_id)
+            notify_training_status("stopped", task)
             return task_response(task)
         task.stop_requested = True
         session.commit()

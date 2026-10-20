@@ -3,9 +3,20 @@ import { api } from "../api/client";
 import { Toast } from "../components/Toast";
 import type { AppLocale } from "../locale";
 import { saveLocale } from "../locale";
-import type { FtpSettings, LLMAuthScheme, LLMSettings, SamSettings, TrainingDevice, TrainingNode, TrainingNodeStatus } from "../types";
+import type {
+  FtpSettings,
+  LLMAuthScheme,
+  LLMSettings,
+  SamSettings,
+  TrainingDevice,
+  TrainingNode,
+  TrainingNodeStatus,
+  WebhookEvent,
+  WebhookMethod,
+  WebhookSettings,
+} from "../types";
 
-export type SettingsTab = "llm" | "sam" | "ftp" | "nodes" | "language";
+export type SettingsTab = "llm" | "sam" | "ftp" | "nodes" | "webhook" | "language";
 
 type LlmFormState = LLMSettings & { api_key: string };
 
@@ -106,6 +117,25 @@ const copy = {
     nodeDeleted: "节点已删除",
     nodeTestOk: "连接成功：{hostname} · {count} 个设备（{types}）",
     nodeTestFail: "连接失败",
+    webhookNav: "Webhook 通知",
+    webhookNavDescription: "训练启动 / 结束 / 异常回调",
+    webhookTitle: "Webhook 通知",
+    webhookSubtitle: "训练任务启动、完成、失败或停止时，向下方地址发送 HTTP 通知：POST 携带 JSON 任务详情，GET 携带查询参数。配置保存在 settings.json。",
+    webhookEnabled: "启用 Webhook 通知",
+    webhookEnabledHint: "关闭后不发送任何通知。",
+    webhookUrl: "通知地址",
+    webhookUrlHint: "以 http:// 或 https:// 开头，例如 https://example.com/hook。",
+    webhookMethod: "请求方法",
+    webhookEvents: "通知事件",
+    eventStarted: "训练启动",
+    eventCompleted: "训练完成",
+    eventFailed: "训练失败",
+    eventStopped: "训练停止",
+    webhookTest: "发送测试",
+    webhookTesting: "发送中…",
+    saveWebhook: "保存 Webhook 设置",
+    savedWebhook: "Webhook 设置已保存",
+    webhookConfigured: "已启用",
     ready: "已配置真实模型",
     fallbackReady: "使用框形建议",
     disabledStatus: "已关闭",
@@ -228,6 +258,25 @@ const copy = {
     nodeDeleted: "Node deleted",
     nodeTestOk: "Connected: {hostname} · {count} devices ({types})",
     nodeTestFail: "Connection failed",
+    webhookNav: "Webhook",
+    webhookNavDescription: "Training lifecycle callbacks",
+    webhookTitle: "Webhook notifications",
+    webhookSubtitle: "Send an HTTP notification when a training task starts, completes, fails, or stops: POST carries a JSON task body, GET carries query parameters. Stored in settings.json.",
+    webhookEnabled: "Enable webhook notifications",
+    webhookEnabledHint: "No notifications are sent while disabled.",
+    webhookUrl: "Notification URL",
+    webhookUrlHint: "Must start with http:// or https://, e.g. https://example.com/hook.",
+    webhookMethod: "HTTP method",
+    webhookEvents: "Events",
+    eventStarted: "Training started",
+    eventCompleted: "Training completed",
+    eventFailed: "Training failed",
+    eventStopped: "Training stopped",
+    webhookTest: "Send test",
+    webhookTesting: "Sending…",
+    saveWebhook: "Save webhook settings",
+    savedWebhook: "Webhook settings saved",
+    webhookConfigured: "Enabled",
     ready: "Real model configured",
     fallbackReady: "Box proposals",
     disabledStatus: "Disabled",
@@ -358,6 +407,14 @@ export function SettingsView({
             onClick={() => onTabChange("nodes")}
           />
           <SettingsNavigationItem
+            active={tab === "webhook"}
+            icon={<WebhookIcon />}
+            title={text.webhookNav}
+            description={text.webhookNavDescription}
+            badge={text.local}
+            onClick={() => onTabChange("webhook")}
+          />
+          <SettingsNavigationItem
             active={tab === "language"}
             icon={<LanguageIcon />}
             title={text.languageNav}
@@ -374,6 +431,8 @@ export function SettingsView({
             <FtpSettingsPanel text={text} />
           ) : tab === "nodes" ? (
             <TrainingNodesPanel text={text} />
+          ) : tab === "webhook" ? (
+            <WebhookSettingsPanel text={text} />
           ) : (
             <LanguageSettingsPanel locale={locale} text={text} onLocaleChange={onLocaleChange} />
           )}
@@ -1065,6 +1124,148 @@ function TrainingNodesPanel({ text }: { text: SettingsText }) {
   );
 }
 
+const WEBHOOK_METHODS: WebhookMethod[] = ["POST", "GET"];
+const WEBHOOK_EVENT_ITEMS: WebhookEvent[] = ["started", "completed", "failed", "stopped"];
+
+function webhookEventLabel(text: SettingsText, event: WebhookEvent): string {
+  switch (event) {
+    case "started": return text.eventStarted;
+    case "completed": return text.eventCompleted;
+    case "failed": return text.eventFailed;
+    case "stopped": return text.eventStopped;
+  }
+}
+
+function WebhookSettingsPanel({ text }: { text: SettingsText }) {
+  const [form, setForm] = useState<WebhookSettings>({
+    enabled: false,
+    url: "",
+    method: "POST",
+    events: [...WEBHOOK_EVENT_ITEMS],
+  });
+  const [busy, setBusy] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void api
+      .getWebhookSettings()
+      .then((settings) => setForm(settings))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : text.error))
+      .finally(() => setBusy(false));
+  }, [text.error]);
+
+  const toggleEvent = (event: WebhookEvent, checked: boolean) => {
+    setForm((current) => ({
+      ...current,
+      events: checked
+        ? WEBHOOK_EVENT_ITEMS.filter((item) => item === event || current.events.includes(item))
+        : current.events.filter((item) => item !== event),
+    }));
+  };
+
+  const save = async (event?: FormEvent) => {
+    event?.preventDefault();
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await api.updateWebhookSettings(form);
+      setForm(saved);
+      setMessage(text.savedWebhook);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : text.error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const test = async () => {
+    setTesting(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await api.updateWebhookSettings(form);
+      setForm(saved);
+      const result = await api.testWebhook();
+      if (result.ok) setMessage(result.message);
+      else setError(result.message);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : text.error);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  if (busy) return <section className="panel settings-card"><p className="muted settings-loading">{text.loading}</p></section>;
+
+  return (
+    <form className="panel settings-card" onSubmit={(event) => void save(event)}>
+      <header className="settings-card-head">
+        <div className="settings-card-icon"><WebhookIcon /></div>
+        <div>
+          <h2>{text.webhookTitle}</h2>
+          <p>{text.webhookSubtitle}</p>
+        </div>
+        <span className={`settings-status ${form.enabled && form.url ? "ready" : "disabled"}`}>
+          {form.enabled && form.url ? text.webhookConfigured : text.ftpNotConfigured}
+        </span>
+      </header>
+      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
+      {message && !error ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
+
+      <label className="settings-toggle">
+        <input
+          type="checkbox"
+          checked={form.enabled}
+          onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
+        />
+        <span>
+          <strong>{text.webhookEnabled}</strong>
+          <small>{text.webhookEnabledHint}</small>
+        </span>
+      </label>
+
+      <div className="settings-form-grid">
+        <label className="settings-span-2">
+          <span>{text.webhookUrl}</span>
+          <input
+            value={form.url}
+            placeholder="https://example.com/hook"
+            onChange={(event) => setForm({ ...form, url: event.target.value })}
+          />
+          <small>{text.webhookUrlHint}</small>
+        </label>
+        <label>
+          <span>{text.webhookMethod}</span>
+          <select value={form.method} onChange={(event) => setForm({ ...form, method: event.target.value as WebhookMethod })}>
+            {WEBHOOK_METHODS.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        {WEBHOOK_EVENT_ITEMS.map((event) => (
+          <label key={event} className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={form.events.includes(event)}
+              onChange={(input) => toggleEvent(event, input.target.checked)}
+            />
+            <span><strong>{webhookEventLabel(text, event)}</strong></span>
+          </label>
+        ))}
+      </div>
+
+      <footer className="settings-footer">
+        <button type="button" className="button" disabled={testing || saving || !form.url.trim()} onClick={() => void test()}>
+          {testing ? text.webhookTesting : text.webhookTest}
+        </button>
+        <button className="button primary" disabled={saving}>{saving ? "…" : text.saveWebhook}</button>
+      </footer>
+    </form>
+  );
+}
+
 function LanguageSettingsPanel({
   locale,
   text,
@@ -1104,6 +1305,15 @@ function NodeIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M4 5h16v6H4zM4 13h16v6H4zM7.5 8h.01M7.5 16h.01" />
+    </svg>
+  );
+}
+
+function WebhookIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 4a5 5 0 0 0-5 5v3l-1.6 3.2h13.2L17 12V9a5 5 0 0 0-5-5Z" />
+      <path d="M9.8 18.5a2.3 2.3 0 0 0 4.4 0" />
     </svg>
   );
 }

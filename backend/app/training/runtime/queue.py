@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.models import TrainingTask
 from app.core.storage import Storage
+from app.training.webhooks import notify_training_status
 
 
 class TrainingQueue:
@@ -51,6 +52,8 @@ class TrainingQueue:
                 task.finished_at = utc_now()
             if tasks:
                 session.commit()
+                for task in tasks:
+                    notify_training_status("failed", task)
         self._pump()
 
     def _pump(self) -> None:

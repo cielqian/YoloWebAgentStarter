@@ -19,6 +19,9 @@ from app.settings.schemas import (
     FtpSettingsInternal,
     FtpSettingsOut,
     FtpSettingsUpdate,
+    WEBHOOK_EVENTS,
+    WebhookSettingsOut,
+    WebhookSettingsUpdate,
     LLMConnectionTestRequest,
     LLMConnectionTestResult,
     LLMSettingsInternal,
@@ -337,6 +340,34 @@ class SettingsService:
             raise NotFoundError("training_node_not_found", "训练节点不存在。")
         data["training_nodes"] = remaining
         self._write(data)
+
+    # --- Webhook (training lifecycle notifications) ---
+
+    def get_webhook_settings(self) -> WebhookSettingsOut:
+        section = self._read().get("webhook", {})
+        if not isinstance(section, dict):
+            section = {}
+        raw_events = section.get("events", WEBHOOK_EVENTS)
+        events = [item for item in WEBHOOK_EVENTS if item in raw_events]
+        method = str(section.get("method", "POST")).upper()
+        return WebhookSettingsOut(
+            enabled=bool(section.get("enabled", False)),
+            url=str(section.get("url", "")).strip(),
+            method=method if method in ("GET", "POST") else "POST",
+            events=events,
+        )
+
+    def update_webhook_settings(self, payload: WebhookSettingsUpdate) -> WebhookSettingsOut:
+        url = payload.url.strip()
+        if url and not url.lower().startswith(("http://", "https://")):
+            raise ValidationError("invalid_webhook_url", "Webhook 地址必须以 http:// 或 https:// 开头。")
+        if payload.enabled and not url:
+            raise ValidationError("webhook_url_required", "启用 Webhook 前必须填写通知地址。")
+        events = [item for item in WEBHOOK_EVENTS if item in payload.events]
+        data = self._read()
+        data["webhook"] = {"enabled": payload.enabled, "url": url, "method": payload.method, "events": events}
+        self._write(data)
+        return self.get_webhook_settings()
 
     def _read(self) -> dict:
         if not self.path.is_file():
