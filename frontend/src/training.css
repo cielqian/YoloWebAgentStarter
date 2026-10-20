@@ -52,7 +52,7 @@
   --seg-track-padding: 4px;
   --seg-track-radius: 10px;
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shell-topbar-height: 62px;
+  --shell-topbar-height: 0px;
   --success: #166534;
   --success-bg: #f0fdf4;
   --success-border: #bbf7d0;
@@ -1462,8 +1462,8 @@
   gap: 8px;
   width: 100%;
   padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--text-muted);
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
   font-size: 13px;
   font-weight: 700;
   font-family: inherit;
@@ -2288,17 +2288,6 @@
   border-top: 1px solid var(--border-subtle);
 }
 
-.training-ws-exp-actions .training-ws-btn-ghost,
-.training-ws-exp-actions .training-ws-btn-solid {
-  min-height: 32px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-
-.training-ws-exp-actions .training-ws-btn-solid {
-  margin-left: auto;
-}
-
 .training-ws-new-exp {
   min-height: 180px;
   border-style: dashed;
@@ -2368,3 +2357,76 @@
 .training-remote-device-top strong { color: #3157d5; font-size: 12px; }
 .training-remote-device-top span { color: #23733a; }
 .training-remote-device-card > span { color: #536077; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.training-remote-device-card { cursor: pointer; font-family: inherit; text-align: left; transition: border-color 0.15s ease, background 0.15s ease; }
+button.training-remote-device-card:hover:not(:disabled) { border-color: var(--border-strong); background: var(--bg-elevated); }
+.training-remote-device-card.active { border-color: var(--primary-container); background: var(--info-bg); box-shadow: 0 0 0 1px var(--primary-container) inset; }
+.training-remote-device-card:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ---- 训练记录列表（列表模式页面） ---- */
+.training-record-page { display: grid; gap: 16px; }
+.training-record-list { display: grid; gap: 10px; }
+.training-record-row { display: flex; align-items: center; gap: 16px; padding: 13px 16px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--bg-elevated); cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+.training-record-row:hover { border-color: var(--border-strong); }
+.training-record-row.selected { border-color: var(--primary-container); box-shadow: 0 0 0 1px var(--primary-container) inset; }
+.training-record-main { flex: 1 1 auto; min-width: 0; display: grid; gap: 4px; }
+.training-record-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.training-record-title strong { font-size: 13px; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.training-record-dataset { font-size: 11px; font-weight: 600; color: #3157d5; background: #eef3ff; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.training-record-chips { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; color: #536077; }
+.training-record-error { font-size: 11px; color: #b4232a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
+.training-record-metrics { display: flex; gap: 14px; flex-shrink: 0; }
+.training-record-metrics div { display: grid; gap: 1px; text-align: right; }
+.training-record-metrics span { font-size: 10px; color: #8994a8; }
+.training-record-metrics strong { font-size: 13px; color: var(--text-dark); font-variant-numeric: tabular-nums; }
+.training-record-progress { width: 150px; display: grid; gap: 4px; flex-shrink: 0; }
+.training-record-progress-top { display: flex; justify-content: space-between; font-size: 11px; color: #536077; }
+.training-record-time { width: 78px; display: grid; gap: 2px; text-align: right; flex-shrink: 0; }
+.training-record-time span { font-size: 12px; color: var(--text-dark); }
+.training-record-time small { font-size: 10px; color: #8994a8; }
+.training-record-actions { display: flex; gap: 7px; flex-shrink: 0; align-items: center; }
+.training-record-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.training-record-btn:hover:not(:disabled) { border-color: #b7c5f3; color: #3157d5; background: #f4f6ff; }
+.training-record-btn:active { transform: translateY(0.5px); }
+.training-record-btn--primary { background: #eef3ff; border-color: #d7e0fc; color: #3157d5; }
+.training-record-btn--primary:hover:not(:disabled) { background: #e2eaff; border-color: #b9cbfa; color: #2748b8; }
+.training-record-btn--danger { background: #fff7f7; border-color: #efc0c0; color: #b83a3a; }
+.training-record-btn--danger:hover:not(:disabled) { background: #fff0f0; border-color: #e49a9a; color: #b83a3a; }
+
+/* 训练任务详情弹窗 */
+.training-detail-modal {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  width: min(1060px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 18px 20px;
+  background: #fff;
+  border: 1px solid #e1e6ef;
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(20, 31, 55, 0.28);
+}
+.training-detail-modal .training-detail-inline { margin: 0; border: 0; box-shadow: none; padding: 0; background: transparent; }
+.training-detail-modal-agent { justify-self: start; }
+@media (max-width: 1100px) {
+  .training-record-row { flex-wrap: wrap; }
+  .training-record-progress { width: 100%; order: 5; }
+  .training-record-actions { margin-left: auto; }
+}

@@ -44,6 +44,7 @@ export default function App() {
   const [locale, setLocale] = useState<AppLocale>(() => readLocale());
   const [annotationDirty, setAnnotationDirty] = useState(false);
   const [focusTrainingTaskId, setFocusTrainingTaskId] = useState<string>();
+  const [trainingCreateDatasetId, setTrainingCreateDatasetId] = useState<string>();
   const [focusModelId, setFocusModelId] = useState<string>();
   const [agentFocus, setAgentFocus] = useState<AgentPageContext>({});
   const { requestLeave, dialog: leaveDialog } = useLeaveConfirm(view === "annotation" && annotationDirty);
@@ -305,7 +306,7 @@ export default function App() {
   };
 
   return (
-    <StarterShell active={activeSection} datasetName={selected?.name} onNavigate={navigate} locale={locale} focusMode={view === "annotation" && focusMode}>
+    <StarterShell active={activeSection} onNavigate={navigate} locale={locale} focusMode={view === "annotation" && focusMode}>
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <Toast kind="success" message={notice} onClose={() => setNotice("")} />
       {leaveDialog}
@@ -369,6 +370,8 @@ export default function App() {
           onAskAgent={(task) => { setAgentFocus({ dataset: { id: task.dataset_id, name: datasets.find((d) => d.id === task.dataset_id)?.name ?? task.dataset_id }, trainingTask: { id: task.id, name: task.name } }); setView("agent"); }}
           focusTaskId={focusTrainingTaskId}
           onFocusTaskConsumed={() => setFocusTrainingTaskId(undefined)}
+          autoCreateDatasetId={trainingCreateDatasetId}
+          onAutoCreateConsumed={() => setTrainingCreateDatasetId(undefined)}
         />
       ) : view === "models" && displayedDataset ? (
         <ModelsView
@@ -447,7 +450,7 @@ export default function App() {
             }
             setNotice(`已从数据源同步 ${result.imported} 张图片${result.skipped ? `，跳过 ${result.skipped} 张` : ""}`);
           })}
-          onTrain={(dataset) => void run(() => loadDataset(dataset, "training"))}
+          onTrain={(dataset) => void run(async () => { setTrainingCreateDatasetId(dataset.id); await loadDataset(dataset, "training"); })}
           onDuplicates={(dataset) => runResult(() => api.duplicateReport(dataset.id))}
           onDelete={(dataset) => run(async () => {
             await api.deleteDataset(dataset.id);

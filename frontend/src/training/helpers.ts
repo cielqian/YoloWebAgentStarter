@@ -3,7 +3,7 @@ import type { TaskType, TrainingDevice, TrainingStatus, TrainingTask } from "../
 export type PresetId = "fast" | "balanced" | "high";
 export type DeviceType = "auto" | "cpu" | "mps" | "cuda";
 export type ComputeMode = "single" | "multi";
-export type HistoryFilter = "all" | "completed" | "failed" | "stopped";
+export type HistoryFilter = "all" | "running" | "completed" | "failed" | "stopped";
 
 export const PRESETS: Record<PresetId, { epochs: number; batch_size: number; img_size: number; patience: number }> = {
   fast: { epochs: 30, batch_size: 16, img_size: 640, patience: 12 },
@@ -29,15 +29,15 @@ export interface TrainingFormState {
   device_type: DeviceType;
   compute_mode: ComputeMode;
   gpu_ids: string[];
+  node_id: string | null;
+  node_device: string | null;
 }
 
 export function defaultModelFor(taskType: TaskType): string {
-  return ({ detect: "yolo11n.pt", segment: "yolo11n-seg.pt", obb: "yolo11n-obb.pt", classify: "yolo11n-cls.pt" })[taskType];
+  return ({ detect: "yolov8n.pt", segment: "yolov8n-seg.pt", obb: "yolov8n-obb.pt", classify: "yolov8n-cls.pt" })[taskType];
 }
 
 const MODEL_FAMILIES: Array<{ stem: string; label: string; sizes: string[]; tasks: TaskType[] }> = [
-  { stem: "yolo26", label: "YOLO26", sizes: ["n", "s"], tasks: ["detect", "segment", "obb", "classify"] },
-  { stem: "yolo11", label: "YOLO11", sizes: ["n", "s", "m", "l", "x"], tasks: ["detect", "segment", "obb", "classify"] },
   { stem: "yolov8", label: "YOLOv8", sizes: ["n", "s"], tasks: ["detect", "segment", "obb", "classify"] },
 ];
 
@@ -67,6 +67,8 @@ export function defaultForm(taskType: TaskType): TrainingFormState {
     device_type: "auto",
     compute_mode: "single",
     gpu_ids: [],
+    node_id: null,
+    node_device: null,
   };
 }
 
@@ -142,8 +144,9 @@ export function estimateOptimizerSteps(epochs: number, imageCount: number, batch
 
 export function applyTaskToForm(task: TrainingTask): TrainingFormState {
   const device = task.device || "auto";
+  const isRemote = Boolean(task.node_id);
   const isCudaList = /^\d+(,\d+)*$/.test(device);
-  const gpuIds = isCudaList ? device.split(",") : [];
+  const gpuIds = !isRemote && isCudaList ? device.split(",") : [];
   return {
     name: `${task.name}-retry`,
     model: task.model_name,
@@ -156,9 +159,11 @@ export function applyTaskToForm(task: TrainingTask): TrainingFormState {
     patience: task.patience != null ? String(task.patience) : "",
     optimizer: task.optimizer ?? "",
     lr0: task.lr0 != null ? String(task.lr0) : "",
-    device_type: isCudaList ? "cuda" : (device as DeviceType),
+    device_type: isRemote ? "auto" : isCudaList ? "cuda" : (device as DeviceType),
     compute_mode: gpuIds.length > 1 ? "multi" : "single",
     gpu_ids: gpuIds,
+    node_id: task.node_id,
+    node_device: isRemote ? device : null,
   };
 }
 
@@ -172,4 +177,21 @@ export function pickPreset(form: TrainingFormState): PresetId | null {
 
 export function metricNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export const agentDeviceId = (device: TrainingDevice) => (device.index != null ? `${device.type}:${device.index}` : device.type);
+
+export function defaultRemoteSelection(devices: TrainingDevice[]): { node_id: string; node_device: string } | null {
+  const accelerators = devices.filter((item) => item.node_id && (item.type === "cuda" || item.type === "npu"));
+  if (!accelerators.length) return null;
+  const byNode = new Map<string, TrainingDevice[]>();
+  for (const item of accelerators) {
+    const key = item.node_id as string;
+    byNode.set(key, [...(byNode.get(key) ?? []), item]);
+  }
+  const [nodeId, nodeDevices] = [...byNode.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+  // 默认只选 1 张卡：优先挑空闲卡，避免多卡 DDP 环境直接撞上卡间通信问题。
+  const usable = nodeDevices.filter((item) => item.status !== "busy" && item.status !== "unavailable");
+  const picked = (usable.length ? usable : nodeDevices)[0];
+  return picked ? { node_id: nodeId, node_device: agentDeviceId(picked) } : null;
 }

@@ -331,6 +331,7 @@ export const api = {
     img_size: number;
     batch_size: number;
     device: string;
+    node_id?: string;
     workers: number;
     seed: number;
     val_ratio?: number;
@@ -339,6 +340,7 @@ export const api = {
     patience?: number;
   }) => request<TrainingTask>("/api/training/tasks", json(payload)),
   stopTrainingTask: (taskId: string) => request<TrainingTask>(`/api/training/tasks/${taskId}/stop`, { method: "POST" }),
+  deleteTrainingTask: (taskId: string) => request<void>(`/api/training/tasks/${taskId}`, { method: "DELETE" }),
   resumeTrainingTask: (taskId: string, data: { name?: string; epochs?: number; resume_epoch?: boolean } = {}) => request<TrainingTask>(`/api/training/tasks/${taskId}/resume`, json(data)),
   getTrainingLogs: (taskId: string, tail = 200) => request<TrainingLog>(`/api/training/tasks/${taskId}/logs?tail=${tail}`),
   getTrainingSummary: (taskId: string) => request<import("../types").TrainingSummary>(`/api/training/tasks/${taskId}/summary`),

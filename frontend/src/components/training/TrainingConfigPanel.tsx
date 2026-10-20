@@ -23,6 +23,7 @@ interface Props {
   onPreset: (preset: PresetId) => void;
   onAdvancedOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent) => void;
+  onExit?: () => void;
 }
 
 const PRESET_COPY: Record<PresetId, { title: string; body: string; meta: string }> = {
@@ -50,6 +51,7 @@ export function TrainingConfigPanel({
   onPreset,
   onAdvancedOpenChange,
   onSubmit,
+  onExit,
 }: Props) {
   const setForm = onFormChange;
   const modelChoices = modelChoicesFor(dataset.task_type);
@@ -61,8 +63,11 @@ export function TrainingConfigPanel({
       <div className="training-ws-card-head">
         <div>
           <h2>训练配置</h2>
-          <p className="training-ws-muted">选择权重与超参后提交，任务进入本机 FIFO 队列由 Ultralytics 执行。</p>
+          <p className="training-ws-muted">{form.node_id ? "选择权重与超参后提交，任务将下发到选定的远程节点执行。" : "选择权重与超参后提交，任务进入本机 FIFO 队列由 Ultralytics 执行。"}</p>
         </div>
+        {onExit && (
+          <button type="button" className="button" onClick={onExit}>← 返回记录列表</button>
+        )}
       </div>
 
       <form id="dataset-training-ws-form" className="training-ws-form" onSubmit={onSubmit}>
@@ -121,7 +126,7 @@ export function TrainingConfigPanel({
               </div>
               <div>
                 <small>权重</small>
-                <strong>{form.model || "yolo11n.pt"}</strong>
+                <strong>{form.model || "yolov8n.pt"}</strong>
               </div>
               <div>
                 <small>预设</small>

@@ -338,6 +338,7 @@ export interface TrainingTask {
   img_size: number;
   batch_size: number;
   device: string;
+  node_id: string | null;
   workers: number;
   val_ratio: number;
   seed: number;
