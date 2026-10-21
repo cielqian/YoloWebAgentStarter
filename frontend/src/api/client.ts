@@ -36,6 +36,7 @@ import type {
   SystemInfo,
   RuntimeLogResponse,
   VideoImportTask,
+  BaseWeight,
   TrainingDevice,
   TrainingNode,
   TrainingNodeStatus,
@@ -70,6 +71,8 @@ const json = (body: unknown, method = "POST"): RequestInit => ({
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(body),
 });
+
+export type DatasetImportResult = { dataset: Dataset; imported_images?: number; imported_annotations?: number };
 
 export type FtpSyncProgressEvent = { stage: "download" | "save"; synced: number; skipped: number };
 export type FtpSyncResult = { synced: number; skipped: number; truncated: boolean };
@@ -303,19 +306,30 @@ export const api = {
   getVideoImport: (taskId: string) => request<VideoImportTask>(`/api/video-imports/${taskId}`),
   startVideoImport: (taskId: string) => request<VideoImportTask>(`/api/video-imports/${taskId}/start`, { method: "POST" }),
   retryVideoImport: (taskId: string) => request<VideoImportTask>(`/api/video-imports/${taskId}/retry`, { method: "POST" }),
-  importYolo: async (file: File, name: string, taskType: TaskType) => {
+  importYolo: async (file: File, name: string, taskType: TaskType, wait = true) => {
     const form = new FormData();
     form.append("file", file);
     form.append("name", name);
     form.append("task_type", taskType);
-    return request<{ dataset: Dataset; imported_images: number; imported_annotations: number }>("/api/datasets/import/yolo", {
+    return request<DatasetImportResult>(`/api/datasets/import/yolo${wait ? "" : "?wait=false"}`, {
       method: "POST",
       body: form,
     });
   },
+  imageThumbnailUrl: (imageId: string) => apiUrl(`/api/images/${imageId}/thumbnail`),
+  listWeights: () => request<{ items: BaseWeight[] }>("/api/weights"),
+  uploadWeight: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<BaseWeight>("/api/weights", { method: "POST", body: form });
+  },
+  deleteWeight: (name: string) => request<void>(`/api/weights/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  cancelDatasetImport: (datasetId: string) => request<Dataset>(`/api/datasets/${datasetId}/import/cancel`, json({})),
+  importDatasetFromFtp: (payload: { path: string; name: string; task_type: TaskType; format: "yolo" | "coco"; description?: string }, wait = true) =>
+    request<DatasetImportResult>(`/api/datasets/import/from-ftp${wait ? "" : "?wait=false"}`, json(payload)),
   exportYoloUrl: (datasetId: string) => apiUrl(`/api/datasets/${datasetId}/export/yolo`),
   exportCocoUrl: (datasetId: string) => apiUrl(`/api/datasets/${datasetId}/export/coco`),
-  importCoco: async (file: File, name: string, taskType: TaskType) => { const form = new FormData(); form.append("file", file); form.append("name", name); form.append("task_type", taskType); return request<{ dataset: Dataset; imported_images: number; imported_annotations: number }>("/api/datasets/import/coco", { method: "POST", body: form }); },
+  importCoco: async (file: File, name: string, taskType: TaskType, wait = true) => { const form = new FormData(); form.append("file", file); form.append("name", name); form.append("task_type", taskType); return request<DatasetImportResult>(`/api/datasets/import/coco${wait ? "" : "?wait=false"}`, { method: "POST", body: form }); },
   tileDataset: (datasetId: string, data: { name: string; description?: string; tile_size: number; overlap: number; keep_empty_tiles: boolean }) => request<{ dataset_id: string; source_dataset_id: string; generated_images: number; generated_annotations: number; skipped_empty_tiles: number }>(`/api/datasets/${datasetId}/tile`, json(data)),
   listTrainingTasks: (datasetId?: string) =>
     request<{ items: TrainingTask[] }>(`/api/training/tasks${datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : ""}`),

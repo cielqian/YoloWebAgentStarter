@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routers import class_templates, datasets, ftp, models, sam, settings, system, training
+from app.api.routers import class_templates, datasets, ftp, models, sam, settings, system, training, weights
 from app.source_dataset.router import router as source_dataset_router
 from app.agent.router import router as agent_router
 from app.auto_annotation.router import dataset_router as auto_annotation_dataset_router, task_router as auto_annotation_task_router
@@ -23,3 +23,4 @@ api_router.include_router(auto_annotation_dataset_router)
 api_router.include_router(auto_annotation_task_router)
 api_router.include_router(video_import_router)
 api_router.include_router(agent_router)
+api_router.include_router(weights.router)

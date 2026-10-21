@@ -147,6 +147,11 @@ class TrainingService:
             existing = session.get(TrainingTask, task_id)
             if existing is not None:
                 return task_response(existing)
+        if node is not None and not resume_epoch:
+            return self._create_remote_task_async(
+                session, payload, node, dataset, task_type, settings,
+                task_id=task_id, resume_checkpoint=resume_checkpoint,
+            )
         resolved_task_id = task_id or new_id("train")
         task_root = self.storage.training_task_dir(resolved_task_id)
         export_root = task_root / "dataset"
@@ -311,6 +316,86 @@ class TrainingService:
             args.append(f"patience={payload.patience}")
         return args, archive, weights_path
 
+    def _create_remote_task_async(
+        self,
+        session: Session,
+        payload: TrainingTaskCreate,
+        node: dict,
+        dataset: Dataset,
+        task_type: TaskType,
+        settings: "Settings | None",
+        *,
+        task_id: str | None = None,
+        resume_checkpoint: Path | None = None,
+    ) -> TrainingTaskResponse:
+        """远程任务：同步只做校验与建行（dispatching），导出/打包/上传全部后台执行。"""
+        from app.training.runtime.remote_training import start_remote_dispatch
+
+        if settings is None:
+            raise ValidationError(
+                "training_node_settings_missing",
+                "Remote training requires backend settings; start the task from the training page.",
+            )
+        resolved_task_id = task_id or new_id("train")
+        task_root = self.storage.training_task_dir(resolved_task_id)
+        model_arg = Path(payload.model).name if Path(payload.model).is_absolute() else payload.model
+        args = [
+            "yolo",
+            task_type.value,
+            "train",
+            f"model={model_arg}",
+            "data=dataset/data.yaml",
+            f"epochs={payload.epochs}",
+            f"imgsz={payload.img_size}",
+            f"batch={payload.batch_size}",
+            "project=.",
+            "name=run",
+            "exist_ok=True",
+            f"workers={payload.workers}",
+            f"seed={payload.seed}",
+        ]
+        if payload.device != "auto":
+            args.append(f"device={payload.device}")
+        if payload.optimizer:
+            args.append(f"optimizer={payload.optimizer}")
+        if payload.lr0 is not None:
+            args.append(f"lr0={payload.lr0}")
+        if payload.patience is not None:
+            args.append(f"patience={payload.patience}")
+        task = TrainingTask(
+            id=resolved_task_id,
+            dataset_id=dataset.id,
+            name=payload.name.strip(),
+            status="dispatching",
+            task_type=task_type.value,
+            model_name=payload.model,
+            model_path=str(resume_checkpoint) if resume_checkpoint is not None else resolve_model_reference(payload.model, self.storage),
+            epochs=payload.epochs,
+            img_size=payload.img_size,
+            batch_size=payload.batch_size,
+            device=payload.device,
+            node_id=node["id"],
+            workers=payload.workers,
+            val_ratio=payload.val_ratio,
+            seed=payload.seed,
+            optimizer=payload.optimizer,
+            lr0=payload.lr0,
+            patience=payload.patience,
+            config_json=dict(payload.model_dump()),
+            command_args_json=args,
+            command_preview=shlex.join(args),
+            run_dir=str(task_root / "run"),
+            logs_path=str(task_root / "train.log"),
+            summary_path=str(task_root / "training_summary.json"),
+            progress_total_epochs=payload.epochs,
+            progress_percent=0.0,
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+        start_remote_dispatch(self.session_factory, self.storage, settings, task.id)
+        return task_response(task)
+
     def _submit_remote_task(
         self,
         session: Session,
@@ -408,6 +493,11 @@ class TrainingService:
             return task_response(task)
         if task.node_id:
             node = find_node(settings, task.node_id) if settings is not None else None
+            if task.status == "dispatching":
+                task.stop_requested = True
+                session.commit()
+                session.refresh(task)
+                return task_response(task)
             if task.status == "pending":
                 if node is not None:
                     delete_remote_task(node, task.id)

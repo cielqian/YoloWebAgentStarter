@@ -721,19 +721,29 @@
   letter-spacing: 0.04em;
 }
 
+.training-ws-badge.pending {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.training-ws-badge.dispatching {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
 .training-ws-badge.running {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.training-ws-badge.completed {
   background: var(--success-bg);
   color: var(--success);
 }
 
-.training-ws-badge.pending {
-  background: var(--info-bg);
-  color: var(--primary);
-}
-
-.training-ws-badge.completed {
-  background: var(--info-border);
-  color: var(--info);
+.training-ws-badge.stopped {
+  background: #eef0f4;
+  color: #68748a;
 }
 
 .training-ws-badge.failed,

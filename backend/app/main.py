@@ -12,7 +12,7 @@ from app.core.database import Database
 from app.core.migrations import upgrade_database
 from app.core.storage import Storage
 from app.training.runtime.queue import training_queue
-from app.training.runtime.remote_training import remote_training_poller
+from app.training.runtime.remote_training import recover_interrupted_dispatches, remote_training_poller
 from app.training.webhooks import configure_webhooks
 from app.models.evaluation import YoloEvaluationRunner
 from app.logs.service import configure_runtime_logging
@@ -42,6 +42,7 @@ def create_app(settings: Settings | None = None, *, run_migrations: bool = True)
         video_import_queue.configure(database.session_factory, storage, resolved)
         YoloEvaluationRunner(database.session_factory, storage).recover_orphaned()
         training_queue.recover_orphaned()
+        recover_interrupted_dispatches(database.session_factory)
         auto_annotation_queue.recover_orphaned()
         video_import_queue.recover_orphaned()
         AgentService(database.session_factory, resolved).recover_orphaned()

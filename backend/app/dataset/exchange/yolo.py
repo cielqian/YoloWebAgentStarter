@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import io
 import math
 import posixpath
@@ -150,7 +152,7 @@ def _class_for_image(image_name: str) -> str | None:
 
 def _obb_from_yolo(numbers: list[float], image_width: int, image_height: int) -> OBB:
     if len(numbers) != 8:
-        raise ValidationError("invalid_obb_label", "OBB labels require four point pairs.")
+        raise ValidationError("invalid_obb_label", f"OBB labels require four point pairs (in {source_name}).")
     if any(coordinate < 0 or coordinate > 1 for coordinate in numbers):
         raise ValidationError("invalid_obb_label", "OBB point coordinates must be normalized to the [0, 1] range.")
     points = [(numbers[index] * image_width, numbers[index + 1] * image_height) for index in range(0, 8, 2)]
@@ -197,6 +199,7 @@ def _parse_yolo_labels(
     image_width: int,
     image_height: int,
     class_ids: dict[int, str],
+    source_name: str = "label file",
 ) -> list[Annotation]:
     if content is None:
         return []
@@ -214,20 +217,35 @@ def _parse_yolo_labels(
             class_index = int(values[0])
             numbers = [float(value) for value in values[1:]]
         except (ValueError, IndexError) as exc:
-            raise ValidationError("invalid_label_line", f"Invalid YOLO label at line {line_number}.") from exc
+            raise ValidationError("invalid_label_line", f"Invalid YOLO label at line {line_number} of {source_name}.") from exc
         if class_index not in class_ids or not all(math.isfinite(value) for value in numbers):
-            raise ValidationError("invalid_label_line", f"Invalid class or coordinate at line {line_number}.")
+            raise ValidationError("invalid_label_line", f"Invalid class or coordinate at line {line_number} of {source_name}.")
         if task_type == "detect":
             if len(numbers) != 4:
-                raise ValidationError("invalid_bbox_label", f"Detect labels require four values at line {line_number}.")
+                raise ValidationError("invalid_bbox_label", f"Detect labels require four values at line {line_number} of {source_name}.")
             center_x, center_y, width, height = numbers
-            bbox = BBox(
-                x=(center_x - width / 2) * image_width,
-                y=(center_y - height / 2) * image_height,
-                width=width * image_width,
-                height=height * image_height,
-            )
-            validate_bbox(bbox, image_width, image_height)
+            x = (center_x - width / 2) * image_width
+            y = (center_y - height / 2) * image_height
+            box_width = width * image_width
+            box_height = height * image_height
+            # 标注工具常允许框轻微压边：每边 1% 内夹回图片边界，更严重的越界视为标签问题。
+            margin_x = image_width * 0.01
+            margin_y = image_height * 0.01
+            if x < -margin_x or y < -margin_y or x + box_width > image_width + margin_x or y + box_height > image_height + margin_y:
+                raise ValidationError(
+                    "bbox_out_of_bounds",
+                    f"Bounding box must stay inside the image (line {line_number} of {source_name}: "
+                    f"x={x:.1f} y={y:.1f} w={box_width:.1f} h={box_height:.1f}, image {image_width}x{image_height}).",
+                )
+            x = min(max(x, 0.0), image_width)
+            y = min(max(y, 0.0), image_height)
+            box_width = min(box_width, image_width - x)
+            box_height = min(box_height, image_height - y)
+            bbox = BBox(x=x, y=y, width=box_width, height=box_height)
+            try:
+                validate_bbox(bbox, image_width, image_height)
+            except ValidationError as exc:
+                raise ValidationError(exc.error_code, f"{exc.message} (line {line_number} of {source_name})") from exc
             annotations.append(
                 Annotation(
                     id=new_id("ann"),
@@ -242,7 +260,7 @@ def _parse_yolo_labels(
             )
         elif task_type == "segment":
             if len(numbers) < 6 or len(numbers) % 2:
-                raise ValidationError("invalid_polygon_label", f"Segment labels require point pairs at line {line_number}.")
+                raise ValidationError("invalid_polygon_label", f"Segment labels require point pairs at line {line_number} of {source_name}.")
             polygon = [(numbers[index] * image_width, numbers[index + 1] * image_height) for index in range(0, len(numbers), 2)]
             validate_polygon(polygon, image_width, image_height)
             annotations.append(
@@ -477,6 +495,8 @@ def import_dataset(
     dataset_payload: DatasetCreate,
     default_split: SplitName = "train",
     limits: YoloArchiveLimits = YoloArchiveLimits(),
+    dataset_id: str | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> tuple[Dataset, int, int]:
     archive, entries = _archive_entries(payload, limits)
     try:
@@ -511,13 +531,15 @@ def import_dataset(
         if not names:
             raise ValidationError("no_classes_in_archive", "The YOLO archive does not define any classes.")
 
-        dataset = Dataset(
-            id=new_id("ds"),
-            name=dataset_payload.name,
-            description=dataset_payload.description,
-            task_type=dataset_payload.task_type.value,
-        )
-        session.add(dataset)
+        dataset = session.get(Dataset, dataset_id) if dataset_id else None
+        if dataset is None:
+            dataset = Dataset(
+                id=dataset_id or new_id("ds"),
+                name=dataset_payload.name,
+                description=dataset_payload.description,
+                task_type=dataset_payload.task_type.value,
+            )
+            session.add(dataset)
         class_records = [ClassLabel(id=new_id("cls"), dataset_id=dataset.id, class_index=index, name=name, color="#22c55e") for index, name in enumerate(names)]
         session.add_all(class_records)
         class_ids = {item.class_index: item.id for item in class_records}
@@ -527,6 +549,8 @@ def import_dataset(
         try:
             session.flush()
             for member_name, info in sorted(image_entries.items()):
+                if should_cancel is not None and should_cancel():
+                    raise ValidationError("import_cancelled", "导入已停止。")
                 image_id = new_id("img")
                 storage_name = storage.safe_storage_name(PurePosixPath(member_name).name, image_id)
                 try:
@@ -559,7 +583,7 @@ def import_dataset(
                 else:
                     label_info = _label_for_image(member_name, labels)
                     label = _read_archive_member(archive, label_info, _MAX_LABEL_BYTES) if label_info else None
-                    parsed = _parse_yolo_labels(label, dataset.task_type, width, height, class_ids)
+                    parsed = _parse_yolo_labels(label, dataset.task_type, width, height, class_ids, source_name=getattr(label_info, "filename", None) or member_name)
                 for annotation in parsed:
                     annotation.image_id = image.id
                     annotation.dataset_id = dataset.id

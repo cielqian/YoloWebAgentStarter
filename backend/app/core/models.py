@@ -24,6 +24,10 @@ class Dataset(Base, TimestampMixin):
     task_type: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
     image_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     class_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 数据集压缩包异步导入状态：None=正常，importing/completed/failed
+    import_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    import_progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    import_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     classes: Mapped[list["ClassLabel"]] = relationship(back_populates="dataset", cascade="all, delete-orphan")
     images: Mapped[list["ImageItem"]] = relationship(back_populates="dataset", cascade="all, delete-orphan")
@@ -194,7 +198,7 @@ class TrainingProfile(Base, TimestampMixin):
 class TrainingTask(Base, TimestampMixin):
     __tablename__ = "training_tasks"
     __table_args__ = (
-        CheckConstraint("status IN ('pending', 'running', 'completed', 'failed', 'stopped')", name="ck_training_task_status"),
+        CheckConstraint("status IN ('pending', 'dispatching', 'running', 'completed', 'failed', 'stopped')", name="ck_training_task_status"),
         CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify')", name="ck_training_task_type"),
     )
 

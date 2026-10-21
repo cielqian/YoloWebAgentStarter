@@ -67,7 +67,7 @@ export function TrainingView({
 
   const preset = pickPreset(form);
   const activeTask = useMemo(
-    () => tasks.find((task) => task.status === "running" || task.status === "pending"),
+    () => tasks.find((task) => task.status === "running" || task.status === "pending" || task.status === "dispatching"),
     [tasks],
   );
   const hasActiveTask = activeTask !== undefined;
@@ -235,7 +235,9 @@ export function TrainingView({
       setDetailTaskId(task.id);
       setNotice(task.status === "pending"
         ? "目标设备占用中，任务已加入排队队列，前一任务完成后自动执行。"
-        : "训练任务已创建并开始执行。");
+        : task.status === "dispatching"
+          ? "任务已创建，正在后台下发数据集，进度见记录列表。"
+          : "训练任务已创建并开始执行。");
     } catch (reason) {
       const message = errorMessage(reason);
       setError(message);

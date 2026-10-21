@@ -460,12 +460,15 @@ def test_approve_dispatches_remote_training_to_node(client, monkeypatch):
 
     dispatched: list[dict] = []
 
-    def fake_dispatch(node, spec, dataset_zip, weights):
+    def fake_dispatch(node, spec, dataset_zip, weights, on_progress=None):
         dispatched.append({"node": dict(node), "spec": dict(spec), "has_archive": dataset_zip is not None})
+
+    from app.training.runtime import remote_training as remote_training_module
 
     monkeypatch.setattr(remote_nodes, "fetch_node_snapshot", fake_snapshot)
     monkeypatch.setattr(training_service_module, "fetch_node_snapshot", fake_snapshot)
     monkeypatch.setattr(training_service_module, "dispatch_remote_task", fake_dispatch)
+    monkeypatch.setattr(remote_training_module, "dispatch_remote_task", fake_dispatch)
 
     node = client.post(
         "/api/training/nodes",
@@ -495,6 +498,14 @@ def test_approve_dispatches_remote_training_to_node(client, monkeypatch):
 
     task = client.get(f"/api/training/tasks/{task_id}").json()
     assert task["node_id"] == node["id"]
+    assert task["status"] == "dispatching"
+    import time as timelib
+
+    for _ in range(100):
+        task = client.get(f"/api/training/tasks/{task_id}").json()
+        if task["status"] == "running":
+            break
+        timelib.sleep(0.05)
     assert task["status"] == "running"
 
     assert len(dispatched) == 1

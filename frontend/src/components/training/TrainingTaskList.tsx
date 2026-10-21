@@ -48,7 +48,7 @@ export function TrainingTaskList({
   const counts = useMemo(
     () => ({
       all: tasks.length,
-      running: tasks.filter((task) => task.status === "running" || task.status === "pending").length,
+      running: tasks.filter((task) => ["pending", "dispatching", "running"].includes(task.status)).length,
       completed: tasks.filter((task) => task.status === "completed").length,
       failed: tasks.filter((task) => task.status === "failed").length,
       stopped: tasks.filter((task) => task.status === "stopped").length,
@@ -68,7 +68,7 @@ export function TrainingTaskList({
     const q = expSearch.trim().toLowerCase();
     return tasks
       .filter((task) => {
-        if (expFilter === "running" && task.status !== "running" && task.status !== "pending") return false;
+        if (expFilter === "running" && !["pending", "dispatching", "running"].includes(task.status)) return false;
         if (expFilter === "completed" && task.status !== "completed") return false;
         if (expFilter === "failed" && task.status !== "failed") return false;
         if (expFilter === "stopped" && task.status !== "stopped") return false;
@@ -194,8 +194,10 @@ function RecordRow({
   const duration = formatDuration(task.started_at, task.finished_at);
   const when = formatRelativeTime(task.finished_at || task.started_at || task.created_at);
   const progress = Math.min(100, Math.max(0, task.progress_percent || 0));
-  const isRunning = task.status === "running" || task.status === "pending";
+  const isRunning = task.status === "running" || task.status === "pending" || task.status === "dispatching";
+  const isDispatching = task.status === "dispatching";
   const showProgress = isRunning || task.status === "stopped" || task.status === "failed";
+
 
   return (
     <article
@@ -232,7 +234,7 @@ function RecordRow({
       {showProgress && (
         <div className="training-record-progress">
           <div className="training-record-progress-top">
-            <span>{task.progress_epoch}/{task.progress_total_epochs || task.epochs} ep</span>
+            <span>{isDispatching ? "数据下发" : `${task.progress_epoch}/${task.progress_total_epochs || task.epochs} ep`}</span>
             <span>{progress.toFixed(0)}%</span>
           </div>
           <div className="training-progress-track">

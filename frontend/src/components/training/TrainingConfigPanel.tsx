@@ -1,5 +1,6 @@
-import type { FormEvent } from "react";
-import type { Dataset, TaskType } from "../../types";
+import { useEffect, useState, type FormEvent } from "react";
+import { api } from "../../api/client";
+import type { BaseWeight, Dataset, TaskType } from "../../types";
 import {
   BATCH_OPTIONS,
   IMG_SIZE_OPTIONS,
@@ -54,7 +55,14 @@ export function TrainingConfigPanel({
   onExit,
 }: Props) {
   const setForm = onFormChange;
-  const modelChoices = modelChoicesFor(dataset.task_type);
+  const [baseWeights, setBaseWeights] = useState<BaseWeight[]>([]);
+  useEffect(() => {
+    if (typeof api.listWeights === "function") api.listWeights().then((result) => setBaseWeights(result.items)).catch(() => undefined);
+  }, []);
+  const modelChoices = [
+    ...modelChoicesFor(dataset.task_type),
+    ...baseWeights.map((weight) => ({ value: weight.name, label: `基础权重库 · ${weight.name}` })),
+  ];
   const modelInList = modelChoices.some((item) => item.value === form.model);
   const taskMeta = TASK_META[dataset.task_type];
 

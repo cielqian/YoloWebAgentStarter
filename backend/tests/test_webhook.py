@@ -53,15 +53,33 @@ def make_task() -> TrainingTask:
 
 def test_webhook_settings_roundtrip(client: TestClient):
     default = client.get("/api/settings/webhook").json()
-    assert default == {"enabled": False, "url": "", "method": "POST", "events": ["started", "completed", "failed", "stopped"]}
+    assert default == {
+        "enabled": False,
+        "url": "",
+        "method": "POST",
+        "events": ["started", "completed", "failed", "stopped"],
+        "body_template": "",
+    }
 
     updated = client.put(
         "/api/settings/webhook",
-        json={"enabled": True, "url": "http://127.0.0.1:9000/hook ", "method": "GET", "events": ["failed", "started"]},
+        json={
+            "enabled": True,
+            "url": "http://127.0.0.1:9000/hook ",
+            "method": "GET",
+            "events": ["failed", "started"],
+            "body_template": '{"msg": "{title}"}',
+        },
     )
     assert updated.status_code == 200, updated.text
     body = updated.json()
-    assert body == {"enabled": True, "url": "http://127.0.0.1:9000/hook", "method": "GET", "events": ["started", "failed"]}
+    assert body == {
+        "enabled": True,
+        "url": "http://127.0.0.1:9000/hook",
+        "method": "GET",
+        "events": ["started", "failed"],
+        "body_template": '{"msg": "{title}"}',
+    }
 
     assert client.get("/api/settings/webhook").json() == body
 
@@ -172,3 +190,84 @@ def test_notifier_gates_on_config_and_events(tmp_path: Path):
     assert payload["dataset_name"] == "叶片数据集"
     assert payload["status"] == "failed"
     assert payload["metrics"] == {"mAP50": 0.42}
+
+def test_deliver_webhook_post_renders_body_template():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["content_type"] = request.headers.get("Content-Type")
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(204)
+
+    config = WebhookSettingsOut(
+        enabled=True,
+        url="http://hook.test/notify",
+        method="POST",
+        body_template='{"title":"{title}","status":"{status}","model":"{model}","dataset":"{dataset}","duration":"{duration}"}',
+    )
+    payload = {
+        "id": "train-1",
+        "name": "叶片检测训练",
+        "status": "completed",
+        "model_name": "yolov8n.pt",
+        "dataset_name": "叶片数据集",
+        "started_at": "2026-10-21T10:00:00",
+        "finished_at": "2026-10-21T10:03:24",
+    }
+    result = deliver_webhook(config, "completed", payload, transport=httpx.MockTransport(handler))
+
+    assert result.ok is True
+    assert captured["content_type"] == "application/json"
+    assert captured["body"] == {
+        "title": "✅ 训练成功完成：叶片检测训练",
+        "status": "已完成",
+        "model": "yolov8n.pt",
+        "dataset": "叶片数据集",
+        "duration": "3m 24s",
+    }
+
+
+def test_deliver_webhook_template_text_body_uses_plain_content_type():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["content_type"] = request.headers.get("Content-Type")
+        captured["body"] = request.content.decode("utf-8")
+        return httpx.Response(204)
+
+    config = WebhookSettingsOut(
+        enabled=True,
+        url="http://hook.test/notify",
+        method="POST",
+        body_template="{title} | {status} | {duration}",
+    )
+    result = deliver_webhook(
+        config, "failed", {"name": "冒烟", "status": "failed", "error_message": "boom"}, transport=httpx.MockTransport(handler)
+    )
+
+    assert result.ok is True
+    assert captured["content_type"] == "text/plain; charset=utf-8"
+    assert captured["body"] == "❌ 训练异常退出：冒烟 | 失败 | —"
+
+
+def test_deliver_webhook_logs_body_on_rejection(caplog):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"code": 19001})
+
+    config = WebhookSettingsOut(
+        enabled=True,
+        url="http://hook.test/notify",
+        method="POST",
+        body_template='{"msg_type":"text","content":{"text":"{title} · {duration}"}}',
+    )
+    result = deliver_webhook(
+        config,
+        "completed",
+        {"name": "冒烟", "status": "completed", "started_at": "2026-10-21T10:00:00", "finished_at": "2026-10-21T10:00:30"},
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.ok is False
+    assert result.http_status == 400
+    assert 'Webhook 请求被拒（HTTP 400）' in caplog.text
+    assert '✅ 训练成功完成：冒烟' in caplog.text

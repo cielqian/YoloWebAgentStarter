@@ -635,3 +635,196 @@ def test_import_images_from_source_dataset(client):
     )
     assert everything.status_code == 201, everything.text
     assert everything.json() == {"imported": 2, "skipped": 0}
+
+
+def test_image_thumbnail_is_generated_and_cached(client):
+    dataset_id = create_dataset(client)
+    upload = client.post(
+        f"/api/datasets/{dataset_id}/images/upload",
+        files={"files": ("big.png", png_bytes(size=(1200, 900)), "image/png")},
+    )
+    assert upload.status_code == 201, upload.text
+    image_id = upload.json()["items"][0]["id"]
+
+    first = client.get(f"/api/images/{image_id}/thumbnail")
+    assert first.status_code == 200, first.text
+    assert first.headers["content-type"] == "image/jpeg"
+
+    thumbnail = client.app.state.storage.dataset_dir(dataset_id) / "thumbs" / f"{image_id}.jpg"
+    assert thumbnail.is_file()
+    with Image.open(thumbnail) as rendered:
+        assert max(rendered.size) <= 320
+        assert rendered.format == "JPEG"
+
+    # 二次请求命中磁盘缓存
+    again = client.get(f"/api/images/{image_id}/thumbnail")
+    assert again.status_code == 200
+    assert again.content == first.content
+
+
+def test_import_zip_from_ftp(client, monkeypatch):
+    import json as jsonlib
+
+    from app.ftp.service import FtpService
+
+    archive_payload = io.BytesIO()
+    with zipfile.ZipFile(archive_payload, "w") as archive:
+        archive.writestr("annotations.json", jsonlib.dumps({
+            "categories": [{"id": 1, "name": "shape"}],
+            "images": [{"id": 1, "file_name": "images/shape.png", "width": 100, "height": 80}],
+            "annotations": [{"id": 1, "image_id": 1, "category_id": 1, "bbox": [10, 10, 20, 20], "segmentation": []}],
+        }))
+        archive.writestr("images/shape.png", png_bytes())
+    monkeypatch.setattr(FtpService, "download", lambda self, path: ("ds.zip", archive_payload.getvalue()))
+
+    created = client.post(
+        "/api/datasets/import/from-ftp",
+        json={"path": "/export/ds.zip", "name": "ftp-coco", "task_type": "detect", "format": "coco"},
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["imported_images"] == 1
+    assert body["imported_annotations"] == 1
+    assert body["dataset"]["name"] == "ftp-coco"
+
+    not_zip = client.post(
+        "/api/datasets/import/from-ftp",
+        json={"path": "/export/ds.tar", "name": "ftp-bad", "task_type": "detect", "format": "coco"},
+    )
+    assert not_zip.status_code == 422, not_zip.text
+    assert not_zip.json()["error"]["code"] == "ftp_import_not_zip"
+
+
+def _wait_import_settled(client, dataset_id: str) -> dict:
+    import time as timelib
+
+    for _ in range(100):
+        detail = client.get(f"/api/datasets/{dataset_id}")
+        assert detail.status_code == 200, detail.text
+        body = detail.json()
+        if body.get("import_state") in ("completed", "failed", "stopped"):
+            return body
+        timelib.sleep(0.05)
+    raise AssertionError("async import did not settle")
+
+
+def test_async_ftp_import_shows_progress_then_completes(client, monkeypatch):
+    import json as jsonlib
+
+    from app.ftp.service import FtpService
+
+    archive_payload = io.BytesIO()
+    with zipfile.ZipFile(archive_payload, "w") as archive:
+        archive.writestr("annotations.json", jsonlib.dumps({
+            "categories": [{"id": 1, "name": "shape"}],
+            "images": [{"id": 1, "file_name": "images/shape.png", "width": 100, "height": 80}],
+            "annotations": [{"id": 1, "image_id": 1, "category_id": 1, "bbox": [10, 10, 20, 20], "segmentation": []}],
+        }))
+        archive.writestr("images/shape.png", png_bytes())
+    payload = archive_payload.getvalue()
+
+    def fake_download(self, path, on_progress=None):
+        if on_progress is not None:
+            on_progress(len(payload) // 2, len(payload))
+        return "ds.zip", payload
+
+    monkeypatch.setattr(FtpService, "download_with_progress", fake_download)
+
+    started = client.post(
+        "/api/datasets/import/from-ftp?wait=false",
+        json={"path": "/export/ds.zip", "name": "async-ftp", "task_type": "detect", "format": "coco"},
+    )
+    assert started.status_code == 201, started.text
+    body = started.json()["dataset"]
+    assert body["import_state"] == "importing"
+    dataset_id = body["id"]
+
+    settled = _wait_import_settled(client, dataset_id)
+    assert settled["import_state"] == "completed", settled.get("import_message")
+    assert settled["import_progress"] == 100.0
+    assert settled["image_count"] == 1
+
+
+def test_async_import_failure_is_reported_on_dataset(client, monkeypatch):
+    from app.ftp.service import FtpService
+
+    monkeypatch.setattr(FtpService, "download_with_progress", lambda self, path, on_progress=None: ("bad.zip", b"not a zip"))
+    started = client.post(
+        "/api/datasets/import/from-ftp?wait=false",
+        json={"path": "/export/bad.zip", "name": "async-bad", "task_type": "detect", "format": "coco"},
+    )
+    assert started.status_code == 201, started.text
+    dataset_id = started.json()["dataset"]["id"]
+
+    settled = _wait_import_settled(client, dataset_id)
+    assert settled["import_state"] == "failed"
+    assert settled["import_message"]
+
+
+def test_async_import_can_be_cancelled(client, monkeypatch):
+    import threading as threadinglib
+
+    from app.ftp.service import FtpService
+
+    download_started = threadinglib.Event()
+    release_download = threadinglib.Event()
+
+    def fake_download(self, path, on_progress=None):
+        download_started.set()
+        release_download.wait(timeout=10)
+        return "big.zip", b"not a zip"
+
+    monkeypatch.setattr(FtpService, "download_with_progress", fake_download)
+
+    started = client.post(
+        "/api/datasets/import/from-ftp?wait=false",
+        json={"path": "/export/big.zip", "name": "cancel-me", "task_type": "detect", "format": "coco"},
+    )
+    assert started.status_code == 201, started.text
+    dataset_id = started.json()["dataset"]["id"]
+    assert download_started.wait(5)
+
+    cancelled = client.post(f"/api/datasets/{dataset_id}/import/cancel")
+    assert cancelled.status_code == 200, cancelled.text
+    release_download.set()
+
+    settled = _wait_import_settled(client, dataset_id)
+    assert settled["import_state"] == "stopped"
+    assert "停止" in (settled["import_message"] or "")
+
+    again = client.post(f"/api/datasets/{dataset_id}/import/cancel")
+    assert again.status_code == 422
+    assert again.json()["error"]["code"] == "import_not_running"
+
+
+def _yolo_zip(label_line: bytes) -> bytes:
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("data.yaml", b"names: [object]\n")
+        zf.writestr("images/train/object.png", png_bytes())
+        zf.writestr("labels/train/object.txt", label_line)
+    return archive.getvalue()
+
+
+def test_yolo_import_clamps_slightly_overflowing_bbox(client):
+    payload = _yolo_zip(b"0 0.5 0.5 1.015 1.015\n")
+    response = client.post(
+        "/api/datasets/import/yolo",
+        data={"name": "clamp-edge", "task_type": "detect"},
+        files={"file": ("a.zip", payload, "application/zip")},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["imported_annotations"] == 1
+
+
+def test_yolo_import_rejects_severely_overflowing_bbox_with_context(client):
+    payload = _yolo_zip(b"0 0.6 0.6 1.2 1.2\n")
+    response = client.post(
+        "/api/datasets/import/yolo",
+        data={"name": "overflow", "task_type": "detect"},
+        files={"file": ("a.zip", payload, "application/zip")},
+    )
+    assert response.status_code == 422, response.text
+    message = response.json()["error"]["message"]
+    assert "labels/train/object.txt" in message
+    assert "image 100x80" in message

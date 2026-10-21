@@ -11,6 +11,9 @@ export interface Dataset {
   class_count: number;
   latest_version_number?: number | null;
   active_version_number?: number | null;
+  import_state?: "importing" | "completed" | "failed" | "stopped" | null;
+  import_progress?: number;
+  import_message?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -205,6 +208,7 @@ export interface WebhookSettings {
   url: string;
   method: WebhookMethod;
   events: WebhookEvent[];
+  body_template: string;
 }
 
 export interface WebhookDeliveryResult {
@@ -264,6 +268,12 @@ export interface TrainingNodeStatus {
   status: "online" | "offline";
   device_count: number;
   error: string | null;
+}
+
+export interface BaseWeight {
+  name: string;
+  size_bytes: number;
+  updated_at: string;
 }
 
 export interface TrainingNode {
@@ -341,7 +351,7 @@ export interface ImagePage {
   total: number;
 }
 
-export type TrainingStatus = "pending" | "running" | "completed" | "failed" | "stopped";
+export type TrainingStatus = "pending" | "dispatching" | "running" | "completed" | "failed" | "stopped";
 
 export interface TrainingTask {
   id: string;

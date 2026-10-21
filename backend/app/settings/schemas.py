@@ -162,6 +162,7 @@ class WebhookSettingsOut(BaseModel):
     url: str = ""
     method: WebhookMethod = "POST"
     events: list[WebhookEvent] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
+    body_template: str = ""
 
 
 class WebhookSettingsUpdate(BaseModel):
@@ -169,8 +170,9 @@ class WebhookSettingsUpdate(BaseModel):
     url: str = Field(default="", max_length=2048)
     method: WebhookMethod = "POST"
     events: list[WebhookEvent] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
+    body_template: str = Field(default="", max_length=4096)
 
-    @field_validator("url")
+    @field_validator("url", "body_template")
     @classmethod
     def strip_url(cls, value: str) -> str:
         return value.strip()

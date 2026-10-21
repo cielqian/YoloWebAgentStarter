@@ -32,9 +32,11 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.3.1"
+AGENT_VERSION = "0.3.2"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
+# 基础权重缓存：命中则不再向中心端拉取，训练任务共享
+WEIGHTS_CACHE = Path(__file__).resolve().parent / "weights-cache"
 MAX_BODY_BYTES = 32 * 1024 * 1024 * 1024
 _TASK_TYPES = {"detect", "segment", "obb", "classify"}
 _TASK_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
@@ -281,6 +283,7 @@ class TaskManager:
             "optimizer": spec.get("optimizer"),
             "lr0": spec.get("lr0"),
             "patience": spec.get("patience"),
+            "weights_url": spec.get("weights_url"),
         }
         with self.lock:
             if task_id in self.tasks:
@@ -446,6 +449,42 @@ class TaskManager:
             raise TaskError(404, f"{name} is not ready yet")
         return path
 
+    def resolve_base_weight(self, model_ref: str, spec: dict[str, Any], log) -> str:
+        """基础权重解析：本地缓存命中直接用；未命中且中心端提供地址则拉取入缓存。"""
+        name = Path(model_ref).name
+        if not name.endswith(".pt"):
+            return model_ref
+        WEIGHTS_CACHE.mkdir(parents=True, exist_ok=True)
+        cached = WEIGHTS_CACHE / name
+        if cached.is_file():
+            log(f"基础权重命中本地缓存：{cached}")
+            return str(cached)
+        return self._pull_weight(model_ref, spec, cached, log)
+
+    def _pull_weight(self, model_ref: str, spec: dict[str, Any], destination: Path, log) -> str:
+        url = str(spec.get("weights_url") or "").strip()
+        if not url:
+            log(f"未找到基础权重 {model_ref} 的本地副本，且任务未提供中心端权重地址；将交给 ultralytics 自行解析（离线环境会失败）。")
+            return model_ref
+        import urllib.request
+
+        log(f"本地无基础权重 {model_ref}，向中心端拉取：{url}")
+        temporary = destination.with_suffix(".downloading")
+        try:
+            with urllib.request.urlopen(url, timeout=600) as response, temporary.open("wb") as handle:
+                while True:
+                    block = response.read(1024 * 1024)
+                    if not block:
+                        break
+                    handle.write(block)
+            temporary.replace(destination)
+            log(f"基础权重已拉取并缓存：{destination}")
+            return str(destination)
+        except Exception as exc:  # noqa: BLE001 - 拉取失败退回原始引用
+            temporary.unlink(missing_ok=True)
+            log(f"从中心端拉取基础权重失败：{exc}")
+            return model_ref
+
     # --- 子进程执行 ---
 
     def _run(self, task_id: str) -> None:
@@ -466,6 +505,8 @@ class TaskManager:
         weights_candidate = workspace / "weights" / Path(model_ref).name
         if weights_candidate.is_file():
             model_ref = str(weights_candidate)
+        else:
+            model_ref = str(self.resolve_base_weight(model_ref, spec, log))
         args = [
             *_yolo_prefix(),
             str(spec["task_type"]),

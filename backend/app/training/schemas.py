@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.task_types import TaskType
 
-TrainingStatus = Literal["pending", "running", "completed", "failed", "stopped"]
+TrainingStatus = Literal["pending", "dispatching", "running", "completed", "failed", "stopped"]
 
 
 class TrainingTaskCreate(BaseModel):

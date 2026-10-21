@@ -73,7 +73,7 @@ export function defaultForm(taskType: TaskType): TrainingFormState {
 }
 
 export function statusLabel(status: TrainingStatus): string {
-  return ({ pending: "排队中", running: "运行中", completed: "已完成", failed: "失败", stopped: "已停止" })[status];
+  return ({ pending: "排队中", dispatching: "数据下发中", running: "训练中", completed: "训练完成", failed: "失败", stopped: "已停止" })[status];
 }
 
 export function taskTypeLabel(taskType: TaskType): string {

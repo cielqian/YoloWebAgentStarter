@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 import threading
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -24,9 +26,77 @@ EVENT_BY_STATUS = {
     "stopped": "stopped",
 }
 
+EVENT_LABELS = {
+    "started": "🚀 训练启动",
+    "completed": "✅ 训练成功完成",
+    "failed": "❌ 训练异常退出",
+    "stopped": "⏹️ 训练已停止",
+    "test": "🔔 Webhook 测试",
+}
+STATUS_LABELS = {
+    "pending": "排队中",
+    "running": "运行中",
+    "completed": "已完成",
+    "failed": "失败",
+    "stopped": "已停止",
+    "test": "测试",
+}
+
 
 def _iso(value: Any) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else None
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def human_duration(started_at: Any, finished_at: Any) -> str:
+    start = _parse_iso(started_at)
+    if start is None:
+        return "—"
+    end = _parse_iso(finished_at) or utc_now()
+    seconds = max(int((end - start).total_seconds()), 0)
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}h {minutes}m {secs}s"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def template_variables(event: str, payload: dict[str, Any]) -> dict[str, str]:
+    """请求体模板可用的占位符（{key} 形式，纯文本替换，不影响 JSON 大括号）。"""
+    name = str(payload.get("name") or "")
+    status = str(payload.get("status") or "")
+    label = EVENT_LABELS.get(event, event)
+    progress = payload.get("progress_percent")
+    return {
+        "title": f"{label}：{name}" if name else label,
+        "label": label,
+        "event": event,
+        "status": STATUS_LABELS.get(status, status),
+        "model": str(payload.get("model_name") or ""),
+        "dataset": str(payload.get("dataset_name") or ""),
+        "duration": human_duration(payload.get("started_at"), payload.get("finished_at")),
+        "name": name,
+        "task_id": str(payload.get("id") or ""),
+        "error_message": str(payload.get("error_message") or ""),
+        "progress_percent": f"{progress}" if progress is not None else "",
+    }
+
+
+def render_body_template(template: str, event: str, payload: dict[str, Any]) -> str:
+    rendered = template
+    for key, value in template_variables(event, payload).items():
+        rendered = rendered.replace("{" + key + "}", value)
+    return rendered
 
 
 def task_payload(task: TrainingTask) -> dict[str, Any]:
@@ -61,6 +131,7 @@ def deliver_webhook(
     transport: httpx.BaseTransport | None = None,
 ) -> WebhookDeliveryResult:
     """同步发送一次通知；失败只体现在返回值里，绝不抛出。"""
+    request_body = ""
     try:
         with httpx.Client(timeout=WEBHOOK_TIMEOUT_SECONDS, transport=transport) as client:
             if config.method == "GET":
@@ -73,9 +144,16 @@ def deliver_webhook(
                     "error_message": payload.get("error_message"),
                     "progress_percent": payload.get("progress_percent"),
                 }
-                response = client.get(
+                filtered = {key: str(value) for key, value in params.items() if value not in (None, "")}
+                request_body = "GET " + "&".join(f"{key}={value}" for key, value in filtered.items())
+                response = client.get(config.url, params=filtered)
+            elif config.body_template.strip():
+                request_body = render_body_template(config.body_template, event, payload)
+                content_type = "application/json" if request_body.lstrip().startswith("{") else "text/plain; charset=utf-8"
+                response = client.post(
                     config.url,
-                    params={key: str(value) for key, value in params.items() if value not in (None, "")},
+                    content=request_body.encode("utf-8"),
+                    headers={"Content-Type": content_type},
                 )
             else:
                 body = {
@@ -84,6 +162,7 @@ def deliver_webhook(
                     "occurred_at": _iso(utc_now()),
                     "task": payload,
                 }
+                request_body = json.dumps(body, ensure_ascii=False)
                 response = client.post(config.url, json=body)
     except httpx.TimeoutException:
         return WebhookDeliveryResult(
@@ -91,10 +170,13 @@ def deliver_webhook(
         )
     except httpx.HTTPError as exc:
         return WebhookDeliveryResult(ok=False, message=f"Webhook 请求失败：{exc.__class__.__name__}", code="connect_error")
+    preview = request_body if len(request_body) <= 2000 else request_body[:2000] + "…(截断)"
     if response.is_success:
+        logger.debug("Webhook 请求体 → %s", preview)
         return WebhookDeliveryResult(
             ok=True, message=f"Webhook 通知已送达（HTTP {response.status_code}）。", code="ok", http_status=response.status_code
         )
+    logger.warning("Webhook 请求被拒（HTTP %s）。请求体：%s", response.status_code, preview)
     return WebhookDeliveryResult(
         ok=False, message=f"Webhook 目标返回 HTTP {response.status_code}。", code="http_error", http_status=response.status_code
     )
@@ -138,7 +220,19 @@ class TrainingWebhookNotifier:
         config = self.config()
         if config is None:
             return WebhookDeliveryResult(ok=False, message="Webhook 未启用或未配置通知地址。", code="disabled")
-        return deliver_webhook(config, "test", {"id": "webhook-test", "name": "Webhook 测试", "status": "test"})
+        return deliver_webhook(
+            config,
+            "test",
+            {
+                "id": "webhook-test",
+                "name": "Webhook 测试",
+                "status": "test",
+                "model_name": "yolov8n.pt",
+                "dataset_name": "示例数据集",
+                "started_at": _iso(utc_now()),
+                "finished_at": _iso(utc_now()),
+            },
+        )
 
 
 _notifier: TrainingWebhookNotifier | None = None

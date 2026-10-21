@@ -29,7 +29,7 @@ export function TrainingTaskDetailCard({ task, summary, logs, busy, onClose, onS
     return fromTask !== undefined ? fromTask.toFixed(3) : "—";
   };
 
-  const canStop = task.status === "running" || task.status === "pending";
+  const canStop = task.status === "running" || task.status === "pending" || task.status === "dispatching";
   const canResume = !canStop && !!task.last_model_path;
   const currentLoss = metricNumber(summary?.metrics.loss) ?? metricNumber(task.metrics_json.loss);
   const timing = summary?.timing ?? {};

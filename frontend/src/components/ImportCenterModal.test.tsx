@@ -25,7 +25,7 @@ afterEach(() => {
 describe("ImportCenterModal", () => {
   it("offers video import in the dataset import center", async () => {
     await act(async () => {
-      root?.render(<ImportCenterModal busy={false} onClose={vi.fn()} onArchiveImport={vi.fn()} onVideoCompleted={vi.fn()} />);
+      root?.render(<ImportCenterModal busy={false} onClose={vi.fn()} onArchiveImport={vi.fn()} onFtpImport={vi.fn()} onVideoCompleted={vi.fn()} />);
     });
     expect(container?.textContent).toContain("YOLO 数据集");
     expect(container?.textContent).toContain("COCO 数据集");

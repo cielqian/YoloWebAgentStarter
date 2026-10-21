@@ -339,13 +339,8 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
         <span><b>⌘/Ctrl + S</b>保存标注</span>
         <span><b>Esc</b>取消选中 / 退出专注</span>
       </p>
-      {(guide || polygonTip) && (
-        <p className="hint interaction-guide">
-          {guide}
-          {polygonTip}
-        </p>
-      )}
       <div className="stage-wrap" ref={stageWrapRef}>
+        {(polygonTip || guide) && <div className="canvas-floating-tip" role="status">{polygonTip || guide}</div>}
         {imageElement ? (
           <Stage
             width={displaySize.width}

@@ -37,6 +37,17 @@ class Storage:
         self.tmp_dir = self.data_dir / "tmp"
         self.video_imports_dir = self.data_dir / "video-imports"
 
+    def weights_dir(self) -> Path:
+        directory = self.data_dir / "weights"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+
+    def weight_path(self, name: str) -> Path:
+        candidate = (self.weights_dir() / name).resolve()
+        if not _is_within(candidate, self.weights_dir().resolve()):
+            raise ValidationError("unsafe_path", "Weight name escapes the managed weights directory.")
+        return candidate
+
     def dataset_dir(self, dataset_id: str) -> Path:
         return self.datasets_dir / dataset_id
 
@@ -177,12 +188,21 @@ class Storage:
     def ensure_source_thumbnail(self, source_dataset_id: str, storage_name: str) -> Path:
         """返回缓存好的 JPEG 缩略图路径；首次访问时从原图生成。"""
         thumbnail = self.source_dataset_dir(source_dataset_id) / "thumbs" / f"{Path(storage_name).stem}.jpg"
+        original = self.source_image_path(source_dataset_id, storage_name)
+        return self._render_thumbnail(original, thumbnail, missing="source_image_file_not_found")
+
+    def ensure_dataset_thumbnail(self, dataset_id: str, image_id: str, storage_name: str) -> Path:
+        """数据集图片的缓存缩略图（标注页列表等小图场景）；首次访问时生成。"""
+        thumbnail = self.dataset_dir(dataset_id) / "thumbs" / f"{image_id}.jpg"
+        original = self.image_path(dataset_id, storage_name)
+        return self._render_thumbnail(original, thumbnail, missing="image_file_not_found")
+
+    def _render_thumbnail(self, original: Path, thumbnail: Path, missing: str) -> Path:
         thumbnail.parent.mkdir(parents=True, exist_ok=True)
         if thumbnail.is_file():
             return thumbnail
-        original = self.source_image_path(source_dataset_id, storage_name)
         if not original.is_file():
-            raise ValidationError("source_image_file_not_found", "图片文件不存在。")
+            raise ValidationError(missing, "图片文件不存在。")
         try:
             with Image.open(original) as image:
                 image = ImageOps.exif_transpose(image)

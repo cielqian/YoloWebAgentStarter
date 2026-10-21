@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
+from fastapi import Request, APIRouter, Depends, File, Form, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -21,6 +21,8 @@ from app.core.schemas import (
     ClassLabelCreate,
     ClassLabelResponse,
     DatasetCreate,
+    DatasetFtpImportCreate,
+    DatasetImportStarted,
     DatasetDetailResponse,
     DatasetResponse,
     DatasetUpdate,
@@ -47,8 +49,10 @@ from app.core.schemas import (
     YoloImportResponse,
 )
 from app.core.storage import Storage
+from app.ftp.service import FtpService
 from app.core.task_types import TaskType
 from app.dataset.annotation.service import list_annotations, replace_annotations
+from app.dataset.import_runner import request_cancel, run_async_import
 from app.dataset.exchange.yolo import YoloArchiveLimits, export_dataset, import_dataset
 from app.dataset.exchange.coco import export_coco, import_coco
 from app.dataset.quality.schemas import DatasetQualityReport
@@ -113,6 +117,9 @@ def _dataset_response(
         class_count=dataset.class_count,
         latest_version_number=latest_version_number,
         active_version_number=active_version_number,
+        import_state=dataset.import_state,
+        import_progress=dataset.import_progress or 0.0,
+        import_message=dataset.import_message,
         created_at=dataset.created_at,
         updated_at=dataset.updated_at,
     )
@@ -183,20 +190,71 @@ async def _read_upload(file: UploadFile, max_bytes: int) -> bytes:
     return content
 
 
-@router.post("/import/yolo", response_model=YoloImportResponse, status_code=201)
+
+
+def _start_async_import(
+    session: Session,
+    storage: Storage,
+    settings: Settings,
+    request: Request,
+    *,
+    name: str,
+    task_type: TaskType,
+    description: str | None,
+    default_split: str,
+    archive_format: str,
+    ftp_path: str | None = None,
+    content: bytes | None = None,
+) -> DatasetImportStarted:
+    placeholder = Dataset(
+        id=new_id("ds"),
+        name=name,
+        description=description,
+        task_type=task_type.value,
+        import_state="importing",
+        import_progress=0.0,
+    )
+    session.add(placeholder)
+    session.commit()
+    session.refresh(placeholder)
+    run_async_import(
+        request.app.state.database.session_factory,
+        storage,
+        settings,
+        dataset_id=placeholder.id,
+        name=name,
+        task_type=task_type,
+        description=description,
+        default_split=default_split,  # type: ignore[arg-type]
+        archive_format=archive_format,
+        ftp_path=ftp_path,
+        content=content,
+    )
+    return DatasetImportStarted(dataset=_dataset_responses(session, [placeholder])[0])
+
+
+@router.post("/import/yolo", response_model=YoloImportResponse | DatasetImportStarted, status_code=201)
 async def import_yolo_archive(
     file: UploadFile = File(...),
     name: str = Form(...),
     task_type: TaskType = Form(...),
     description: str | None = Form(default=None),
     default_split: SplitName = Form(default="train"),
+    wait: bool = Query(default=True),
+    request: Request = None,  # type: ignore[assignment]
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
-) -> YoloImportResponse:
+) -> YoloImportResponse | DatasetImportStarted:
     content = await _read_upload(file, settings.max_upload_bytes)
     if not name.strip():
         raise ValidationError("dataset_name_required", "Dataset name is required.")
+    if not wait:
+        return _start_async_import(
+            session, storage, settings, request,
+            name=name, task_type=task_type, description=description,
+            default_split=default_split, archive_format="yolo", content=content,
+        )
     dataset, imported_images, imported_annotations = import_dataset(
         session,
         storage,
@@ -217,20 +275,31 @@ async def import_yolo_archive(
     )
 
 
-@router.post("/import/coco", response_model=YoloImportResponse, status_code=201)
+@router.post("/import/coco", response_model=YoloImportResponse | DatasetImportStarted, status_code=201)
 async def import_coco_archive(
     file: UploadFile = File(...),
     name: str = Form(...),
     task_type: TaskType = Form(...),
     description: str | None = Form(default=None),
+    wait: bool = Query(default=True),
+    request: Request = None,  # type: ignore[assignment]
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
-) -> YoloImportResponse:
+) -> YoloImportResponse | DatasetImportStarted:
+    content = await _read_upload(file, settings.max_upload_bytes)
+    if not name.strip():
+        raise ValidationError("dataset_name_required", "Dataset name is required.")
+    if not wait:
+        return _start_async_import(
+            session, storage, settings, request,
+            name=name, task_type=task_type, description=description,
+            default_split="train", archive_format="coco", content=content,
+        )
     dataset, images, annotations = import_coco(
         session,
         storage,
-        await _read_upload(file, settings.max_upload_bytes),
+        content,
         DatasetCreate(name=name, description=description, task_type=task_type),
         limits=YoloArchiveLimits(
             max_members=settings.max_yolo_archive_members,
@@ -242,6 +311,42 @@ async def import_coco_archive(
     return YoloImportResponse(dataset=_dataset_responses(session, [dataset])[0], imported_images=images, imported_annotations=annotations)
 
 
+@router.post("/import/from-ftp", response_model=YoloImportResponse | DatasetImportStarted, status_code=201)
+def import_archive_from_ftp(
+    payload: DatasetFtpImportCreate,
+    wait: bool = Query(default=True),
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
+) -> YoloImportResponse | DatasetImportStarted:
+    if not payload.path.lower().endswith(".zip"):
+        raise ValidationError("ftp_import_not_zip", "FTP 导入仅支持 .zip 文件。")
+    if not payload.name.strip():
+        raise ValidationError("dataset_name_required", "Dataset name is required.")
+    if not wait:
+        return _start_async_import(
+            session, storage, settings, request,
+            name=payload.name, task_type=payload.task_type, description=payload.description,
+            default_split=payload.default_split, archive_format=payload.format, ftp_path=payload.path,
+        )
+    _, content = FtpService(settings).download(payload.path)
+    if len(content) > settings.max_upload_bytes:
+        raise ValidationError("upload_too_large", f"FTP 文件超过 {settings.max_upload_bytes // (1024 * 1024)} MB 导入上限。")
+    create = DatasetCreate(name=payload.name, description=payload.description, task_type=payload.task_type)
+    limits = YoloArchiveLimits(
+        max_members=settings.max_yolo_archive_members,
+        max_member_bytes=settings.max_yolo_archive_member_bytes,
+        max_total_uncompressed_bytes=settings.max_yolo_archive_uncompressed_bytes,
+        max_compression_ratio=settings.max_yolo_archive_compression_ratio,
+    )
+    if payload.format == "coco":
+        dataset, images, annotations = import_coco(session, storage, content, create, limits=limits)
+    else:
+        dataset, images, annotations = import_dataset(session, storage, content, create, payload.default_split, limits=limits)
+    return YoloImportResponse(dataset=_dataset_responses(session, [dataset])[0], imported_images=images, imported_annotations=annotations)
+
+
 @router.get("", response_model=list[DatasetResponse])
 def get_datasets(session: Session = Depends(get_session)) -> list[DatasetResponse]:
     return _dataset_responses(session, list_datasets(session))
@@ -250,6 +355,21 @@ def get_datasets(session: Session = Depends(get_session)) -> list[DatasetRespons
 @router.post("", response_model=DatasetResponse, status_code=201)
 def post_dataset(payload: DatasetCreate, session: Session = Depends(get_session)) -> DatasetResponse:
     return _dataset_response(create_dataset(session, payload))
+
+
+@router.post("/{dataset_id}/import/cancel", response_model=DatasetDetailResponse)
+def cancel_dataset_import(
+    dataset_id: str,
+    session: Session = Depends(get_session),
+) -> DatasetDetailResponse:
+    dataset = get_dataset(session, dataset_id)
+    if dataset.import_state != "importing":
+        raise ValidationError("import_not_running", "该数据集当前没有进行中的导入。")
+    request_cancel(dataset_id)
+    dataset.import_message = "正在停止导入…"
+    session.commit()
+    session.refresh(dataset)
+    return get_dataset_detail(dataset_id, session)
 
 
 @router.get("/{dataset_id}", response_model=DatasetDetailResponse)
@@ -587,6 +707,19 @@ def get_image_file(image_id: str, session: Session = Depends(get_session), stora
     if not path.is_file():
         raise NotFoundError("image_file_not_found", "The managed image file was not found.")
     return FileResponse(path, media_type=_media_type(path), filename=image.file_name)
+
+
+@file_router.get("/{image_id}/thumbnail", name="get_image_thumbnail")
+def get_image_thumbnail(image_id: str, session: Session = Depends(get_session), storage: Storage = Depends(get_storage)) -> FileResponse:
+    image = get_image(session, image_id)
+    try:
+        thumbnail = storage.ensure_dataset_thumbnail(image.dataset_id, image.id, image.storage_name)
+    except ValidationError:
+        # 生成失败时退回原图，保证列表仍有图可显示。
+        thumbnail = storage.image_path(image.dataset_id, image.storage_name)
+    if not thumbnail.is_file():
+        raise NotFoundError("image_file_not_found", "The managed image file was not found.")
+    return FileResponse(thumbnail, media_type="image/jpeg")
 
 
 def _media_type(path: Path) -> str:

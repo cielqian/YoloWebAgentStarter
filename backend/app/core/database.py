@@ -15,13 +15,18 @@ class Database:
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
         self.engine = create_engine(url, connect_args=connect_args, future=True)
         if url.startswith("sqlite"):
-            event.listen(self.engine, "connect", self._enable_sqlite_foreign_keys)
+            event.listen(self.engine, "connect", self._configure_sqlite)
         self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False, class_=Session)
 
     @staticmethod
-    def _enable_sqlite_foreign_keys(dbapi_connection: object, connection_record: object) -> None:
+    def _configure_sqlite(dbapi_connection: object, connection_record: object) -> None:
+        # WAL 让读连接不被写事务阻塞（异步导入期间前端仍可轮询），
+        # busy_timeout 让写写竞争排队等待而不是立刻报 database is locked。
         cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=10000")
         cursor.close()
 
     def sessions(self) -> Iterator[Session]:

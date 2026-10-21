@@ -355,6 +355,7 @@ class SettingsService:
             url=str(section.get("url", "")).strip(),
             method=method if method in ("GET", "POST") else "POST",
             events=events,
+            body_template=str(section.get("body_template", "")),
         )
 
     def update_webhook_settings(self, payload: WebhookSettingsUpdate) -> WebhookSettingsOut:
@@ -365,7 +366,13 @@ class SettingsService:
             raise ValidationError("webhook_url_required", "启用 Webhook 前必须填写通知地址。")
         events = [item for item in WEBHOOK_EVENTS if item in payload.events]
         data = self._read()
-        data["webhook"] = {"enabled": payload.enabled, "url": url, "method": payload.method, "events": events}
+        data["webhook"] = {
+            "enabled": payload.enabled,
+            "url": url,
+            "method": payload.method,
+            "events": events,
+            "body_template": payload.body_template.strip(),
+        }
         self._write(data)
         return self.get_webhook_settings()
 

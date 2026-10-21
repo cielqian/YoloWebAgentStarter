@@ -53,3 +53,33 @@ def test_agent_running_device_ids_parses_multi_gpu_and_auto():
         agent.task_manager.delete("t-parse-1")
         agent.task_manager.delete("t-parse-2")
         sys.modules.pop("ywa_agent_under_test", None)
+
+
+def test_agent_resolves_base_weight_from_cache_and_center(tmp_path, monkeypatch):
+    agent = _load_agent()
+    agent.WEIGHTS_CACHE = tmp_path / "weights-cache"
+    logs: list[str] = []
+    log = logs.append
+    try:
+        # 无缓存且无地址：退回原始引用
+        assert agent.task_manager.resolve_base_weight("yolov8n.pt", {}, log) == "yolov8n.pt"
+
+        # 缓存命中：直接用缓存路径
+        agent.WEIGHTS_CACHE.mkdir(parents=True, exist_ok=True)
+        (agent.WEIGHTS_CACHE / "yolov8n.pt").write_bytes(b"cached")
+        resolved = agent.task_manager.resolve_base_weight("yolov8n.pt", {}, log)
+        assert resolved.endswith("yolov8n.pt") and tmp_path.as_posix() in resolved
+
+        # 无缓存但有中心端地址：拉取后入缓存
+        (agent.WEIGHTS_CACHE / "yolov8s.pt").unlink(missing_ok=True)
+
+        def fake_pull(model_ref, spec, destination, log):
+            destination.write_bytes(b"pulled")
+            log("pulled")
+            return str(destination)
+
+        monkeypatch.setattr(agent.task_manager, "_pull_weight", fake_pull)
+        resolved2 = agent.task_manager.resolve_base_weight("yolov8s.pt", {"weights_url": "http://center/api/weights/file/yolov8s.pt"}, log)
+        assert resolved2.endswith("yolov8s.pt") and tmp_path.as_posix() in resolved2
+    finally:
+        sys.modules.pop("ywa_agent_under_test", None)

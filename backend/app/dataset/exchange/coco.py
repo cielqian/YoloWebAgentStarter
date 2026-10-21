@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import io
 import json
 import zipfile
@@ -59,6 +61,8 @@ def import_coco(
     dataset_payload: DatasetCreate,
     *,
     limits: YoloArchiveLimits | None = None,
+    dataset_id: str | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> tuple[Dataset, int, int]:
     if dataset_payload.task_type.value not in {"detect", "segment"}:
         raise ValidationError("coco_task_unsupported", "COCO import currently supports detect and segment datasets.")
@@ -70,13 +74,16 @@ def import_coco(
         raise ValidationError("invalid_coco_archive", "COCO ZIP must contain a valid annotations.json manifest.") from exc
     dataset: Dataset | None = None
     try:
-        dataset = Dataset(
-            id=new_id("ds"),
-            name=dataset_payload.name,
-            description=dataset_payload.description,
-            task_type=dataset_payload.task_type.value,
-        )
-        session.add(dataset)
+        if dataset_id:
+            dataset = session.get(Dataset, dataset_id)
+        if dataset is None:
+            dataset = Dataset(
+                id=dataset_id or new_id("ds"),
+                name=dataset_payload.name,
+                description=dataset_payload.description,
+                task_type=dataset_payload.task_type.value,
+            )
+            session.add(dataset)
         category_map: dict[int, str] = {}
         for class_index, category in enumerate(sorted(manifest.get("categories", []), key=lambda item: item.get("id", 0))):
             class_label = ClassLabel(
@@ -92,6 +99,8 @@ def import_coco(
         image_members = [name for name in entries if PurePosixPath(name).suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}]
         image_map: dict[int, ImageItem] = {}
         for item in manifest.get("images", []):
+            if should_cancel is not None and should_cancel():
+                raise ValidationError("import_cancelled", "导入已停止。")
             manifest_file_name = str(item["file_name"])
             file_name = PurePosixPath(manifest_file_name).name
             exact = manifest_file_name.lstrip("./")

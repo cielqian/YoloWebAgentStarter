@@ -28,6 +28,28 @@ class DatasetCreate(BaseModel):
         return value.strip()
 
 
+class DatasetImportStarted(BaseModel):
+    """wait=false 的异步导入：占位数据集已创建，进度见 dataset.import_state。"""
+
+    dataset: "DatasetResponse"
+
+
+class DatasetFtpImportCreate(BaseModel):
+    """从 FTP 上的 ZIP 压缩包导入数据集。"""
+
+    path: str = Field(min_length=1, max_length=1024)
+    name: str = Field(min_length=1, max_length=255)
+    task_type: TaskType
+    format: Literal["yolo", "coco"]
+    description: str | None = Field(default=None, max_length=2000)
+    default_split: SplitName = "train"
+
+    @field_validator("path", "name")
+    @classmethod
+    def strip_ftp_fields(cls, value: str) -> str:
+        return value.strip()
+
+
 class DatasetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
@@ -48,6 +70,9 @@ class DatasetResponse(ORMModel):
     class_count: int
     latest_version_number: int | None = None
     active_version_number: int | None = None
+    import_state: str | None = None
+    import_progress: float = 0.0
+    import_message: str | None = None
     created_at: datetime
     updated_at: datetime
 

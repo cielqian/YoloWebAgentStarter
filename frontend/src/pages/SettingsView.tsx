@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
 import type { AppLocale } from "../locale";
 import { saveLocale } from "../locale";
 import type {
+  BaseWeight,
   FtpSettings,
   LLMAuthScheme,
   LLMSettings,
@@ -16,7 +17,7 @@ import type {
   WebhookSettings,
 } from "../types";
 
-export type SettingsTab = "llm" | "sam" | "ftp" | "nodes" | "webhook" | "language";
+export type SettingsTab = "llm" | "sam" | "ftp" | "nodes" | "weights" | "webhook" | "language";
 
 type LlmFormState = LLMSettings & { api_key: string };
 
@@ -99,6 +100,13 @@ const copy = {
     ftpNotConfigured: "未配置",
     nodesNav: "训练节点",
     nodesNavDescription: "远程算力服务器巡检",
+    weightsNav: "基础权重",
+    weightsNavDescription: "训练起始权重库 · 远程节点按需拉取",
+    weightsTitle: "基础权重库",
+    weightsSubtitle: "上传 .pt 权重后，远程训练节点本地没有时会自动向中心端拉取并缓存，后续任务不再重复下载。",
+    weightsUpload: "上传权重",
+    weightsEmpty: "还没有基础权重。上传 yolov8n.pt 等预置权重后，离线训练节点也能直接开训。",
+    weightsDeleteConfirm: "删除基础权重「{name}」？已缓存的节点不受影响。",
     nodesTitle: "训练节点",
     nodesSubtitle: "注册部署了 compute-agent 的算力服务器（GPU / NPU）。「训练」页会展示其设备巡检结果。配置保存在 settings.json。",
     nodeName: "节点名称",
@@ -120,12 +128,14 @@ const copy = {
     webhookNav: "Webhook 通知",
     webhookNavDescription: "训练启动 / 结束 / 异常回调",
     webhookTitle: "Webhook 通知",
-    webhookSubtitle: "训练任务启动、完成、失败或停止时，向下方地址发送 HTTP 通知：POST 携带 JSON 任务详情，GET 携带查询参数。配置保存在 settings.json。",
+    webhookSubtitle: "训练任务启动、完成、失败或停止时，向下方地址发送 HTTP 通知：POST 可自定义请求体模板，GET 携带查询参数。配置保存在 settings.json。",
     webhookEnabled: "启用 Webhook 通知",
     webhookEnabledHint: "关闭后不发送任何通知。",
     webhookUrl: "通知地址",
     webhookUrlHint: "以 http:// 或 https:// 开头，例如 https://example.com/hook。",
     webhookMethod: "请求方法",
+    webhookBody: "请求体模板（仅 POST 生效，留空发送默认 JSON）",
+    webhookBodyHint: "可用占位符：{title} 标题、{status} 状态、{model} 模型名、{dataset} 数据集、{duration} 训练耗时；另有 {event}、{name}、{task_id}、{error_message}、{progress_percent}。",
     webhookEvents: "通知事件",
     eventStarted: "训练启动",
     eventCompleted: "训练完成",
@@ -240,6 +250,13 @@ const copy = {
     ftpNotConfigured: "Not configured",
     nodesNav: "Training nodes",
     nodesNavDescription: "Remote compute servers",
+    weightsNav: "Base weights",
+    weightsNavDescription: "Training starter weights",
+    weightsTitle: "Base weight library",
+    weightsSubtitle: "Upload .pt weights; remote agents pull them on demand and cache locally.",
+    weightsUpload: "Upload weight",
+    weightsEmpty: "No base weights yet. Upload yolov8n.pt etc. so offline agents can train directly.",
+    weightsDeleteConfirm: "Delete base weight {name}? Cached agents are not affected.",
     nodesTitle: "Training nodes",
     nodesSubtitle: "Register servers running compute-agent (GPU / NPU). Their devices show up on the Training page. Stored in settings.json.",
     nodeName: "Node name",
@@ -267,6 +284,8 @@ const copy = {
     webhookUrl: "Notification URL",
     webhookUrlHint: "Must start with http:// or https://, e.g. https://example.com/hook.",
     webhookMethod: "HTTP method",
+    webhookBody: "Body template (POST only; empty sends default JSON)",
+    webhookBodyHint: "Placeholders: {title}, {status}, {model}, {dataset}, {duration}; also {event}, {name}, {task_id}, {error_message}, {progress_percent}.",
     webhookEvents: "Events",
     eventStarted: "Training started",
     eventCompleted: "Training completed",
@@ -407,6 +426,14 @@ export function SettingsView({
             onClick={() => onTabChange("nodes")}
           />
           <SettingsNavigationItem
+            active={tab === "weights"}
+            icon={<NodeIcon />}
+            title={text.weightsNav}
+            description={text.weightsNavDescription}
+            badge={text.local}
+            onClick={() => onTabChange("weights")}
+          />
+          <SettingsNavigationItem
             active={tab === "webhook"}
             icon={<WebhookIcon />}
             title={text.webhookNav}
@@ -431,6 +458,8 @@ export function SettingsView({
             <FtpSettingsPanel text={text} />
           ) : tab === "nodes" ? (
             <TrainingNodesPanel text={text} />
+          ) : tab === "weights" ? (
+            <BaseWeightsPanel text={text} />
           ) : tab === "webhook" ? (
             <WebhookSettingsPanel text={text} />
           ) : (
@@ -979,6 +1008,83 @@ function FtpSettingsPanel({ text }: { text: SettingsText }) {
 
 type NodeFormState = { name: string; url: string; token: string };
 
+
+function BaseWeightsPanel({ text }: { text: SettingsText }) {
+  const [weights, setWeights] = useState<BaseWeight[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const refresh = useCallback(() => {
+    api.listWeights().then((result) => setWeights(result.items)).catch((reason) => setError(reason instanceof Error ? reason.message : "读取基础权重失败。"));
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await api.uploadWeight(file);
+      setMessage(`已上传 ${file.name}`);
+      refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "上传失败。");
+    } finally {
+      setBusy(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
+  const remove = async (name: string) => {
+    if (!window.confirm(text.weightsDeleteConfirm.replace("{name}", name))) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await api.deleteWeight(name);
+      setMessage(`已删除 ${name}`);
+      refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "删除失败。");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="panel settings-card">
+      <header className="settings-card-head">
+        <div className="settings-card-icon"><NodeIcon /></div>
+        <div>
+          <h2>{text.weightsTitle}</h2>
+          <p>{text.weightsSubtitle}</p>
+        </div>
+        <span className="settings-status ready">{weights.length} 个</span>
+      </header>
+      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
+      {message && !error ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
+
+      <div className="settings-form-grid">
+        <input ref={fileInput} type="file" accept=".pt" hidden onChange={(event) => { void upload(event.target.files?.[0]); }} />
+        <label className="settings-span-2">
+          <span>{text.weightsUpload}</span>
+          <button type="button" className="button primary" disabled={busy} onClick={() => fileInput.current?.click()}>选择 .pt 文件上传</button>
+        </label>
+        {weights.map((weight) => (
+          <div key={weight.name} className="settings-weight-row">
+            <strong title={weight.name}>{weight.name}</strong>
+            <small>{Math.max(1, Math.round(weight.size_bytes / 1024))} KB · {formatWeightTime(weight.updated_at)}</small>
+            <button type="button" className="button" disabled={busy} onClick={() => void remove(weight.name)}>删除</button>
+          </div>
+        ))}
+        {!weights.length && <p className="muted settings-span-2">{text.weightsEmpty}</p>}
+      </div>
+    </section>
+  );
+}
+
+function formatWeightTime(value: string): string {
+  return value ? value.slice(0, 19).replace("T", " ") : "—";
+}
+
 function TrainingNodesPanel({ text }: { text: SettingsText }) {
   const [form, setForm] = useState<NodeFormState>({ name: "", url: "", token: "" });
   const [nodes, setNodes] = useState<TrainingNode[]>([]);
@@ -1142,6 +1248,7 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
     url: "",
     method: "POST",
     events: [...WEBHOOK_EVENT_ITEMS],
+    body_template: "",
   });
   const [busy, setBusy] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1243,6 +1350,17 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
           <select value={form.method} onChange={(event) => setForm({ ...form, method: event.target.value as WebhookMethod })}>
             {WEBHOOK_METHODS.map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
+        </label>
+        <label className="settings-span-2">
+          <span>{text.webhookBody}</span>
+          <textarea
+            className="settings-textarea"
+            rows={4}
+            value={form.body_template}
+            placeholder={'{"msgtype":"text","text":{"content":"{title}\n状态：{status}\n模型：{model}\n数据集：{dataset}\n耗时：{duration}"}}'}
+            onChange={(event) => setForm({ ...form, body_template: event.target.value })}
+          />
+          <small>{text.webhookBodyHint}</small>
         </label>
         {WEBHOOK_EVENT_ITEMS.map((event) => (
           <label key={event} className="settings-toggle">

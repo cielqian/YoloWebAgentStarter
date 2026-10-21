@@ -43,7 +43,9 @@ describe("DatasetHome create dialog clone mode", () => {
   it("clones a chosen version into a new dataset with a pre-filled name", async () => {
     const onClone = vi.fn();
     await act(async () => {
-      root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={onClone} onImport={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
+      root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={onClone} onImport={vi.fn()}
+        onFtpImport={vi.fn()}
+        onCancelImport={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
     await clickButton("新建数据集");
     await clickButton("从现有版本克隆");
@@ -61,7 +63,9 @@ describe("DatasetHome create dialog clone mode", () => {
   it("keeps the clone button disabled until versions are loaded", async () => {
     vi.mocked(api.listDatasetVersions).mockReturnValue(new Promise(() => {}));
     await act(async () => {
-      root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={vi.fn()} onImport={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
+      root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={vi.fn()} onImport={vi.fn()}
+        onFtpImport={vi.fn()}
+        onCancelImport={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
     await clickButton("新建数据集");
     await clickButton("从现有版本克隆");
@@ -75,7 +79,9 @@ describe("DatasetHome create dialog clone mode", () => {
     const unversioned: Dataset = { ...dataset, id: "ds-9", name: "raw", latest_version_number: null, active_version_number: null };
     const onClone = vi.fn();
     await act(async () => {
-      root?.render(<DatasetHome datasets={[unversioned]} busy={false} onCreate={vi.fn()} onClone={onClone} onImport={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
+      root?.render(<DatasetHome datasets={[unversioned]} busy={false} onCreate={vi.fn()} onClone={onClone} onImport={vi.fn()}
+        onFtpImport={vi.fn()}
+        onCancelImport={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
     await clickButton("新建数据集");
     await clickButton("从现有版本克隆");

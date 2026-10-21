@@ -88,14 +88,32 @@ class FtpService:
         return FtpListResult(path=target, entries=entries)
 
     def download(self, path: str) -> tuple[str, bytes]:
+        return self.download_with_progress(path)
+
+    def download_with_progress(self, path: str, on_progress: Callable[[int, int | None], None] | None = None) -> tuple[str, bytes]:
+        """下载文件；on_progress(已收字节, 总字节|未知) 在每个数据块后回调。"""
         target = normalize_ftp_path(path, allow_root=False)
         with self._managed_client() as client:
-            buffer = io.BytesIO()
+            total: int | None = None
             try:
-                client.retrbinary(f"RETR {target}", buffer.write)
+                total = int(client.size(target))
+            except (error_perm, ValueError):
+                total = None
+            buffer = io.BytesIO()
+            received = 0
+
+            def chunk(data: bytes) -> None:
+                nonlocal received
+                received += len(data)
+                buffer.write(data)
+                if on_progress is not None:
+                    on_progress(received, total)
+
+            try:
+                client.retrbinary(f"RETR {target}", chunk)
             except error_perm as exc:
                 if _perm_code(exc) == "550":
-                    raise NotFoundError("ftp_file_not_found", "FTP 文件不存在或无权限访问。") from exc
+                    raise NotFoundError("ftp 文件_not_found_placeholder", "FTP 文件不存在或无权限访问。") from exc
                 raise ConflictError("ftp_download_failed", f"下载失败：{exc}") from exc
         name = posixpath.basename(target) or "ftp_file"
         return name, buffer.getvalue()

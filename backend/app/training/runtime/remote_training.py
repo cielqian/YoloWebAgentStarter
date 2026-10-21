@@ -8,6 +8,7 @@ and final artifacts back into the managed training directory.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import zipfile
@@ -71,6 +72,7 @@ def dispatch_remote_task(
     spec: dict[str, Any],
     dataset_zip: Path,
     weights: Path | None,
+    on_progress: Any = None,
 ) -> None:
     task_id = str(spec["task_id"])
     base = _base(node)
@@ -80,11 +82,33 @@ def dispatch_remote_task(
             response = client.post(f"{base}/tasks", json=spec, headers=headers)
             if response.status_code not in (201, 409):
                 raise RemoteTrainingError(f"创建任务失败：{_detail(response)}")
-            with dataset_zip.open("rb") as handle:
+            if on_progress is None:
+                with dataset_zip.open("rb") as handle:
+                    response = client.put(
+                        f"{base}/tasks/{task_id}/dataset",
+                        content=handle,
+                        headers={**headers, "Content-Type": "application/zip"},
+                    )
+            else:
+                # 大数据集按块上传并回调进度；生成器内抛出的取消异常会中断请求。
+                total = dataset_zip.stat().st_size
+                sent = 0
+
+                def chunks():
+                    nonlocal sent
+                    with dataset_zip.open("rb") as handle:
+                        while True:
+                            block = handle.read(1024 * 1024)
+                            if not block:
+                                break
+                            sent += len(block)
+                            on_progress(sent, total)
+                            yield block
+
                 response = client.put(
                     f"{base}/tasks/{task_id}/dataset",
-                    content=handle,
-                    headers={**headers, "Content-Type": "application/zip"},
+                    content=chunks(),
+                    headers={**headers, "Content-Type": "application/zip", "Content-Length": str(total)},
                 )
             if response.status_code != 200:
                 raise RemoteTrainingError(f"上传数据集失败：{_detail(response)}")
@@ -319,14 +343,27 @@ def remote_node_occupied_devices(session: Session, node: dict[str, Any], exclude
     return occupied
 
 
-def dispatch_task_from_row(session: Session, storage: Storage, node: dict[str, Any], task: TrainingTask) -> bool:
-    """把排队中的远程任务下发到 agent；成功转 running，失败转 failed。"""
-    export_root = Path(task.export_path) if task.export_path else None
-    if export_root is None or not export_root.is_dir():
-        _finalize(session, task, "failed", "排队任务的数据集导出已丢失，请重试该任务。")
-        return False
+def resolve_dispatch_weights(storage: Storage, task: TrainingTask) -> Path | None:
+    """任务专属权重（绝对路径：模型库/续训 last.pt）随任务推送上传。"""
+    model_path = Path(task.model_path or "")
+    if model_path.is_absolute():
+        return model_path if model_path.is_file() else None
+    return None
+
+
+def preset_weight_url(settings: Settings, storage: Storage, task: TrainingTask) -> str | None:
+    """裸名基础权重：中心端 data/weights 有副本时，给 agent 一个按需拉取地址。"""
+    stem = Path(task.model_name or "").name
+    if not stem or Path(task.model_path or "").is_absolute():
+        return None
+    if (storage.data_dir / "weights" / stem).is_file():
+        return f"{settings.backend_base_url}/api/weights/file/{stem}"
+    return None
+
+
+def spec_from_task(task: TrainingTask) -> dict[str, Any]:
     model_arg = Path(task.model_path).name if Path(task.model_path).is_absolute() else task.model_name
-    spec = {
+    return {
         "task_id": task.id,
         "task_type": task.task_type,
         "model": model_arg,
@@ -340,13 +377,30 @@ def dispatch_task_from_row(session: Session, storage: Storage, node: dict[str, A
         "lr0": task.lr0,
         "patience": task.patience,
     }
-    archive = storage.tmp_dir / f"{task.id}-dataset.zip"
+
+
+def zip_export_dir(export_root: Path, archive: Path) -> None:
     archive.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for item in sorted(export_root.rglob("*")):
             if item.is_file():
                 zf.write(item, item.relative_to(export_root).as_posix())
-    weights_path = Path(task.model_path) if Path(task.model_path).is_absolute() else None
+
+
+def dispatch_task_from_row(session: Session, storage: Storage, node: dict[str, Any], task: TrainingTask, settings: Settings | None = None) -> bool:
+    """把排队中的远程任务下发到 agent；成功转 running，失败转 failed。"""
+    export_root = Path(task.export_path) if task.export_path else None
+    if export_root is None or not export_root.is_dir():
+        _finalize(session, task, "failed", "排队任务的数据集导出已丢失，请重试该任务。")
+        return False
+    spec = spec_from_task(task)
+    if settings is not None:
+        weights_url = preset_weight_url(settings, storage, task)
+        if weights_url:
+            spec["weights_url"] = weights_url
+    archive = storage.tmp_dir / f"{task.id}-dataset.zip"
+    zip_export_dir(export_root, archive)
+    weights_path = resolve_dispatch_weights(storage, task)
     try:
         dispatch_remote_task(node, spec, archive, weights_path)
     except RemoteTrainingError as exc:
@@ -397,8 +451,157 @@ def dispatch_due_remote_tasks(session: Session, storage: Storage, settings: Sett
             requested = parse_remote_device_set(task.device)
             if requested & occupied:
                 continue
-            if dispatch_task_from_row(session, storage, node, task):
+            if dispatch_task_from_row(session, storage, node, task, settings=settings):
                 occupied |= requested
+
+
+class _DispatchCancelled(Exception):
+    """用户在数据下发过程中请求停止。"""
+
+
+def _dispatching_update(
+    session_factory: sessionmaker[Session], task_id: str, *, require_status: tuple[str, ...] | None = ("dispatching",), **fields: Any
+) -> bool:
+    with session_factory() as session:
+        task = session.get(TrainingTask, task_id)
+        if task is None or (require_status and task.status not in require_status):
+            return False
+        for key, value in fields.items():
+            setattr(task, key, value)
+        session.commit()
+    return True
+
+
+def _dispatch_stop_requested(session_factory: sessionmaker[Session], task_id: str) -> bool:
+    with session_factory() as session:
+        task = session.get(TrainingTask, task_id)
+        return bool(task and task.stop_requested)
+
+
+def _dispatch_flow(session_factory: sessionmaker[Session], storage: Storage, settings: Settings, task_id: str) -> None:
+    """后台执行：导出数据集 → 打包 → 分块上传（进度写 progress_percent）→ 启动训练。"""
+    from app.dataset.exchange.yolo import export_dataset_directory
+    from app.dataset.service import get_dataset
+    from app.training.service import TrainingService
+
+    archive: Path | None = None
+    try:
+        with session_factory() as session:
+            task = session.get(TrainingTask, task_id)
+            if task is None:
+                return
+            node_id = task.node_id or ""
+            dataset_id = task.dataset_id
+            epochs = task.epochs
+            export_root = storage.training_task_dir(task_id) / "dataset"
+
+        def mark_stopped() -> None:
+            _dispatching_update(session_factory, task_id, require_status=None, status="stopped", error_message="数据下发已停止。", finished_at=utc_now(), progress_percent=0.0)
+
+        if _dispatch_stop_requested(session_factory, task_id):
+            mark_stopped()
+            return
+
+        with session_factory() as session:
+            dataset = get_dataset(session, dataset_id)
+            export = export_dataset_directory(session, storage, dataset_id, export_root)
+        TrainingService._validate_export_training_splits(export, dataset.task_type)
+        export_stats = {key: export.get(key) for key in ("counts", "annotated_image_counts", "total_image_counts", "skipped_image_counts", "label_count")}
+        if not _dispatching_update(
+            session_factory, task_id,
+            export_path=str(export["root"]),
+            data_yaml_path=str(export["data_yaml"]),
+            export_stats_json=export_stats,
+            progress_percent=20.0,
+        ):
+            return
+        TrainingLogStore(storage.training_task_dir(task_id) / "train.log").append("数据集导出完成，开始打包上传。")
+
+        if _dispatch_stop_requested(session_factory, task_id):
+            mark_stopped()
+            return
+
+        archive = storage.tmp_dir / f"{task_id}-dataset.zip"
+        zip_export_dir(Path(export["root"]), archive)
+        if not _dispatching_update(session_factory, task_id, progress_percent=30.0):
+            return
+
+        node = find_node(settings, node_id)
+        if node is None:
+            _dispatching_update(session_factory, task_id, require_status=None, status="failed", error_message="训练节点已被删除，数据下发中止。", finished_at=utc_now())
+            return
+
+        # 打包后复查占用：被占用则转入排队队列，由调度器接管（复用已导出的目录）。
+        with session_factory() as session:
+            try:
+                occupied = remote_node_occupied_devices(session, node, exclude_task_id=task_id)
+            except RemoteNodeUnavailable:
+                occupied = None
+        requested = parse_remote_device_set(_task_device(session_factory, task_id))
+        if occupied is not None and requested and requested & occupied:
+            _dispatching_update(session_factory, task_id, status="pending", progress_percent=0.0)
+            return
+
+        with session_factory() as session:
+            row = session.get(TrainingTask, task_id)
+            if row is None or row.status not in ("dispatching",):
+                return
+            spec = spec_from_task(row)
+            weights_path = resolve_dispatch_weights(storage, row)
+            weights_url = preset_weight_url(settings, storage, row)
+            if weights_url:
+                spec["weights_url"] = weights_url
+            elif weights_path is None and not Path(row.model_path or "").is_absolute():
+                TrainingLogStore(storage.training_task_dir(task_id) / "train.log").append(
+                    f"提示：中心端基础权重库没有 {row.model_name}，训练节点需自行获取；"
+                    "请在「设置 → 基础权重」上传后重试。"
+                )
+
+        def on_progress(sent: int, total: int) -> None:
+            if _dispatch_stop_requested(session_factory, task_id):
+                raise _DispatchCancelled
+            fraction = sent / total if total else 1.0
+            _dispatching_update(session_factory, task_id, progress_percent=round(min(30.0 + 60.0 * fraction, 90.0), 1))
+
+        dispatch_remote_task(node, spec, archive, weights_path, on_progress=on_progress)
+        _dispatching_update(
+            session_factory, task_id, require_status=None,
+            status="running", started_at=utc_now(),
+            progress_epoch=0, progress_total_epochs=epochs, progress_percent=0.0,
+        )
+        TrainingLogStore(storage.training_task_dir(task_id) / "train.log").append("数据下发完成，远程训练已启动。")
+    except _DispatchCancelled:
+        _dispatching_update(session_factory, task_id, require_status=None, status="stopped", error_message="数据下发已停止。", finished_at=utc_now(), progress_percent=0.0)
+    except Exception as exc:  # noqa: BLE001 - 下发失败必须落到任务状态
+        logger = logging.getLogger("ywa")
+        logger.warning("远程训练 %s 数据下发失败：%s", task_id, exc)
+        _dispatching_update(session_factory, task_id, require_status=None, status="failed", error_message=f"数据下发失败：{exc}", finished_at=utc_now())
+    finally:
+        if archive is not None:
+            archive.unlink(missing_ok=True)
+
+
+def _task_device(session_factory: sessionmaker[Session], task_id: str) -> str:
+    with session_factory() as session:
+        task = session.get(TrainingTask, task_id)
+        return str(task.device) if task else ""
+
+
+def start_remote_dispatch(session_factory: sessionmaker[Session], storage: Storage, settings: Settings, task_id: str) -> None:
+    """为 dispatching 状态的任务启动后台下发线程；只做调度，不阻塞。"""
+    threading.Thread(target=_dispatch_flow, args=(session_factory, storage, settings, task_id), daemon=True, name=f"training-dispatch-{task_id}").start()
+
+
+def recover_interrupted_dispatches(session_factory: sessionmaker[Session]) -> None:
+    """服务重启后，把中断的下发任务标记为失败（线程已丢失，无法继续）。"""
+    with session_factory() as session:
+        tasks = list(session.scalars(select(TrainingTask).where(TrainingTask.status == "dispatching")))
+        for task in tasks:
+            task.status = "failed"
+            task.error_message = "服务重启导致数据下发中断，请重试该任务。"
+            task.finished_at = utc_now()
+        if tasks:
+            session.commit()
 
 
 class RemoteTrainingPoller:

@@ -15,7 +15,12 @@ def validate_bbox(bbox: BBox, image_width: int, image_height: int) -> None:
         raise ValidationError("bbox_not_finite", "Bounding-box values must be finite.")
     if bbox.width < MIN_SHAPE_SIZE or bbox.height < MIN_SHAPE_SIZE:
         raise ValidationError("bbox_too_small", "Bounding boxes must be at least 3 × 3 pixels.")
-    if bbox.x < 0 or bbox.y < 0 or bbox.x + bbox.width > image_width or bbox.y + bbox.height > image_height:
+    if (
+        bbox.x < -BOUNDARY_EPSILON
+        or bbox.y < -BOUNDARY_EPSILON
+        or bbox.x + bbox.width > image_width + BOUNDARY_EPSILON
+        or bbox.y + bbox.height > image_height + BOUNDARY_EPSILON
+    ):
         raise ValidationError("bbox_out_of_bounds", "Bounding box must stay inside the image.")
 
 
