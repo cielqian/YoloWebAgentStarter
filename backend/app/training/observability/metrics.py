@@ -10,6 +10,11 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "recall": ("metrics/recall(b)", "metrics/recall(p)", "recall"),
     "map50": ("metrics/map50(b)", "metrics/map50(p)", "map50"),
     "map50_95": ("metrics/map50-95(b)", "metrics/map50-95(p)", "map50_95"),
+    # pose 训练的 results.csv 里关键点指标列名两种拼写都出现过，按先后顺序取值。
+    "pose_precision": ("metrics/precision(p)", "metrics/pose_precision"),
+    "pose_recall": ("metrics/recall(p)", "metrics/pose_recall"),
+    "pose_map50": ("metrics/map50(p)", "metrics/pose_mapp50", "metrics/pose_map50"),
+    "pose_map50_95": ("metrics/map50-95(p)", "metrics/pose_mapp50-95", "metrics/pose_map50-95"),
 }
 
 
@@ -142,7 +147,7 @@ class TrainingMetricsParser:
                 return {}
             top1, top5 = (float(value) for value in matches[-1].groups())
             return {"top1": top1, "top5": top5}
-        metric_count = 8 if task_type == "segment" else 4
+        metric_count = 8 if task_type in {"segment", "pose"} else 4
         values = r"\s+".join([rf"({number})"] * metric_count)
         matches = list(re.finditer(rf"^\s*all\s+\d+\s+\d+\s+{values}\s*$", clean, re.MULTILINE))
         if not matches:
@@ -151,4 +156,6 @@ class TrainingMetricsParser:
         metrics = dict(zip(("precision", "recall", "map50", "map50_95"), parsed[:4], strict=True))
         if task_type == "segment":
             metrics.update(dict(zip(("mask_precision", "mask_recall", "mask_map50", "mask_map50_95"), parsed[4:], strict=True)))
+        if task_type == "pose":
+            metrics.update(dict(zip(("pose_precision", "pose_recall", "pose_map50", "pose_map50_95"), parsed[4:], strict=True)))
         return metrics

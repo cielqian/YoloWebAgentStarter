@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
-import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage, Transformer } from "react-konva";
-import type { Annotation, BBox, ImageItem, OBB, SamCapabilities, TaskType } from "../types";
+import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
+import type { Annotation, BBox, ImageItem, OBB, PoseConfig, SamCapabilities, TaskType } from "../types";
 import { clamp, clampBBoxToImage, clampOBBToImage, MIN_SHAPE_SIZE, nearestEdgeOnPolygon, normalizeAngle, normalizeBBox, simplifyPolygon, toOriginalPoint } from "../utils/geometry";
 
 export type AnnotationDraft = {
   id?: string;
   class_id: string;
-  type: "bbox" | "polygon" | "obb" | "classify";
+  type: "bbox" | "polygon" | "obb" | "classify" | "pose";
   bbox?: BBox;
   polygon?: [number, number][];
   obb?: OBB;
+  /** pose 关键点 [x, y, v]，绝对像素；长度与数据集 kpt_count 一致。 */
+  keypoints?: [number, number, number][];
   source: "manual" | "imported" | "sam" | "auto";
 };
 
@@ -27,6 +29,8 @@ interface Props {
   onSamPoints?: (points: [number, number][]) => Promise<void>;
   samBusy?: boolean;
   samCapabilities?: SamCapabilities;
+  /** pose 数据集的骨架配置：关键点数量与可视化连线。 */
+  poseConfig?: PoseConfig | null;
   /** 仅影响画布渲染（查看辅助），不会从草稿数据中移除。 */
   hiddenAnnotationIds?: Set<string>;
   /** 只读模式（激活历史版本）：禁止绘制与编辑，仅查看；平移缩放仍可用。 */
@@ -42,15 +46,15 @@ const SNAP_CLOSE_RADIUS_PX = 12;
 
 type PanState = { origin: [number, number]; start: { x: number; y: number } };
 
-type DrawingTool = "select" | "bbox" | "polygon" | "obb" | "sam" | "sam_point";
+type DrawingTool = "select" | "bbox" | "polygon" | "obb" | "pose" | "sam" | "sam_point";
 
-const taskTool = (taskType: TaskType): DrawingTool => ({ detect: "bbox", segment: "polygon", obb: "obb", classify: "bbox" } satisfies Record<TaskType, DrawingTool>)[taskType];
+const taskTool = (taskType: TaskType): DrawingTool => ({ detect: "bbox", segment: "polygon", obb: "obb", classify: "bbox", pose: "pose" } satisfies Record<TaskType, DrawingTool>)[taskType];
 
 function panModifierActive(event: { ctrlKey?: boolean; metaKey?: boolean }): boolean {
   return Boolean(event.ctrlKey || event.metaKey);
 }
 
-export function AnnotationCanvas({ image, annotations, activeClassId, selectedAnnotationId, onSelectAnnotation, taskType, onChange, onSamBox, onSamPoints, samBusy = false, samCapabilities, hiddenAnnotationIds, readOnly = false }: Props) {
+export function AnnotationCanvas({ image, annotations, activeClassId, selectedAnnotationId, onSelectAnnotation, taskType, onChange, onSamBox, onSamPoints, samBusy = false, samCapabilities, poseConfig, hiddenAnnotationIds, readOnly = false }: Props) {
   const [imageElement, setImageElement] = useState<HTMLImageElement>();
   const [tool, setTool] = useState<DrawingTool>(() => taskTool(taskType));
   const [dragStart, setDragStart] = useState<[number, number]>();
@@ -131,7 +135,7 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
   const scale = useMemo(() => ({ x: displaySize.width / image.width, y: displaySize.height / image.height }), [displaySize, image]);
   const effectiveSelectedAnnotationId = selectedAnnotationId !== undefined ? selectedAnnotationId : selectedObbId ?? selectedBboxId ?? selectedPolygonId;
   const selectedObb = annotations.find((item) => item.id === effectiveSelectedAnnotationId && item.type === "obb");
-  const selectedBbox = annotations.find((item) => item.id === effectiveSelectedAnnotationId && item.type === "bbox");
+  const selectedBbox = annotations.find((item) => item.id === effectiveSelectedAnnotationId && (item.type === "bbox" || item.type === "pose"));
   const selectedPolygon = annotations.find((item) => item.id === effectiveSelectedAnnotationId && item.type === "polygon" && item.polygon);
   // SAM 点选会一次生成多个互相重叠的实例；把选中多边形置顶，双击边线加点/拖顶点才不会被其它实例挡住。
   const orderedAnnotations = useMemo(() => {
@@ -218,7 +222,27 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
       image.width,
       image.height,
     );
-    onChange(annotations.map((item) => item.id === id && item.type === "bbox" ? { ...toDraft(item), bbox: updated } : toDraft(item)));
+    onChange(annotations.map((item) => item.id === id && (item.type === "bbox" || item.type === "pose") ? { ...toDraft(item), bbox: updated } : toDraft(item)));
+  };
+
+  const kptCount = poseConfig?.kpt_count ?? 0;
+  const movePoseKeypoint = (id: string, index: number, stagePoint: [number, number]) => {
+    const point = toOriginal(stagePoint);
+    const clamped: [number, number, number] = [clamp(point[0], 0, image.width), clamp(point[1], 0, image.height), 2];
+    onChange(annotations.map((item) => {
+      if (item.id !== id || !item.keypoints) return toDraft(item);
+      const keypoints: [number, number, number][] = item.keypoints.map((keypoint, i) => (i === index ? clamped : keypoint));
+      return { ...toDraft(item), keypoints };
+    }));
+  };
+  const togglePoseKeypoint = (id: string, index: number) => {
+    onChange(annotations.map((item) => {
+      if (item.id !== id || !item.keypoints) return toDraft(item);
+      const keypoints: [number, number, number][] = item.keypoints.map((keypoint, i): [number, number, number] =>
+        i === index ? [keypoint[0], keypoint[1], keypoint[2] > 0 ? 0 : 2] : keypoint,
+      );
+      return { ...toDraft(item), keypoints };
+    }));
   };
 
   const replaceObb = (id: string, stageObb: OBB) => {
@@ -305,6 +329,10 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
       ? `SAM 推理中，已用 ${samElapsed} 秒；远程 SAM3 单次推理一般需要 20~60 秒，完成后会自动生成多边形建议。`
       : !canAnnotate
         ? "请先在右侧新增一个类别，再开始绘制。"
+        : taskType === "pose"
+          ? selectedBbox
+            ? "已选中姿态：拖动框体移动、手柄缩放；拖动圆点定位关键点（拖动即标记为可见），双击圆点切换 已标注/未标注。"
+            : `拖拽创建姿态框；关键点会先均匀摆在框内，逐一拖到目标位置。数据集骨架：${kptCount} 个关键点。`
         : taskType === "obb"
           ? selectedObb ? "已选中 OBB：拖动可移动，四角手柄可缩放，顶部圆形手柄可旋转。" : "拖拽创建 OBB；点击既有框即可选择、旋转、缩放或删除。"
           : taskType === "detect" && selectedBbox
@@ -325,6 +353,7 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
       <div className="canvas-toolbar">
         <div className="tool-group">
           {taskType === "detect" && <button className={tool === "bbox" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("bbox"); setPolygonPoints([]); }}>BBox</button>}
+          {taskType === "pose" && <button className={tool === "pose" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("pose"); setPolygonPoints([]); }}>Pose</button>}
           {taskType === "segment" && <><button className={tool === "polygon" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("polygon"); setDragStart(undefined); }}>Polygon</button><button className={`button${tool === "sam" ? " active" : ""}${samBusy ? " sam-busy" : ""}`} disabled={!canAnnotate || samBusy || !samCapabilities?.box_prompt_available} onClick={() => { setTool("sam"); setPolygonPoints([]); }}>{samBusy ? `推理中 ${samElapsed}s…` : samConfigured ? "SAM 框选" : "框形建议"}</button><button className={`button${tool === "sam_point" ? " active" : ""}${samBusy ? " sam-busy" : ""}`} disabled={!canAnnotate || samBusy || !pointPromptAvailable} title={pointPromptAvailable ? undefined : "配置 YWA_SAM_MODEL 后可用"} onClick={() => { setTool("sam_point"); setPolygonPoints([]); }}>{samBusy ? `推理中 ${samElapsed}s…` : pointPromptAvailable ? "SAM 点选" : "SAM 点选（需配置）"}</button></>}
           {taskType === "obb" && <><button className={tool === "obb" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("obb"); setPolygonPoints([]); }}>OBB</button><label className="angle-input">角度<input aria-label="OBB angle" type="number" value={selectedAngle} disabled={readOnly} onChange={(event) => { const nextAngle = Number(event.target.value); if (!Number.isFinite(nextAngle)) return; if (selectedObb?.obb) replaceObb(selectedObb.id, { ...toStageObb(selectedObb.obb), angle: nextAngle }); else setAngle(nextAngle); }} /></label>{selectedObb && <button className="button danger" disabled={readOnly} onClick={removeSelectedObb}>删除所选 OBB</button>}</>}
           {tool === "polygon" && <button className="button primary" disabled={!canAnnotate} onClick={finishPolygon}>完成多边形</button>}
@@ -409,6 +438,11 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
               const box = { x: displayBox.x / scale.x, y: displayBox.y / scale.y, width: displayBox.width / scale.x, height: displayBox.height / scale.y };
               if (box.width >= MIN_SHAPE_SIZE && box.height >= MIN_SHAPE_SIZE) {
                 if (tool === "bbox") onChange([...annotations.map(toDraft), { id: newDraftId(), class_id: activeClassId, type: "bbox", bbox: box, source: "manual" }]);
+                if (tool === "pose" && poseConfig) {
+                  const id = newDraftId();
+                  onChange([...annotations.map(toDraft), { id, class_id: activeClassId, type: "pose", bbox: box, keypoints: initialKeypoints(box, poseConfig.kpt_count), source: "manual" }]);
+                  setSelectedBboxId(id);
+                }
                 if (tool === "obb") {
                   const id = `draft-obb-${Date.now()}-${Math.random().toString(16).slice(2)}`;
                   onChange([...annotations.map(toDraft), { id, class_id: activeClassId, type: "obb", obb: clampOBBToImage({ cx: box.x + box.width / 2, cy: box.y + box.height / 2, width: box.width, height: box.height, angle }, image.width, image.height), source: "manual" }]);
@@ -433,7 +467,7 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
           >
             <Layer x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom}>
               <KonvaImage image={imageElement} width={displaySize.width} height={displaySize.height} listening={false} />
-              {orderedAnnotations.map((annotation) => annotation.type === "obb" && annotation.obb ? <EditableObb key={annotation.id} annotation={annotation} stageObb={toStageObb(annotation.obb)} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { obbRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedObbId(annotation.id); setSelectedBboxId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier || readOnly} onChange={(updated) => replaceObb(annotation.id, updated)} /> : annotation.type === "bbox" && annotation.bbox ? <EditableBbox key={annotation.id} annotation={annotation} scale={scale} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { bboxRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedBboxId(annotation.id); setSelectedObbId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier || readOnly} onChange={(updated) => replaceBbox(annotation.id, updated)} /> : annotation.type === "polygon" && annotation.polygon && annotation.id === selectedPolygon?.id ? <EditablePolygon key={annotation.id} annotation={annotation} scale={scale} zoom={zoom} onSelect={() => { setSelectedPolygonId(annotation.id); setSelectedObbId(undefined); setSelectedBboxId(undefined); onSelectAnnotation?.(annotation.id); }} onMoveVertex={(index, point) => movePolygonVertex(annotation.id, index, point)} onDeleteVertex={(index) => deletePolygonVertex(annotation.id, index)} onInsertVertex={(point) => insertPolygonVertex(annotation.id, point)} panModifier={panModifier || readOnly} /> : <AnnotationShape key={annotation.id} annotation={annotation} scale={scale} onSelect={() => { setSelectedPolygonId(annotation.type === "polygon" ? annotation.id : undefined); onSelectAnnotation?.(annotation.id); }} />)}
+              {orderedAnnotations.map((annotation) => annotation.type === "obb" && annotation.obb ? <EditableObb key={annotation.id} annotation={annotation} stageObb={toStageObb(annotation.obb)} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { obbRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedObbId(annotation.id); setSelectedBboxId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier || readOnly} onChange={(updated) => replaceObb(annotation.id, updated)} /> : annotation.type === "pose" && annotation.bbox ? <PoseShape key={annotation.id} annotation={annotation} scale={scale} zoom={zoom} selected={annotation.id === effectiveSelectedAnnotationId} panModifier={panModifier || readOnly} skeleton={poseConfig?.skeleton ?? null} kptNames={poseConfig?.kpt_names ?? null} setNodeRef={(node) => { bboxRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedBboxId(annotation.id); setSelectedObbId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} onChange={(updated) => replaceBbox(annotation.id, updated)} onMoveKeypoint={(index, point) => movePoseKeypoint(annotation.id, index, point)} onToggleKeypoint={(index) => togglePoseKeypoint(annotation.id, index)} /> : annotation.type === "bbox" && annotation.bbox ? <EditableBbox key={annotation.id} annotation={annotation} scale={scale} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { bboxRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedBboxId(annotation.id); setSelectedObbId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier || readOnly} onChange={(updated) => replaceBbox(annotation.id, updated)} /> : annotation.type === "polygon" && annotation.polygon && annotation.id === selectedPolygon?.id ? <EditablePolygon key={annotation.id} annotation={annotation} scale={scale} zoom={zoom} onSelect={() => { setSelectedPolygonId(annotation.id); setSelectedObbId(undefined); setSelectedBboxId(undefined); onSelectAnnotation?.(annotation.id); }} onMoveVertex={(index, point) => movePolygonVertex(annotation.id, index, point)} onDeleteVertex={(index) => deletePolygonVertex(annotation.id, index)} onInsertVertex={(point) => insertPolygonVertex(annotation.id, point)} panModifier={panModifier || readOnly} /> : <AnnotationShape key={annotation.id} annotation={annotation} scale={scale} onSelect={() => { setSelectedPolygonId(annotation.type === "polygon" ? annotation.id : undefined); onSelectAnnotation?.(annotation.id); }} />)}
               {dragStart && dragEnd && tool !== "obb" && <Rect {...displayBox(normalizeBBox(dragStart, dragEnd))} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
               {draftObb && <Rect x={draftObb.x + draftObb.width / 2} y={draftObb.y + draftObb.height / 2} width={draftObb.width} height={draftObb.height} offsetX={draftObb.width / 2} offsetY={draftObb.height / 2} rotation={angle} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
               {polygonPoints.length > 0 && <Line points={polygonPoints.flat()} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} closed={false} dash={[6, 4]} />}
@@ -496,7 +530,7 @@ function displayBox(box: BBox) {
 }
 
 function toDraft(annotation: Annotation): AnnotationDraft {
-  return { id: annotation.id, class_id: annotation.class_id, type: annotation.type, bbox: annotation.bbox ?? undefined, polygon: annotation.polygon ?? undefined, obb: annotation.obb ?? undefined, source: annotation.source };
+  return { id: annotation.id, class_id: annotation.class_id, type: annotation.type, bbox: annotation.bbox ?? undefined, polygon: annotation.polygon ?? undefined, obb: annotation.obb ?? undefined, keypoints: annotation.keypoints ?? undefined, source: annotation.source };
 }
 
 function AnnotationShape({ annotation, scale, onSelect }: { annotation: Annotation; scale: { x: number; y: number }; onSelect: () => void }) {
@@ -557,3 +591,111 @@ function EditablePolygon({ annotation, scale, zoom, panModifier, onSelect, onMov
 }
 
 function newDraftId(): string { return `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+
+/** 新建 pose 标注时把关键点均匀铺在框内（v=0 未标注），由用户逐个拖到目标位置。 */
+function initialKeypoints(box: BBox, count: number): [number, number, number][] {
+  const columns = Math.max(1, Math.ceil(Math.sqrt(count)));
+  const rows = Math.max(1, Math.ceil(count / columns));
+  return Array.from({ length: count }, (_, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = columns === 1 ? box.x + box.width / 2 : box.x + ((column + 0.5) / columns) * box.width;
+    const y = rows === 1 ? box.y + box.height / 2 : box.y + ((row + 0.5) / rows) * box.height;
+    return [Math.round(x * 100) / 100, Math.round(y * 100) / 100, 0] as [number, number, number];
+  });
+}
+
+function keypointFill(visibility: number, color: string): { fill: string; stroke: string; dash?: number[] } {
+  if (visibility === 0) return { fill: "rgba(255,255,255,.15)", stroke: color, dash: [2, 2] };
+  if (visibility === 1) return { fill: "#fff", stroke: color };
+  return { fill: color, stroke: "#fff" };
+}
+
+function PoseShape({ annotation, scale, zoom, selected, panModifier, skeleton, kptNames, setNodeRef, onSelect, onChange, onMoveKeypoint, onToggleKeypoint }: {
+  annotation: Annotation;
+  scale: { x: number; y: number };
+  zoom: number;
+  selected: boolean;
+  panModifier: boolean;
+  skeleton: number[][] | null;
+  kptNames: (string | null)[] | null;
+  setNodeRef: (node: Konva.Rect | null) => void;
+  onSelect: () => void;
+  onChange: (bbox: BBox) => void;
+  onMoveKeypoint: (index: number, point: [number, number]) => void;
+  onToggleKeypoint: (index: number) => void;
+}) {
+  const bbox = annotation.bbox;
+  const keypoints = annotation.keypoints ?? [];
+  if (!bbox) return null;
+  const stageBox = { x: bbox.x * scale.x, y: bbox.y * scale.y, width: bbox.width * scale.x, height: bbox.height * scale.y };
+  const labeled = (index: number) => keypoints[index] && keypoints[index][2] > 0;
+  return (
+    <>
+      <Rect
+        ref={setNodeRef}
+        {...stageBox}
+        stroke={annotation.color}
+        strokeWidth={selected ? 3 : 2}
+        strokeScaleEnabled={false}
+        fill={selected ? `${annotation.color}18` : "transparent"}
+        draggable={!panModifier}
+        onMouseDown={(event) => { if (panModifierActive(event.evt)) return; event.cancelBubble = true; onSelect(); }}
+        onClick={onSelect}
+        onTap={onSelect}
+        onDragEnd={(event) => onChange({ ...stageBox, x: event.target.x(), y: event.target.y() })}
+        onTransformEnd={(event) => { const node = event.target; const scaleX = node.scaleX(); const scaleY = node.scaleY(); node.scaleX(1); node.scaleY(1); onChange({ x: node.x(), y: node.y(), width: Math.abs(node.width() * scaleX), height: Math.abs(node.height() * scaleY) }); }}
+      />
+      {(skeleton ?? []).filter(([start, end]) => labeled(start) && labeled(end)).map(([start, end], index) => (
+        <Line
+          key={`edge-${index}`}
+          points={[keypoints[start][0] * scale.x, keypoints[start][1] * scale.y, keypoints[end][0] * scale.x, keypoints[end][1] * scale.y]}
+          stroke={annotation.color}
+          opacity={0.75}
+          strokeWidth={2}
+          strokeScaleEnabled={false}
+          listening={false}
+        />
+      ))}
+      {keypoints.map((keypoint, index) => {
+        const style = keypointFill(keypoint[2], annotation.color);
+        const editable = selected && !panModifier;
+        return (
+          <Circle
+            key={`kpt-${index}`}
+            x={keypoint[0] * scale.x}
+            y={keypoint[1] * scale.y}
+            radius={Math.max(4 / zoom, 2)}
+            {...style}
+            strokeWidth={selected ? 2 : 1.5}
+            strokeScaleEnabled={false}
+            draggable={editable}
+            onMouseDown={(event) => { if (panModifierActive(event.evt)) return; event.cancelBubble = true; onSelect(); }}
+            onDragEnd={editable ? (event) => onMoveKeypoint(index, [event.target.x(), event.target.y()]) : undefined}
+            onDblClick={editable ? (event) => { event.cancelBubble = true; onToggleKeypoint(index); } : undefined}
+            onDblTap={editable ? (event) => { event.cancelBubble = true; onToggleKeypoint(index); } : undefined}
+          />
+        );
+      })}
+      {selected && keypoints.map((keypoint, index) => (
+        <PoseIndexLabel key={`label-${index}`} x={keypoint[0] * scale.x} y={keypoint[1] * scale.y} text={kptNames?.[index] || String(index)} />
+      ))}
+    </>
+  );
+}
+
+/** 关键点序号/名称：放在关键点右上的小标签，便于在密集骨架中辨识顶点。 */
+function PoseIndexLabel({ x, y, text }: { x: number; y: number; text: string }) {
+  return (
+    <Text
+      x={x + 7}
+      y={y - 19}
+      text={text}
+      fill="#e2e8f0"
+      fontSize={11}
+      fontStyle="600"
+      padding={2}
+      listening={false}
+    />
+  );
+}

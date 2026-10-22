@@ -27,6 +27,7 @@ async def create_video_import(
     train_ratio: float = Form(default=0.8),
     val_ratio: float = Form(default=0.1),
     test_ratio: float = Form(default=0.1),
+    kpt_count: int | None = Form(default=None),
     session: Session = Depends(get_session),
     service: VideoImportService = Depends(get_video_import_service),
 ) -> VideoImportTaskResponse:
@@ -47,6 +48,7 @@ async def create_video_import(
             train_ratio=train_ratio,
             val_ratio=val_ratio,
             test_ratio=test_ratio,
+            kpt_count=kpt_count,
         )
     )
 

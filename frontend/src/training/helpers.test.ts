@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TrainingDevice } from "../types";
-import { defaultModelFor, defaultRemoteSelection, modelChoicesFor } from "./helpers";
+import { defaultModelFor, defaultRemoteSelection, modelChoicesFor, taskTypeLabel } from "./helpers";
 
 describe("training model choices", () => {
   it("offers only the YOLOv8 family for detection", () => {
@@ -11,6 +11,12 @@ describe("training model choices", () => {
     expect(modelChoicesFor("segment").map((item) => item.value)).toContain("yolov8n-seg.pt");
     expect(modelChoicesFor("obb").map((item) => item.value)).toContain("yolov8s-obb.pt");
     expect(modelChoicesFor("classify").map((item) => item.value)).toContain("yolov8n-cls.pt");
+  });
+
+  it("offers pose weights with the -pose suffix", () => {
+    expect(modelChoicesFor("pose").map((item) => item.value)).toEqual(["yolov8n-pose.pt", "yolov8s-pose.pt"]);
+    expect(defaultModelFor("pose")).toBe("yolov8n-pose.pt");
+    expect(taskTypeLabel("pose")).toBe("关键点");
   });
 
   it("defaults new tasks to yolov8n weights", () => {

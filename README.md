@@ -8,7 +8,7 @@ YoloWebAgentStarter 是面向本地单用户的 YOLO 数据集工作台：完成
 
 ## 为什么使用它
 
-- 在本机完成 detect、segment、OBB 和 classify 数据集的标注与训练准备。
+- 在本机完成 detect、segment、OBB、classify 和 pose（关键点）数据集的标注与训练准备。
 - 用持久化的 `train` / `val` / `test` split 贯通校验、YOLO 导出和本地训练。
 - 提供 SAM 的 segment 交互建议；所有建议都必须由用户确认后按普通 polygon 标注保存。
 - 在设置页管理 SAM 模型、推理设备、推理尺寸和无模型时的 review-only 回退策略。
@@ -46,7 +46,7 @@ YoloWebAgentStarter 是面向本地单用户的 YOLO 数据集工作台：完成
 | `obb` | 绝对像素的中心、尺寸、角度 | 支持 | 支持 | OBB 指标、图表和 polygon IoU 错误样本 |
 | `classify` | 每张图片一个类别 | 标准 `split/class/image` 目录 | 支持 | top-1 / top-5 指标 |
 
-不包含：登录/RBAC、协作、Workflow、无人值守 Agent 自动化（定时、触发器、任务自动串联）、文本提示分割、Deployment、pose、云训练和远程分布式调度。Agent 不得执行任意路径、外部 PT 或 Shell 命令。自动标注仅支持本地受管 Ultralytics PT，并且结果必须人工审核。完整边界见 [Community v2 功能矩阵](phase1_scope.md)。
+不包含：登录/RBAC、协作、Workflow、无人值守 Agent 自动化（定时、触发器、任务自动串联）、文本提示分割、Deployment、云训练和远程分布式调度。Agent 不得执行任意路径、外部 PT 或 Shell 命令。自动标注仅支持本地受管 Ultralytics PT，并且结果必须人工审核。完整边界见 [Community v2 功能矩阵](phase1_scope.md)。
 
 ## 系统架构
 

@@ -10,7 +10,7 @@ import {
   type PresetId,
   type TrainingFormState,
 } from "../../training/helpers";
-import { IconBox, IconChevron, IconGrid, IconScan, IconShapes, IconSpark } from "./icons";
+import { IconBox, IconChevron, IconGrid, IconPose, IconScan, IconShapes, IconSpark } from "./icons";
 
 interface Props {
   datasets: Dataset[];
@@ -38,6 +38,7 @@ const TASK_META: Record<TaskType, { help: string; Icon: typeof IconBox }> = {
   segment: { help: "polygon 标注；可选 SAM 建议后确认保存", Icon: IconShapes },
   obb: { help: "中心 / 尺寸 / 角度 → YOLO OBB", Icon: IconScan },
   classify: { help: "每图一类 → YOLO classify 目录布局", Icon: IconGrid },
+  pose: { help: "bbox + 关键点 → YOLO pose 标签（data.yaml 自动写入 kpt_shape）", Icon: IconPose },
 };
 
 export function TrainingConfigPanel({
@@ -101,7 +102,7 @@ export function TrainingConfigPanel({
             </select>
           </label>
           <div className="tcc-task-type-seg tcc-task-type-seg--wrap" role="group" aria-label="任务类型">
-            {(["detect", "segment", "obb", "classify"] as const).map((kind) => {
+            {(["detect", "segment", "obb", "classify", "pose"] as const).map((kind) => {
               const { Icon } = TASK_META[kind];
               return (
                 <button

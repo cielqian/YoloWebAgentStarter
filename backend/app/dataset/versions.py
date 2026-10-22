@@ -100,6 +100,7 @@ def _workspace_payload(session: Session, dataset_id: str) -> dict[str, Any]:
                 "height": item.height,
                 "polygon": item.polygon,
                 "obb": item.obb,
+                "keypoints": item.keypoints,
                 "source": item.source,
             }
         )
@@ -216,6 +217,7 @@ def activate_version(
                     height=annotation.get("height"),
                     polygon=annotation.get("polygon"),
                     obb=annotation.get("obb"),
+                    keypoints=annotation.get("keypoints"),
                     source=annotation.get("source") or "manual",
                 )
             )
@@ -256,7 +258,7 @@ def clone_version(
             raise NotFoundError("dataset_version_snapshot_missing", "版本快照文件缺失，无法克隆。")
         payload = _read_snapshot(path)
 
-    target = Dataset(id=new_id("ds"), name=name, description=description, task_type=source.task_type)
+    target = Dataset(id=new_id("ds"), name=name, description=description, task_type=source.task_type, pose_config_json=source.pose_config_json)
     session.add(target)
 
     class_ids = {item["id"]: new_id("cls") for item in payload["classes"]}
@@ -300,6 +302,7 @@ def clone_version(
                     height=annotation.get("height"),
                     polygon=annotation.get("polygon"),
                     obb=annotation.get("obb"),
+                    keypoints=annotation.get("keypoints"),
                     source=annotation.get("source") or "manual",
                 )
             )

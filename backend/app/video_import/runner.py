@@ -65,7 +65,14 @@ class VideoImportRunner:
                     return None
                 from app.core.ids import new_id
 
-                dataset = Dataset(id=new_id("ds"), name=task.name, description=None, task_type=task.task_type)
+                kpt_count = task.config_json.get("kpt_count") if task.task_type == "pose" else None
+                dataset = Dataset(
+                    id=new_id("ds"),
+                    name=task.name,
+                    description=None,
+                    task_type=task.task_type,
+                    pose_config_json={"kpt_count": int(kpt_count), "kpt_dim": 3} if kpt_count else None,
+                )
                 session.add(dataset)
                 task.dataset_id = dataset.id
             estimated_remaining = max(0, int(task.video_info_json.get("estimated_output_bytes", 0)) - task.output_bytes)

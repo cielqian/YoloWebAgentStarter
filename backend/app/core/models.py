@@ -16,12 +16,14 @@ class TimestampMixin:
 
 class Dataset(Base, TimestampMixin):
     __tablename__ = "datasets"
-    __table_args__ = (CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify')", name="ck_dataset_task_type"),)
+    __table_args__ = (CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify', 'pose')", name="ck_dataset_task_type"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     task_type: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    # pose 数据集的骨架配置：kpt_count / kpt_dim / kpt_names / skeleton；其余任务为 NULL。
+    pose_config_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     image_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     class_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # 数据集压缩包异步导入状态：None=正常，importing/completed/failed
@@ -101,7 +103,7 @@ class VideoImportTask(Base, TimestampMixin):
     __tablename__ = "video_import_tasks"
     __table_args__ = (
         CheckConstraint("status IN ('pending', 'running', 'completed', 'failed')", name="ck_video_import_task_status"),
-        CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify')", name="ck_video_import_task_type"),
+        CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify', 'pose')", name="ck_video_import_task_type"),
         CheckConstraint("split IN ('train', 'val', 'test')", name="ck_video_import_task_split"),
     )
 
@@ -151,7 +153,7 @@ class DatasetVersion(Base, TimestampMixin):
 
 class Annotation(Base, TimestampMixin):
     __tablename__ = "annotations"
-    __table_args__ = (CheckConstraint("type IN ('bbox', 'polygon', 'obb', 'classify')", name="ck_annotation_type"),)
+    __table_args__ = (CheckConstraint("type IN ('bbox', 'polygon', 'obb', 'classify', 'pose')", name="ck_annotation_type"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     image_id: Mapped[str] = mapped_column(ForeignKey("image_items.id", ondelete="CASCADE"), index=True, nullable=False)
@@ -164,6 +166,8 @@ class Annotation(Base, TimestampMixin):
     height: Mapped[float | None] = mapped_column(Float, nullable=True)
     polygon: Mapped[list[list[float]] | None] = mapped_column(JSON, nullable=True)
     obb: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # pose 标注的关键点：[[x, y, v], ...] 绝对像素，v 0=未标注 1=遮挡 2=可见；长度由数据集 kpt_count 决定。
+    keypoints: Mapped[list[list[float]] | None] = mapped_column(JSON, nullable=True)
     source: Mapped[str] = mapped_column(String(16), default="manual", nullable=False)
 
     dataset: Mapped[Dataset] = relationship(back_populates="annotations")
@@ -173,7 +177,7 @@ class Annotation(Base, TimestampMixin):
 
 class TrainingProfile(Base, TimestampMixin):
     __tablename__ = "training_profiles"
-    __table_args__ = (CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify')", name="ck_training_profile_task_type"),)
+    __table_args__ = (CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify', 'pose')", name="ck_training_profile_task_type"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True, nullable=False)
@@ -199,7 +203,7 @@ class TrainingTask(Base, TimestampMixin):
     __tablename__ = "training_tasks"
     __table_args__ = (
         CheckConstraint("status IN ('pending', 'dispatching', 'running', 'completed', 'failed', 'stopped')", name="ck_training_task_status"),
-        CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify')", name="ck_training_task_type"),
+        CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify', 'pose')", name="ck_training_task_type"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -254,7 +258,7 @@ class ModelVersion(Base, TimestampMixin):
         CheckConstraint("artifact_type IN ('best', 'last', 'onnx')", name="ck_model_version_artifact_type"),
         CheckConstraint("format IN ('pt', 'onnx')", name="ck_model_version_format"),
         CheckConstraint("status IN ('active', 'archived')", name="ck_model_version_status"),
-        CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify')", name="ck_model_version_task_type"),
+        CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify', 'pose')", name="ck_model_version_task_type"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -323,7 +327,7 @@ class AutoAnnotationTask(Base, TimestampMixin):
     __tablename__ = "auto_annotation_tasks"
     __table_args__ = (
         CheckConstraint("status IN ('pending', 'running', 'completed', 'failed', 'stopped')", name="ck_auto_annotation_task_status"),
-        CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify')", name="ck_auto_annotation_task_type"),
+        CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify', 'pose')", name="ck_auto_annotation_task_type"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

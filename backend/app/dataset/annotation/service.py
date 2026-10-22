@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.errors import ValidationError
 from app.core.ids import new_id
 from app.core.models import Annotation, ClassLabel
-from app.core.schemas import AnnotationInput, AnnotationResponse, BBox, OBB
+from app.core.schemas import AnnotationInput, AnnotationResponse, BBox, OBB, PoseConfig
 from app.core.task_types import annotation_type_for
-from app.dataset.annotation.geometry import validate_bbox, validate_obb, validate_polygon
+from app.dataset.annotation.geometry import validate_bbox, validate_keypoints, validate_obb, validate_polygon
 from app.dataset.images import get_image
 from app.dataset.service import get_dataset
 
@@ -16,10 +16,11 @@ from app.dataset.service import get_dataset
 def _response(annotation: Annotation) -> AnnotationResponse:
     class_label = annotation.class_label
     bbox = None
-    if annotation.type == "bbox":
+    if annotation.type in {"bbox", "pose"}:
         bbox = BBox(x=annotation.x or 0, y=annotation.y or 0, width=annotation.width or 0, height=annotation.height or 0)
     polygon = [tuple(point) for point in annotation.polygon] if annotation.polygon else None
     obb = OBB(**annotation.obb) if annotation.type == "obb" and annotation.obb else None
+    keypoints = [tuple(keypoint) for keypoint in annotation.keypoints] if annotation.type == "pose" and annotation.keypoints else None
     return AnnotationResponse(
         id=annotation.id,
         image_id=annotation.image_id,
@@ -32,6 +33,7 @@ def _response(annotation: Annotation) -> AnnotationResponse:
         bbox=bbox,
         polygon=polygon,
         obb=obb,
+        keypoints=keypoints,
         source=annotation.source,
         created_at=annotation.created_at,
         updated_at=annotation.updated_at,
@@ -49,13 +51,20 @@ def list_annotations(session: Session, image_id: str) -> list[AnnotationResponse
     return [_response(item) for item in session.scalars(query)]
 
 
-def _validate_input(item: AnnotationInput, image_width: int, image_height: int) -> None:
+def _validate_input(item: AnnotationInput, image_width: int, image_height: int, pose_config: PoseConfig | None) -> None:
     if item.type == "bbox" and item.bbox is not None:
         validate_bbox(item.bbox, image_width, image_height)
     elif item.type == "polygon" and item.polygon is not None:
         validate_polygon(item.polygon, image_width, image_height)
     elif item.type == "obb" and item.obb is not None:
         validate_obb(item.obb, image_width, image_height)
+    elif item.type == "pose":
+        if item.bbox is None or item.keypoints is None:
+            raise ValidationError("pose_shape_missing", "Pose annotations require a bbox and keypoints.")
+        if pose_config is None:
+            raise ValidationError("pose_config_missing", "This pose dataset has no keypoint configuration.")
+        validate_bbox(item.bbox, image_width, image_height)
+        validate_keypoints(item.keypoints, pose_config.kpt_count, image_width, image_height)
 
 
 def replace_annotations(
@@ -68,6 +77,9 @@ def replace_annotations(
     expected_type = annotation_type_for(dataset.task_type)
     if expected_type == "classify" and len(items) > 1:
         raise ValidationError("classify_multiple", "Classification datasets allow exactly one class per image.")
+    pose_config = PoseConfig.model_validate(dataset.pose_config_json) if dataset.task_type == "pose" and dataset.pose_config_json else None
+    if dataset.task_type == "pose" and items and pose_config is None:
+        raise ValidationError("pose_config_missing", "This pose dataset has no keypoint configuration.")
     class_ids = set(
         session.scalars(select(ClassLabel.id).where(ClassLabel.dataset_id == dataset.id))
     )
@@ -80,7 +92,7 @@ def replace_annotations(
             )
         if item.class_id not in class_ids:
             raise ValidationError("class_not_in_dataset", "Annotation class does not belong to this dataset.")
-        _validate_input(item, image.width, image.height)
+        _validate_input(item, image.width, image.height, pose_config)
         created.append(
             Annotation(
                 id=new_id("ann"),
@@ -94,6 +106,7 @@ def replace_annotations(
                 height=item.bbox.height if item.bbox else None,
                 polygon=[list(point) for point in item.polygon] if item.polygon else None,
                 obb=item.obb.model_dump() if item.obb else None,
+                keypoints=[list(keypoint) for keypoint in item.keypoints] if item.keypoints else None,
                 source=item.source,
             )
         )

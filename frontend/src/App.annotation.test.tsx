@@ -19,7 +19,7 @@ const image: ImageItem = { id: "img-1", dataset_id: dataset.id, file_name: "vehi
 const secondImage: ImageItem = { ...image, id: "img-2", file_name: "vehicle-02.png", status: "unannotated" };
 const classes: ClassLabel[] = [{ id: "cls-1", dataset_id: dataset.id, class_index: 0, name: "vehicle", color: "#22c55e", created_at: "", updated_at: "" }];
 const personClass: ClassLabel = { id: "cls-2", dataset_id: dataset.id, class_index: 1, name: "person", color: "#3157d5", created_at: "", updated_at: "" };
-const annotation: Annotation = { id: "ann-1", image_id: image.id, dataset_id: dataset.id, class_id: "cls-1", class_index: 0, label: "vehicle", color: "#22c55e", type: "obb", bbox: null, polygon: null, obb: { cx: 45, cy: 35, width: 30, height: 20, angle: 20 }, source: "manual", created_at: "", updated_at: "" };
+const annotation: Annotation = { id: "ann-1", image_id: image.id, dataset_id: dataset.id, class_id: "cls-1", class_index: 0, label: "vehicle", color: "#22c55e", type: "obb", bbox: null, polygon: null, obb: { cx: 45, cy: 35, width: 30, height: 20, angle: 20 }, keypoints: null, source: "manual", created_at: "", updated_at: "" };
 
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
@@ -95,6 +95,33 @@ describe("AnnotationView persistence", () => {
 
     expect(onSave).toHaveBeenCalledWith([
       { id: "ann-1", class_id: "cls-1", type: "obb", obb: { cx: 50, cy: 40, width: 60, height: 40, angle: 45 }, source: "manual" },
+    ]);
+  });
+
+  it("keeps pose keypoints through draft edits and passes the skeleton config", () => {
+    const onSave = vi.fn();
+    const poseDataset: Dataset = {
+      ...dataset,
+      task_type: "pose",
+      pose_config: { kpt_count: 2, kpt_dim: 3, skeleton: [[0, 1]] },
+    };
+    const poseAnnotation: Annotation = {
+      ...annotation,
+      type: "pose",
+      bbox: { x: 10, y: 10, width: 40, height: 40 },
+      obb: null,
+      keypoints: [[20, 20, 2], [40, 40, 1]],
+    };
+    act(() => {
+      root?.render(<AnnotationView dataset={poseDataset} image={image} classes={classes} annotations={[poseAnnotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={onSave} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+
+    // 不经画布改动：直接保存初始草稿，验证 keypoints 在 draft 序列化中保留。
+    const save = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "保存标注");
+    act(() => save?.click());
+
+    expect(onSave).toHaveBeenCalledWith([
+      { id: "ann-1", class_id: "cls-1", type: "pose", bbox: { x: 10, y: 10, width: 40, height: 40 }, polygon: undefined, obb: undefined, keypoints: [[20, 20, 2], [40, 40, 1]], source: "manual" },
     ]);
   });
 

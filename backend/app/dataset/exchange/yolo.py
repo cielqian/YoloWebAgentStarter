@@ -99,19 +99,69 @@ def _read_archive_member(archive: zipfile.ZipFile, info: zipfile.ZipInfo, max_by
 
 
 def _names_from_yaml(archive: zipfile.ZipFile, entries: dict[str, zipfile.ZipInfo]) -> list[str]:
+    return _names_from_document(_dataset_yaml_document(archive, entries))
+
+
+def _dataset_yaml_document(archive: zipfile.ZipFile, entries: dict[str, zipfile.ZipInfo]) -> dict:
     yaml_name = next((name for name in entries if PurePosixPath(name).name.lower() in {"data.yaml", "dataset.yaml"}), None)
     if yaml_name is None:
-        return []
+        return {}
     try:
         document = yaml.safe_load(_read_archive_member(archive, entries[yaml_name], _MAX_DATA_YAML_BYTES)) or {}
     except yaml.YAMLError as exc:
         raise ValidationError("invalid_dataset_yaml", "The YOLO data.yaml file is invalid.") from exc
-    names = document.get("names", []) if isinstance(document, dict) else []
+    return document if isinstance(document, dict) else {}
+
+
+def _names_from_document(document: dict) -> list[str]:
+    names = document.get("names", [])
     if isinstance(names, dict):
         return [str(names[key]) for key in sorted(names, key=lambda item: int(item))]
     if isinstance(names, list):
         return [str(item) for item in names]
     return []
+
+
+def _pose_shape_from_yaml(archive: zipfile.ZipFile, entries: dict[str, zipfile.ZipInfo]) -> tuple[int, int] | None:
+    """Read Ultralytics `kpt_shape: [num_keypoints, dim]` from a managed data.yaml."""
+
+    shape = _dataset_yaml_document(archive, entries).get("kpt_shape")
+    if isinstance(shape, (list, tuple)) and len(shape) == 2:
+        try:
+            kpt_count, kpt_dim = int(shape[0]), int(shape[1])
+        except (TypeError, ValueError):
+            return None
+        if 1 <= kpt_count <= 133 and kpt_dim in (2, 3):
+            return kpt_count, kpt_dim
+    return None
+
+
+def _infer_pose_shape(archive: zipfile.ZipFile, labels: dict[str, zipfile.ZipInfo]) -> tuple[int, int] | None:
+    """Fall back to inferring kpt_shape from the first parseable label line.
+
+    A pose line is class + 4 box values + kpt_count * kpt_dim keypoint values,
+    so the remainder after the box decides both the dimension and the count.
+    """
+
+    for info in labels.values():
+        try:
+            text = _read_archive_member(archive, info, _MAX_LABEL_BYTES).decode("utf-8", errors="ignore")
+        except ValidationError:
+            continue
+        for line in text.splitlines():
+            values = line.split()
+            if len(values) < 2:
+                continue
+            try:
+                remainder = len(values) - 1 - 4
+                if remainder <= 0 or int(values[0]) < 0:
+                    continue
+            except ValueError:
+                continue
+            for kpt_dim in (3, 2):
+                if remainder % kpt_dim == 0:
+                    return remainder // kpt_dim, kpt_dim
+    return None
 
 
 def _relative_key(name: str, kind: str) -> str:
@@ -193,6 +243,33 @@ def _classification_for_image(annotations: list[Annotation]) -> Annotation | Non
     return classified[0] if classified else None
 
 
+def _pose_label_values(
+    annotation: Annotation,
+    image_width: int,
+    image_height: int,
+    kpt_dim: int,
+) -> str:
+    """Serialize one pose annotation: normalized bbox plus [x, y, (v)] keypoints.
+
+    Unlabeled keypoints (visibility 0) are written as zeros, matching the
+    Ultralytics pose label contract where their coordinates carry no meaning.
+    """
+
+    center_x = ((annotation.x or 0) + (annotation.width or 0) / 2) / image_width
+    center_y = ((annotation.y or 0) + (annotation.height or 0) / 2) / image_height
+    box = f"{center_x:.8f} {center_y:.8f} {(annotation.width or 0) / image_width:.8f} {(annotation.height or 0) / image_height:.8f}"
+    parts: list[str] = []
+    for keypoint in annotation.keypoints or []:
+        if len(keypoint) != 3 or int(keypoint[2]) == 0:
+            parts.append("0.00000000 0.00000000" + (" 0" if kpt_dim == 3 else ""))
+            continue
+        parts.append(
+            f"{float(keypoint[0]) / image_width:.8f} {float(keypoint[1]) / image_height:.8f}"
+            + (f" {int(keypoint[2])}" if kpt_dim == 3 else "")
+        )
+    return f"{box} {' '.join(parts)}".strip()
+
+
 def _parse_yolo_labels(
     content: bytes | None,
     task_type: str,
@@ -200,6 +277,7 @@ def _parse_yolo_labels(
     image_height: int,
     class_ids: dict[int, str],
     source_name: str = "label file",
+    pose_kpt_shape: tuple[int, int] | None = None,
 ) -> list[Annotation]:
     if content is None:
         return []
@@ -283,9 +361,119 @@ def _parse_yolo_labels(
                     source="imported",
                 )
             )
+        elif task_type == "pose":
+            if pose_kpt_shape is None:
+                raise ValidationError("pose_shape_missing", f"Pose dataset has no kpt_shape configuration (in {source_name}).")
+            kpt_count, kpt_dim = pose_kpt_shape
+            if len(numbers) != 4 + kpt_count * kpt_dim:
+                raise ValidationError(
+                    "invalid_pose_label",
+                    f"Pose labels require 4 box values plus {kpt_count} × {kpt_dim} keypoint values at line {line_number} of {source_name}.",
+                )
+            center_x, center_y, box_width, box_height = numbers[:4]
+            x = (center_x - box_width / 2) * image_width
+            y = (center_y - box_height / 2) * image_height
+            width = box_width * image_width
+            height = box_height * image_height
+            margin_x = image_width * 0.01
+            margin_y = image_height * 0.01
+            if x < -margin_x or y < -margin_y or x + width > image_width + margin_x or y + height > image_height + margin_y:
+                raise ValidationError(
+                    "bbox_out_of_bounds",
+                    f"Pose bounding box must stay inside the image (line {line_number} of {source_name}).",
+                )
+            x = min(max(x, 0.0), image_width)
+            y = min(max(y, 0.0), image_height)
+            width = min(width, image_width - x)
+            height = min(height, image_height - y)
+            keypoints: list[list[float]] = []
+            for index in range(kpt_count):
+                offset = 4 + index * kpt_dim
+                keypoint_x = numbers[offset] * image_width
+                keypoint_y = numbers[offset + 1] * image_height
+                visibility = numbers[offset + 2] if kpt_dim == 3 else 2
+                if visibility in (0, 1, 2):
+                    visibility = int(visibility)
+                else:
+                    raise ValidationError(
+                        "invalid_pose_label",
+                        f"Keypoint visibility must be 0, 1, or 2 at line {line_number} of {source_name}.",
+                    )
+                if visibility != 0:
+                    keypoint_x = min(max(keypoint_x, 0.0), image_width)
+                    keypoint_y = min(max(keypoint_y, 0.0), image_height)
+                else:
+                    keypoint_x, keypoint_y = 0.0, 0.0
+                keypoints.append([keypoint_x, keypoint_y, visibility])
+            annotations.append(
+                Annotation(
+                    id=new_id("ann"),
+                    class_id=class_ids[class_index],
+                    type="pose",
+                    x=x,
+                    y=y,
+                    width=width,
+                    height=height,
+                    keypoints=keypoints,
+                    source="imported",
+                )
+            )
         else:
             raise ValidationError("unsupported_yolo_task", f"YOLO label files are not supported for {task_type} datasets.")
     return annotations
+
+
+def _pose_shape_for(dataset: Dataset) -> tuple[int, int]:
+    config = dataset.pose_config_json or {}
+    kpt_count = int(config.get("kpt_count", 0))
+    kpt_dim = int(config.get("kpt_dim", 3))
+    if kpt_count < 1 or kpt_dim not in (2, 3):
+        raise ValidationError("pose_config_missing", "Pose dataset is missing a valid kpt_shape configuration.")
+    return kpt_count, kpt_dim
+
+
+def _data_yaml_payload(dataset: Dataset, classes: list[ClassLabel], *, path: str) -> dict:
+    payload = {"path": path, "train": "images/train", "val": "images/val", "test": "images/test", "names": [item.name for item in classes]}
+    if dataset.task_type == "pose":
+        kpt_count, kpt_dim = _pose_shape_for(dataset)
+        payload["kpt_shape"] = [kpt_count, kpt_dim]
+    return payload
+
+
+def _label_lines(
+    dataset: Dataset,
+    image: ImageItem,
+    annotations: list[Annotation],
+    class_indexes: dict[str, int],
+) -> list[str]:
+    """Serialize one image's annotations into YOLO label lines."""
+
+    lines: list[str] = []
+    kpt_dim = _pose_shape_for(dataset)[1] if dataset.task_type == "pose" else None
+    for annotation in annotations:
+        class_index = class_indexes.get(annotation.class_id)
+        if class_index is None:
+            raise ValidationError("annotation_class_mismatch", "Annotation class does not belong to this dataset.")
+        if annotation.type == "bbox":
+            center_x = ((annotation.x or 0) + (annotation.width or 0) / 2) / image.width
+            center_y = ((annotation.y or 0) + (annotation.height or 0) / 2) / image.height
+            lines.append(
+                f"{class_index} {center_x:.8f} {center_y:.8f} {(annotation.width or 0) / image.width:.8f} {(annotation.height or 0) / image.height:.8f}"
+            )
+        elif annotation.type == "polygon":
+            normalized = " ".join(
+                f"{point[0] / image.width:.8f} {point[1] / image.height:.8f}"
+                for point in (annotation.polygon or [])
+            )
+            lines.append(f"{class_index} {normalized}")
+        elif annotation.type == "obb":
+            lines.append(f"{class_index} {_obb_to_yolo(annotation.obb, image.width, image.height)}")
+        elif annotation.type == "pose":
+            assert kpt_dim is not None
+            lines.append(f"{class_index} {_pose_label_values(annotation, image.width, image.height, kpt_dim)}")
+        else:
+            raise ValidationError("unsupported_annotation_type", "Annotation type cannot be exported to YOLO labels.")
+    return lines
 
 
 def export_dataset(session: Session, storage: Storage, dataset_id: str) -> tuple[bytes, str]:
@@ -301,13 +489,7 @@ def export_dataset(session: Session, storage: Storage, dataset_id: str) -> tuple
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         if dataset.task_type != "classify":
-            archive.writestr(
-                "data.yaml",
-                yaml.safe_dump(
-                    {"path": ".", "train": "images/train", "val": "images/val", "test": "images/test", "names": [item.name for item in classes]},
-                    sort_keys=False,
-                ),
-            )
+            archive.writestr("data.yaml", yaml.safe_dump(_data_yaml_payload(dataset, classes, path="."), sort_keys=False))
         for image in images:
             path = storage.image_path(dataset_id, image.storage_name)
             if not path.is_file():
@@ -324,25 +506,7 @@ def export_dataset(session: Session, storage: Storage, dataset_id: str) -> tuple
                 archive.writestr(f"{image.split}/{class_name}/{export_stem}{suffix}", path.read_bytes())
                 continue
             archive.writestr(f"images/{image.split}/{export_stem}{suffix}", path.read_bytes())
-            label_lines: list[str] = []
-            for annotation in annotations_by_image.get(image.id, []):
-                class_index = class_indexes.get(annotation.class_id)
-                if class_index is None:
-                    raise ValidationError("annotation_class_mismatch", "Annotation class does not belong to this dataset.")
-                if annotation.type == "bbox":
-                    center_x = ((annotation.x or 0) + (annotation.width or 0) / 2) / image.width
-                    center_y = ((annotation.y or 0) + (annotation.height or 0) / 2) / image.height
-                    label_lines.append(
-                        f"{class_index} {center_x:.8f} {center_y:.8f} {(annotation.width or 0) / image.width:.8f} {(annotation.height or 0) / image.height:.8f}"
-                    )
-                elif annotation.type == "polygon":
-                    points = annotation.polygon or []
-                    normalized = " ".join(f"{point[0] / image.width:.8f} {point[1] / image.height:.8f}" for point in points)
-                    label_lines.append(f"{class_index} {normalized}")
-                elif annotation.type == "obb":
-                    label_lines.append(f"{class_index} {_obb_to_yolo(annotation.obb, image.width, image.height)}")
-                else:
-                    raise ValidationError("unsupported_annotation_type", "Annotation type cannot be exported to YOLO labels.")
+            label_lines = _label_lines(dataset, image, annotations_by_image.get(image.id, []), class_indexes)
             archive.writestr(f"labels/{image.split}/{export_stem}.txt", "\n".join(label_lines) + ("\n" if label_lines else ""))
     return output.getvalue(), f"{dataset.name.replace(' ', '_') or 'dataset'}.zip"
 
@@ -425,27 +589,7 @@ def export_dataset_directory(
         image_destination.parent.mkdir(parents=True, exist_ok=True)
         label_destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, image_destination)
-        lines: list[str] = []
-        for annotation in image_annotations:
-            class_index = class_indexes.get(annotation.class_id)
-            if class_index is None:
-                raise ValidationError("annotation_class_mismatch", "Annotation class does not belong to this dataset.")
-            if annotation.type == "bbox":
-                center_x = ((annotation.x or 0) + (annotation.width or 0) / 2) / image.width
-                center_y = ((annotation.y or 0) + (annotation.height or 0) / 2) / image.height
-                lines.append(
-                    f"{class_index} {center_x:.8f} {center_y:.8f} {(annotation.width or 0) / image.width:.8f} {(annotation.height or 0) / image.height:.8f}"
-                )
-            elif annotation.type == "polygon":
-                normalized = " ".join(
-                    f"{point[0] / image.width:.8f} {point[1] / image.height:.8f}"
-                    for point in (annotation.polygon or [])
-                )
-                lines.append(f"{class_index} {normalized}")
-            elif annotation.type == "obb":
-                lines.append(f"{class_index} {_obb_to_yolo(annotation.obb, image.width, image.height)}")
-            else:
-                raise ValidationError("unsupported_annotation_type", "Annotation type cannot be exported to YOLO labels.")
+        lines = _label_lines(dataset, image, image_annotations, class_indexes)
         if lines:
             annotated_image_counts[image.split] += 1
             label_count += len(lines)
@@ -465,16 +609,7 @@ def export_dataset_directory(
 
     data_yaml = target / "data.yaml"
     data_yaml.write_text(
-        yaml.safe_dump(
-            {
-                "path": str(target),
-                "train": "images/train",
-                "val": "images/val",
-                "test": "images/test",
-                "names": [item.name for item in classes],
-            },
-            sort_keys=False,
-        ),
+        yaml.safe_dump(_data_yaml_payload(dataset, classes, path=str(target)), sort_keys=False),
         encoding="utf-8",
     )
     return {
@@ -531,6 +666,26 @@ def import_dataset(
         if not names:
             raise ValidationError("no_classes_in_archive", "The YOLO archive does not define any classes.")
 
+        pose_kpt_shape: tuple[int, int] | None = None
+        pose_config_payload: dict | None = None
+        if dataset_payload.task_type.value == "pose":
+            pose_kpt_shape = _pose_shape_from_yaml(archive, entries) or _infer_pose_shape(archive, labels)
+            if pose_kpt_shape is None:
+                raise ValidationError(
+                    "pose_shape_missing",
+                    "Pose archives must define kpt_shape in data.yaml or carry pose label lines to infer it from.",
+                )
+            if dataset_payload.pose_config is not None:
+                provided = dataset_payload.pose_config
+                if (provided.kpt_count, provided.kpt_dim) != pose_kpt_shape:
+                    raise ValidationError(
+                        "pose_shape_mismatch",
+                        f"The requested pose config ({provided.kpt_count}×{provided.kpt_dim}) does not match the archive ({pose_kpt_shape[0]}×{pose_kpt_shape[1]}).",
+                    )
+                pose_config_payload = provided.model_dump()
+            else:
+                pose_config_payload = {"kpt_count": pose_kpt_shape[0], "kpt_dim": pose_kpt_shape[1]}
+
         dataset = session.get(Dataset, dataset_id) if dataset_id else None
         if dataset is None:
             dataset = Dataset(
@@ -538,8 +693,12 @@ def import_dataset(
                 name=dataset_payload.name,
                 description=dataset_payload.description,
                 task_type=dataset_payload.task_type.value,
+                pose_config_json=pose_config_payload,
             )
             session.add(dataset)
+        elif pose_config_payload is not None and dataset.pose_config_json is None:
+            # 异步导入：占位数据集已存在，这里补上推断出的骨架配置。
+            dataset.pose_config_json = pose_config_payload
         class_records = [ClassLabel(id=new_id("cls"), dataset_id=dataset.id, class_index=index, name=name, color="#22c55e") for index, name in enumerate(names)]
         session.add_all(class_records)
         class_ids = {item.class_index: item.id for item in class_records}
@@ -583,7 +742,15 @@ def import_dataset(
                 else:
                     label_info = _label_for_image(member_name, labels)
                     label = _read_archive_member(archive, label_info, _MAX_LABEL_BYTES) if label_info else None
-                    parsed = _parse_yolo_labels(label, dataset.task_type, width, height, class_ids, source_name=getattr(label_info, "filename", None) or member_name)
+                    parsed = _parse_yolo_labels(
+                        label,
+                        dataset.task_type,
+                        width,
+                        height,
+                        class_ids,
+                        source_name=getattr(label_info, "filename", None) or member_name,
+                        pose_kpt_shape=pose_kpt_shape,
+                    )
                 for annotation in parsed:
                     annotation.image_id = image.id
                     annotation.dataset_id = dataset.id

@@ -59,6 +59,8 @@ export function ImportCenterModal({
     setSource(next);
     setArchive(undefined);
     setDragging(false);
+    // COCO 交换不支持 pose；切来源时把 pose 重置回默认，避免隐藏值提交。
+    if (next === "coco" && taskType === "pose") setTaskType("detect");
   };
   const importArchive = () => {
     if (!name.trim() || source === "video") return;
@@ -71,7 +73,7 @@ export function ImportCenterModal({
     }
     onClose();
   };
-  const canImport = name.trim() && (origin === "ftp" ? Boolean(ftpSelected) : Boolean(archive));
+  const canImport = name.trim() && !(source === "coco" && taskType === "pose") && (origin === "ftp" ? Boolean(ftpSelected) : Boolean(archive));
   // 名称容易在浏览文件时被漏填；为空时用所选 zip 文件名兜底，不覆盖用户输入。
   const applyDefaultName = (fileName: string) => {
     if (!name.trim()) setName(fileName.replace(/\.zip$/i, ""));
@@ -93,7 +95,7 @@ export function ImportCenterModal({
         <section className="import-center-panel">
           {source === "video" ? <VideoImportContent onClose={onClose} onCompleted={onVideoCompleted} /> : <>
             <div className="import-center-step"><span>1</span><div><strong>{activeSource.title}</strong><p>{activeSource.detail}</p></div></div>
-            <div className="exchange-fields"><label>数据集名称<input value={name} placeholder="例如：road-signs" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option></select></label></div>
+            <div className="exchange-fields"><label>数据集名称<input value={name} placeholder="例如：road-signs" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option>{source === "yolo" && <option value="pose">关键点检测（Pose）</option>}</select></label>{taskType === "pose" && source === "coco" && <p className="annotation-form-error">COCO 格式暂不支持 pose，请选择 YOLO 来源。</p>}</div>
             <div className="import-origin-toggle" role="group" aria-label="文件来源">
               <button type="button" className={origin === "local" ? "active" : ""} onClick={() => setOrigin("local")}>本机文件</button>
               <button type="button" className={origin === "ftp" ? "active" : ""} onClick={() => setOrigin("ftp")}>FTP 选择</button>

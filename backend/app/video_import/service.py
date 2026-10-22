@@ -17,7 +17,7 @@ from app.video_import.schemas import SamplingMode, VideoImportTaskResponse
 
 
 SUPPORTED_VIDEO_SUFFIXES = {".mp4", ".mov", ".avi"}
-VALID_TASK_TYPES = {"detect", "segment", "obb", "classify"}
+VALID_TASK_TYPES = {"detect", "segment", "obb", "classify", "pose"}
 VALID_SPLITS = {"train", "val", "test"}
 VALID_SPLIT_STRATEGIES = {"single", "time_blocks"}
 
@@ -51,12 +51,15 @@ class VideoImportService:
         train_ratio: float,
         val_ratio: float,
         test_ratio: float,
+        kpt_count: int | None = None,
     ) -> VideoImportTask:
         cleaned_name = name.strip()
         if not cleaned_name:
             raise ValidationError("video_import_name_empty", "Dataset name cannot be empty.")
         if task_type not in VALID_TASK_TYPES:
             raise ValidationError("video_import_task_type_invalid", "Choose a supported dataset task type.")
+        if task_type == "pose" and (kpt_count is None or not 1 <= kpt_count <= 133):
+            raise ValidationError("video_import_pose_kpt_count_invalid", "Pose video imports require a keypoint count between 1 and 133.")
         if split not in VALID_SPLITS:
             raise ValidationError("video_import_split_invalid", "Choose train, val, or test as the initial split.")
         suffix = Path(source_file_name).suffix.lower()
@@ -74,6 +77,8 @@ class VideoImportService:
             test_ratio,
         )
         config["split"] = split
+        if task_type == "pose":
+            config["kpt_count"] = int(kpt_count or 0)
         task_id = new_id("vid")
         source_storage_name = f"source{suffix}"
         try:

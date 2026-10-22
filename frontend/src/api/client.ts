@@ -203,8 +203,8 @@ export const api = {
   deleteSourceTag: (datasetId: string, tagId: string) =>
     request<void>(`/api/source-datasets/${datasetId}/tags/${tagId}`, { method: "DELETE" }),
   listDatasets: () => request<Dataset[]>("/api/datasets"),
-  createDataset: (name: string, taskType: TaskType, description?: string) =>
-    request<Dataset>("/api/datasets", json({ name, task_type: taskType, description: description || null })),
+  createDataset: (name: string, taskType: TaskType, description?: string, poseConfig?: { kpt_count: number; kpt_dim: number }) =>
+    request<Dataset>("/api/datasets", json({ name, task_type: taskType, description: description || null, ...(poseConfig ? { pose_config: poseConfig } : {}) })),
   deleteDataset: (datasetId: string) => request<void>(`/api/datasets/${datasetId}`, { method: "DELETE" }),
   listDatasetVersions: (datasetId: string) => request<DatasetVersion[]>(`/api/datasets/${datasetId}/versions`),
   createDatasetVersion: (datasetId: string, note?: string) =>
@@ -286,12 +286,13 @@ export const api = {
   validateDataset: (datasetId: string) => request<ValidationReport>(`/api/datasets/${datasetId}/validate`, { method: "POST" }),
   qualityReport: (datasetId: string) => request<DatasetQualityReport>(`/api/datasets/${datasetId}/quality/report`),
   duplicateReport: (datasetId: string) => request<DuplicateReport>(`/api/datasets/${datasetId}/duplicates`),
-  createVideoImport: async (payload: { file: File; name: string; taskType: TaskType; split: SplitName; samplingMode: "fps" | "interval_seconds" | "frame_interval"; samplingValue: number; startSeconds: number; endSeconds?: number; splitStrategy: "single" | "time_blocks"; timeBlockSeconds: number; trainRatio: number; valRatio: number; testRatio: number }) => {
+  createVideoImport: async (payload: { file: File; name: string; taskType: TaskType; split: SplitName; samplingMode: "fps" | "interval_seconds" | "frame_interval"; samplingValue: number; startSeconds: number; endSeconds?: number; splitStrategy: "single" | "time_blocks"; timeBlockSeconds: number; trainRatio: number; valRatio: number; testRatio: number; kptCount?: number }) => {
     const form = new FormData();
     form.append("file", payload.file);
     form.append("name", payload.name);
     form.append("task_type", payload.taskType);
     form.append("split", payload.split);
+    if (payload.kptCount !== undefined) form.append("kpt_count", String(payload.kptCount));
     form.append("sampling_mode", payload.samplingMode);
     form.append("sampling_value", String(payload.samplingValue));
     form.append("start_seconds", String(payload.startSeconds));

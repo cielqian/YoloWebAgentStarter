@@ -78,6 +78,7 @@ def _serialize_inference_result(model_id: str, task_type: str, class_names: dict
                 "height": item.height,
                 "polygon": [list(point) for point in item.polygon] if item.polygon else None,
                 "obb_points": [list(point) for point in item.obb_points] if item.obb_points else None,
+                "keypoints": [list(point) for point in item.keypoints] if item.keypoints else None,
             }
             for item in detections
         ],

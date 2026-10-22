@@ -14,6 +14,7 @@ class Detection:
     height: float
     polygon: tuple[tuple[float, float], ...] | None = None
     obb_points: tuple[tuple[float, float], ...] | None = None
+    keypoints: tuple[tuple[float, float, int], ...] | None = None
 
 
 def yolo_xyxy_to_bbox(x1: float, y1: float, x2: float, y2: float) -> tuple[float, float, float, float]:
@@ -33,7 +34,7 @@ def yolo_xyxy_to_bbox(x1: float, y1: float, x2: float, y2: float) -> tuple[float
 
 
 class YoloResultParser:
-    """Community port of the upstream parser, excluding pose-only output."""
+    """Community port of the upstream parser; pose results add keypoint triples."""
 
     def parse(self, results, task_type: str) -> list[Detection]:
         detections: list[Detection] = []
@@ -50,6 +51,7 @@ class YoloResultParser:
                 continue
             masks = getattr(result, "masks", None)
             mask_xy = getattr(masks, "xy", None) if masks is not None else None
+            pose_keypoints = getattr(result, "keypoints", None) if task_type == "pose" else None
             for index, box in enumerate(boxes):
                 try:
                     x, y, width, height = yolo_xyxy_to_bbox(*self._flatten_xyxy_four(box))
@@ -66,6 +68,7 @@ class YoloResultParser:
                         width=width,
                         height=height,
                         polygon=self._polygon(mask_xy, index),
+                        keypoints=self._keypoints(pose_keypoints, index),
                     )
                 )
         return detections
@@ -137,6 +140,40 @@ class YoloResultParser:
             return None
         points = tuple((float(point[0]), float(point[1])) for point in raw if isinstance(point, (list, tuple)) and len(point) >= 2)
         return points if len(points) >= 3 else None
+
+    def _keypoints(self, keypoints, index: int) -> tuple[tuple[float, float, int], ...] | None:
+        """Flatten one Ultralytics Keypoints row into (x, y, visibility) triples.
+
+        Ultralytics stores per-keypoint confidence (or a placeholder 1.0 when the
+        model has no visibility head). Map conf >= 0.5 to visible (2) and lower
+        confidences to occluded (1) so downstream review keeps the position.
+        """
+
+        if keypoints is None:
+            return None
+        raw = getattr(keypoints, "data", None)
+        if raw is None:
+            raw = getattr(keypoints, "xy", None)
+        if raw is None:
+            return None
+        try:
+            values = self._to_list(raw[index])
+        except (IndexError, TypeError):
+            return None
+        while isinstance(values, list) and len(values) == 1 and isinstance(values[0], list):
+            values = values[0]
+        if not isinstance(values, list) or not values:
+            return None
+        points: list[tuple[float, float, int]] = []
+        for item in values:
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                return None
+            confidence = None
+            if len(item) >= 3 and isinstance(item[2], (int, float)):
+                confidence = float(item[2])
+            visibility = 2 if confidence is None or confidence >= 0.5 else 1
+            points.append((float(item[0]), float(item[1]), visibility))
+        return tuple(points)
 
     def _flatten_xyxy_four(self, box) -> tuple[float, float, float, float]:
         raw = getattr(box, "xyxy", None)

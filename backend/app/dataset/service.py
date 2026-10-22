@@ -4,7 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.ids import new_id
 from app.core.models import Annotation, ClassLabel, Dataset, ImageItem
 from app.core.schemas import ClassLabelCreate, DatasetCreate, DatasetUpdate
@@ -23,11 +23,15 @@ def list_datasets(session: Session) -> list[Dataset]:
 
 
 def create_dataset(session: Session, payload: DatasetCreate) -> Dataset:
+    if payload.task_type.value == "pose" and payload.pose_config is None:
+        # 空白 pose 数据集必须先定义骨架；导入路径在 exchange 层从压缩包推断。
+        raise ValidationError("pose_config_required", "Pose datasets require a pose_config (kpt_count at minimum).")
     dataset = Dataset(
         id=new_id("ds"),
         name=payload.name,
         description=payload.description,
         task_type=payload.task_type.value,
+        pose_config_json=payload.pose_config.model_dump() if payload.pose_config else None,
     )
     session.add(dataset)
     session.commit()

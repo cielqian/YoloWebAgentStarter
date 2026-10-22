@@ -238,7 +238,7 @@ def build_write_handlers(
                     "dataset_id": string_id,
                     "name": {"type": "string", "minLength": 1, "maxLength": 255},
                     "model": {"type": "string", "minLength": 1, "maxLength": 255},
-                    "task_type": {"type": "string", "enum": ["detect", "segment", "obb", "classify"]},
+                    "task_type": {"type": "string", "enum": ["detect", "segment", "obb", "classify", "pose"]},
                     "epochs": {"type": "integer", "minimum": 1, "maximum": 10000},
                     "img_size": {"type": "integer", "minimum": 32, "maximum": 4096},
                     "batch_size": {"type": "integer", "minimum": 1, "maximum": 4096},

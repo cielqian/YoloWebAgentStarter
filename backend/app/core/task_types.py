@@ -6,6 +6,7 @@ class TaskType(StrEnum):
     SEGMENT = "segment"
     OBB = "obb"
     CLASSIFY = "classify"
+    POSE = "pose"
 
 
 def annotation_type_for(task_type: TaskType | str) -> str:
@@ -15,4 +16,5 @@ def annotation_type_for(task_type: TaskType | str) -> str:
         TaskType.SEGMENT: "polygon",
         TaskType.OBB: "obb",
         TaskType.CLASSIFY: "classify",
+        TaskType.POSE: "pose",
     }[resolved]

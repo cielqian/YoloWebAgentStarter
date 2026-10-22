@@ -90,6 +90,7 @@ const annotation: Annotation = {
   bbox: null,
   polygon: null,
   obb: { cx: 45, cy: 35, width: 30, height: 20, angle: 20 },
+  keypoints: null,
   source: "manual",
   created_at: "",
   updated_at: "",

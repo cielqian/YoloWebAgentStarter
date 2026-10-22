@@ -25,7 +25,7 @@ npm --prefix frontend install
 2. 上传图片，或将图片放入 `data/imports/` 下，再扫描相对目录。
 3. 添加一个或多个类别，然后使用 bbox（detect）、polygon（segment）、旋转框（OBB）或每张图片一个类别（classify）进行标注。
 4. 确保 `train` 和 `val` 中都至少有一张已标注图片，然后运行数据集校验。
-5. detect、segment 和 OBB 使用 YOLO ZIP 文件导入/导出；分类任务使用标准的 `train/<class>/<image>` 目录布局。
+5. detect、segment、OBB 和 pose 使用 YOLO ZIP 文件导入/导出；分类任务使用标准的 `train/<class>/<image>` 目录布局。
 
 对于 segment 数据集，请打开左侧边栏的 SAM 设置页面，配置模型、推理设备、图像尺寸和回退模式。相同的配置也可以通过 `YWA_SAM_*` 环境变量提供默认值。未配置模型时，界面会禁用点提示，并明确将框提示标记为仅供审核的矩形建议；系统不会声称执行了模型推理，也不会将该建议保存为 SAM 生成的标注。
 
@@ -82,6 +82,6 @@ SAM 和 Agent LLM 设置页面会将配置持久化到 `YWA_DATA_DIR/settings.js
 ## 已知限制
 
 - 仅支持本地单用户使用；不提供身份认证、RBAC、TLS、公开部署或多租户能力。
-- 仅支持 detect、segment、OBB 和单标签 classify；不支持 pose。
+- 支持 detect、segment、OBB、单标签 classify 和 pose（关键点，需在创建数据集时设置关键点数量；YOLO 导出写入 kpt_shape，COCO 不支持 pose）。
 - 自动标注从数据集卡片进入：默认跳过已有任意标注的图片，选择匹配任务类型的受管 PT，确认类别映射（未映射类别会跳过，不会按索引猜测），调整置信度/IoU 后启动；如需重跑已有标注，需明确关闭跳过选项。任务支持进度、日志和取消，生成结果会标记为自动来源，必须人工审核。训练与自动标注会在本机互斥执行。Agent MVP（只读问答与人工确认后提交受管任务）在范围内；仍不提供 Workflow、无人值守 Agent 自动化、Deployment 或文本提示分割。本地评估（受管 PT + 已保存 split）可用。
 - CPU 已通过发布测试。CUDA 单卡/多卡和 Apple MPS 属于尽力支持，必须在目标环境中进行冒烟测试；不支持远程训练调度器。

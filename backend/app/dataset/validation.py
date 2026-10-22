@@ -4,10 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.models import Annotation, ClassLabel, Dataset, ImageItem
-from app.core.schemas import OBB, ValidationIssue, ValidationReport
+from app.core.schemas import OBB, PoseConfig, ValidationIssue, ValidationReport
 from app.core.storage import Storage
 from app.core.task_types import annotation_type_for
-from app.dataset.annotation.geometry import validate_bbox, validate_obb, validate_polygon
+from app.dataset.annotation.geometry import validate_bbox, validate_keypoints, validate_obb, validate_polygon
 
 
 def validate_dataset(session: Session, storage: Storage, dataset_id: str) -> ValidationReport:
@@ -16,6 +16,29 @@ def validate_dataset(session: Session, storage: Storage, dataset_id: str) -> Val
         from app.core.errors import NotFoundError
 
         raise NotFoundError("dataset_not_found", "Dataset was not found.")
+
+    pose_config: PoseConfig | None = None
+    if dataset.task_type == "pose":
+        raw_pose_config = dataset.pose_config_json
+        if raw_pose_config:
+            try:
+                pose_config = PoseConfig.model_validate(raw_pose_config)
+            except Exception:
+                pose_config = None
+        if pose_config is None:
+            return ValidationReport(
+                dataset_id=dataset_id,
+                valid=False,
+                error_count=1,
+                warning_count=0,
+                issues=[
+                    ValidationIssue(
+                        level="error",
+                        code="pose_config_missing",
+                        message="Pose dataset is missing a valid keypoint configuration (kpt_count).",
+                    )
+                ],
+            )
 
     issues: list[ValidationIssue] = []
     classes = list(session.scalars(select(ClassLabel).where(ClassLabel.dataset_id == dataset_id)))
@@ -117,6 +140,24 @@ def validate_dataset(session: Session, storage: Storage, dataset_id: str) -> Val
                     )
                 elif annotation.type == "obb":
                     validate_obb(OBB(**(annotation.obb or {})), image.width, image.height)
+                elif annotation.type == "pose":
+                    from app.core.errors import ValidationError as GeometryValidationError
+                    from app.core.schemas import BBox as PoseBBox
+
+                    if annotation.x is None or annotation.y is None or annotation.width is None or annotation.height is None:
+                        raise GeometryValidationError("pose_shape_missing", "Pose annotations require a bounding box.")
+                    validate_bbox(
+                        PoseBBox(x=annotation.x, y=annotation.y, width=annotation.width, height=annotation.height),
+                        image.width,
+                        image.height,
+                    )
+                    assert pose_config is not None
+                    validate_keypoints(
+                        [tuple(keypoint) for keypoint in (annotation.keypoints or [])],
+                        pose_config.kpt_count,
+                        image.width,
+                        image.height,
+                    )
             except Exception as exc:
                 from app.core.errors import DomainError
 

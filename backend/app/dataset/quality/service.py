@@ -34,7 +34,7 @@ class DatasetQualityService:
         small = sum(1 for annotation in bbox if self._bbox_area(annotation) < 32 * 32)
         total = len(images)
         annotated = len(annotated_ids.intersection({image.id for image in images}))
-        return QualitySummary(image_count=total, annotated_image_count=annotated, unannotated_image_count=max(total - annotated, 0), coverage=round(annotated / total, 6) if total else 0, annotation_count=len(annotations), bbox_count=len(bbox), polygon_count=sum(item.type == "polygon" for item in annotations), obb_count=sum(item.type == "obb" for item in annotations), classify_count=sum(item.type == "classify" for item in annotations), small_object_count=small, small_object_ratio=round(small / len(bbox), 6) if bbox else 0)
+        return QualitySummary(image_count=total, annotated_image_count=annotated, unannotated_image_count=max(total - annotated, 0), coverage=round(annotated / total, 6) if total else 0, annotation_count=len(annotations), bbox_count=len(bbox), polygon_count=sum(item.type == "polygon" for item in annotations), obb_count=sum(item.type == "obb" for item in annotations), classify_count=sum(item.type == "classify" for item in annotations), pose_count=sum(item.type == "pose" for item in annotations), small_object_count=small, small_object_ratio=round(small / len(bbox), 6) if bbox else 0)
 
     def _class_distribution(self, classes: list[ClassLabel], annotations: list[Annotation]) -> list[ClassDistributionItem]:
         counts = Counter(annotation.class_id for annotation in annotations)

@@ -34,16 +34,16 @@ export interface TrainingFormState {
 }
 
 export function defaultModelFor(taskType: TaskType): string {
-  return ({ detect: "yolov8n.pt", segment: "yolov8n-seg.pt", obb: "yolov8n-obb.pt", classify: "yolov8n-cls.pt" })[taskType];
+  return ({ detect: "yolov8n.pt", segment: "yolov8n-seg.pt", obb: "yolov8n-obb.pt", classify: "yolov8n-cls.pt", pose: "yolov8n-pose.pt" })[taskType];
 }
 
 const MODEL_FAMILIES: Array<{ stem: string; label: string; sizes: string[]; tasks: TaskType[] }> = [
-  { stem: "yolov8", label: "YOLOv8", sizes: ["n", "s"], tasks: ["detect", "segment", "obb", "classify"] },
+  { stem: "yolov8", label: "YOLOv8", sizes: ["n", "s"], tasks: ["detect", "segment", "obb", "classify", "pose"] },
 ];
 
 export function modelChoicesFor(taskType: TaskType): Array<{ value: string; label: string }> {
-  const suffix = ({ detect: "", segment: "-seg", obb: "-obb", classify: "-cls" })[taskType];
-  const taskLabel = ({ detect: "检测", segment: "分割", obb: "OBB", classify: "分类" })[taskType];
+  const suffix = ({ detect: "", segment: "-seg", obb: "-obb", classify: "-cls", pose: "-pose" })[taskType];
+  const taskLabel = ({ detect: "检测", segment: "分割", obb: "OBB", classify: "分类", pose: "关键点" })[taskType];
   return MODEL_FAMILIES.filter((family) => family.tasks.includes(taskType)).flatMap((family) => family.sizes.map((size) => {
     const value = `${family.stem}${size}${suffix}.pt`;
     return { value, label: `${family.label}${size.toUpperCase()}（${taskLabel}） · ${value}` };
@@ -77,7 +77,7 @@ export function statusLabel(status: TrainingStatus): string {
 }
 
 export function taskTypeLabel(taskType: TaskType): string {
-  return ({ detect: "检测", segment: "分割", obb: "旋转框", classify: "分类" })[taskType];
+  return ({ detect: "检测", segment: "分割", obb: "旋转框", classify: "分类", pose: "关键点" })[taskType];
 }
 
 export function formatShortId(id: string): string {

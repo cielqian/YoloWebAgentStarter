@@ -14,10 +14,10 @@ Starter 是独立开源引流产品，不依赖 Enterprise，也不承诺包含�
 
 | 决策项 | Community v2 决策 | 理由 |
 |--------|---------|------|
-| TaskType | detect、segment、obb、classify | 复用固定 YoloWebAgent 快照的成熟任务契约，保持独立运行时 |
+| TaskType | detect、segment、obb、classify、pose | 复用固定 YoloWebAgent 快照的成熟任务契约，保持独立运行时 |
 | OBB | included | 使用绝对像素中心、尺寸、角度持久化与 YOLO 八点标签 |
 | classify | included | 每张图一个类别，使用 YOLO 分类目录布局 |
-| pose | excluded | 当前 Enterprise 闭环尚未完全收口 |
+| pose | included | bbox + 数据集级关键点配置（kpt_count/kpt_dim），YOLO 标签与 data.yaml kpt_shape 交换 |
 | 数据交换 | YOLO import / export | 公开、直观、与训练链路直接相关 |
 | native archive | excluded | 不作为首版数据库迁移或项目交换格式 |
 | COCO exchange | detect / segment ZIP 导入与导出 | 只支持标准 bbox / polygon 表示 |
@@ -50,7 +50,7 @@ Starter 是独立开源引流产品，不依赖 Enterprise，也不承诺包含�
 | detect bbox 标注 | included | included | 创建、拖拽、缩放、保存 |
 | segment polygon 标注 | included | included | 绘制、编辑、保存，至少 3 点 |
 | OBB / classify | included | included | Starter API、UI、schema、YOLO 交换与训练闭环可用 |
-| pose | excluded | included | 不在 Community v2 范围 |
+| pose | included | included | Starter API、UI、schema、YOLO 交换与训练闭环可用 |
 | SAM 交互建议 | included | included | 仅 segment 框/点提示，多边形须人工确认保存 |
 | 数据集级自动标注 | included | included | 从数据集卡片启动本地受管 PT 任务，默认跳过已有标注图片，支持显式类别映射、置信度/IoU、二次确认清理旧标注、进度、日志和取消；与训练在本机互斥，结果必须人工审核 |
 | SAM 设置 | included | included | 本地设置页管理启用状态、模型、设备、推理尺寸和无模型回退行为 |

@@ -1,11 +1,20 @@
-export type TaskType = "detect" | "segment" | "obb" | "classify";
+export type TaskType = "detect" | "segment" | "obb" | "classify" | "pose";
 export type SplitName = "train" | "val" | "test";
+
+/** pose 数据集的骨架配置：决定标注关键点数、YOLO 导出 kpt_shape 与画布连线。 */
+export interface PoseConfig {
+  kpt_count: number;
+  kpt_dim: number;
+  kpt_names?: (string | null)[] | null;
+  skeleton?: number[][] | null;
+}
 
 export interface Dataset {
   id: string;
   name: string;
   description: string | null;
   task_type: TaskType;
+  pose_config?: PoseConfig | null;
   image_count: number;
   annotated_image_count: number;
   class_count: number;
@@ -138,10 +147,12 @@ export interface Annotation {
   class_index: number;
   label: string;
   color: string;
-  type: "bbox" | "polygon" | "obb" | "classify";
+  type: "bbox" | "polygon" | "obb" | "classify" | "pose";
   bbox: BBox | null;
   polygon: [number, number][] | null;
   obb: OBB | null;
+  /** pose 关键点 [x, y, v]，绝对像素，v 0=未标注 1=遮挡 2=可见。 */
+  keypoints: [number, number, number][] | null;
   source: "manual" | "imported" | "sam" | "auto";
   created_at: string;
   updated_at: string;
@@ -340,7 +351,7 @@ export interface QualityIssue {
 export interface DatasetQualityReport {
   dataset_id: string;
   task_type: TaskType;
-  summary: { image_count: number; annotated_image_count: number; unannotated_image_count: number; coverage: number; annotation_count: number; bbox_count: number; polygon_count: number; obb_count: number; classify_count: number; small_object_count: number; small_object_ratio: number };
+  summary: { image_count: number; annotated_image_count: number; unannotated_image_count: number; coverage: number; annotation_count: number; bbox_count: number; polygon_count: number; obb_count: number; classify_count: number; pose_count?: number; small_object_count: number; small_object_ratio: number };
   class_distribution: Array<{ class_id: string; class_index: number; name: string; count: number; ratio: number }>;
   issues: QualityIssue[];
 }
@@ -450,7 +461,7 @@ export interface ModelVersion {
   updated_at: string;
 }
 
-export interface InferenceDetection { class_index: number; class_name: string; confidence: number; x: number; y: number; width: number; height: number; polygon: number[][] | null; obb_points: number[][] | null; }
+export interface InferenceDetection { class_index: number; class_name: string; confidence: number; x: number; y: number; width: number; height: number; polygon: number[][] | null; obb_points: number[][] | null; keypoints: number[][] | null; }
 export interface InferenceResult { model_id: string; task_type: TaskType; detections: InferenceDetection[]; inference_time_ms: number; }
 export interface ModelComparison { dataset_id: string; baseline: { id: string; name: string; metrics: Record<string, number> }; candidate: { id: string; name: string; metrics: Record<string, number> }; deltas: Record<string, number | null>; suggestions: string[]; }
 export interface ModelTestRecord { id: string; model_id: string; file_name: string; result_json: InferenceResult; created_at: string; }

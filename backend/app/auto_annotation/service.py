@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import NotFoundError, ValidationError
 from app.core.ids import new_id
-from app.core.models import Annotation, AutoAnnotationTask, ClassLabel, ImageItem, ModelVersion
+from app.core.models import Annotation, AutoAnnotationTask, ClassLabel, Dataset, ImageItem, ModelVersion
 from app.core.storage import Storage
 from app.core.task_types import annotation_type_for
 from app.core.time import utc_now
-from app.dataset.annotation.geometry import validate_bbox, validate_obb, validate_polygon
+from app.dataset.annotation.geometry import validate_bbox, validate_keypoints, validate_obb, validate_polygon
 from app.dataset.service import get_dataset
 from app.models.result_parser import Detection
 from app.training.observability.log_store import TrainingLogStore
@@ -173,12 +173,19 @@ def save_auto_annotations(
     created: list[Annotation] = []
     skipped = 0
     expected_type = annotation_type_for(task.task_type)
+    pose_kpt_count = None
+    if expected_type == "pose":
+        dataset = session.get(Dataset, task.dataset_id)
+        pose_config = (dataset.pose_config_json or {}) if dataset is not None else {}
+        pose_kpt_count = pose_config.get("kpt_count")
+        if not isinstance(pose_kpt_count, int) or pose_kpt_count < 1:
+            raise ValidationError("pose_config_missing", "This pose dataset has no keypoint configuration.")
     for detection in detections:
         class_id = task.class_mapping.get(str(detection.class_index))
         if class_id is None:
             skipped += 1
             continue
-        annotation = _annotation_from_detection(task, image, detection, class_id, expected_type)
+        annotation = _annotation_from_detection(task, image, detection, class_id, expected_type, pose_kpt_count)
         if annotation is None:
             skipped += 1
             continue
@@ -197,6 +204,7 @@ def _annotation_from_detection(
     detection: Detection,
     class_id: str,
     expected_type: str,
+    pose_kpt_count: int | None = None,
 ) -> Annotation | None:
     common = {
         "id": new_id("ann"),
@@ -221,6 +229,19 @@ def _annotation_from_detection(
         polygon = [(float(point[0]), float(point[1])) for point in points]
         validate_polygon(polygon, image.width, image.height)
         return Annotation(**common, polygon=points)
+    if expected_type == "pose":
+        from app.core.schemas import BBox
+
+        bbox = BBox(x=detection.x, y=detection.y, width=detection.width, height=detection.height)
+        validate_bbox(bbox, image.width, image.height)
+        if pose_kpt_count is None or detection.keypoints is None or len(detection.keypoints) != pose_kpt_count:
+            return None
+        keypoints = [[float(point[0]), float(point[1]), int(point[2])] for point in detection.keypoints]
+        try:
+            validate_keypoints(keypoints, pose_kpt_count, image.width, image.height)
+        except ValidationError:
+            return None
+        return Annotation(**common, x=bbox.x, y=bbox.y, width=bbox.width, height=bbox.height, keypoints=keypoints)
     obb = _obb_from_points(detection.obb_points)
     if obb is None:
         return None

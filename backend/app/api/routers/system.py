@@ -20,7 +20,7 @@ def info(settings: Settings = Depends(get_settings)) -> dict[str, object]:
         "name": "YoloWebAgentStarter",
         "edition": "community",
         "version": "0.1.0-dev",
-        "task_types": ["detect", "segment", "obb", "classify"],
+        "task_types": ["detect", "segment", "obb", "classify", "pose"],
         "data_dir": str(settings.data_dir),
         "import_root": str(settings.import_root),
         "auth_enabled": False,

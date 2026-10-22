@@ -88,3 +88,33 @@ def validate_polygon(points: list[tuple[float, float]], image_width: int, image_
         raise ValidationError("polygon_out_of_bounds", "Polygon points must stay inside the image.")
     if polygon_area(points) < MIN_SHAPE_SIZE * MIN_SHAPE_SIZE:
         raise ValidationError("polygon_too_small", "Polygon area is too small.")
+
+
+def validate_keypoints(
+    keypoints: list[tuple[float, float, int] | list[float]],
+    kpt_count: int,
+    image_width: int,
+    image_height: int,
+) -> None:
+    """Validate pose keypoints against the dataset skeleton and image bounds.
+
+    Visibility follows the COCO/Ultralytics contract: 0 = unlabeled (position
+    ignored, exported as 0 0 0), 1 = labeled but occluded, 2 = visible.  Only
+    labeled points must carry finite in-bounds coordinates.
+    """
+
+    if len(keypoints) != kpt_count:
+        raise ValidationError(
+            "keypoint_count_mismatch",
+            f"Pose annotations require exactly {kpt_count} keypoints.",
+        )
+    for keypoint in keypoints:
+        if len(keypoint) != 3:
+            raise ValidationError("keypoint_invalid", "Each keypoint must be an [x, y, visibility] triple.")
+        x, y, visibility = float(keypoint[0]), float(keypoint[1]), int(keypoint[2])
+        if visibility not in (0, 1, 2):
+            raise ValidationError("keypoint_invalid", "Keypoint visibility must be 0, 1, or 2.")
+        if not math.isfinite(x) or not math.isfinite(y):
+            raise ValidationError("keypoint_not_finite", "Keypoint coordinates must be finite.")
+        if visibility != 0 and (x < -BOUNDARY_EPSILON or y < -BOUNDARY_EPSILON or x > image_width + BOUNDARY_EPSILON or y > image_height + BOUNDARY_EPSILON):
+            raise ValidationError("keypoint_out_of_bounds", "Labeled keypoints must stay inside the image.")

@@ -68,6 +68,9 @@ export function IconScan(props: IconProps) {
 export function IconGrid(props: IconProps) {
   return <Svg {...props}><rect x="4" y="4" width="7" height="7" rx="1" /><rect x="13" y="4" width="7" height="7" rx="1" /><rect x="4" y="13" width="7" height="7" rx="1" /><rect x="13" y="13" width="7" height="7" rx="1" /></Svg>;
 }
+export function IconPose(props: IconProps) {
+  return <Svg {...props}><circle cx="12" cy="4.5" r="1.8" /><path d="M12 6.5v5M12 8l-4.5 2M12 8l4.5 2M12 11.5 8 17m4-5.5L16 17M8 17l-1.5 3.5M8 17l3 3m5-3 1.5 3.5M16 17l-3 3" /></Svg>;
+}
 export function IconBack(props: IconProps) {
   return <Svg {...props}><path d="M15 6 9 12l6 6" /></Svg>;
 }

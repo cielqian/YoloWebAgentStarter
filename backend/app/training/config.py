@@ -22,6 +22,8 @@ def infer_model_family(model: str) -> TaskType | None:
         return TaskType.OBB
     if "-cls." in name or "_cls." in name:
         return TaskType.CLASSIFY
+    if "-pose." in name or "_pose." in name:
+        return TaskType.POSE
     if name.endswith(".pt") or name.endswith(".yaml"):
         return TaskType.DETECT
     return None

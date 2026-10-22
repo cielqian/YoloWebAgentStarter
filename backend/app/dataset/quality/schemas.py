@@ -26,6 +26,7 @@ class QualitySummary(BaseModel):
     polygon_count: int
     obb_count: int
     classify_count: int
+    pose_count: int = 0
     small_object_count: int
     small_object_ratio: float
 
