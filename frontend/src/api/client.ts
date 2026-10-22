@@ -326,13 +326,15 @@ export const api = {
     return request<BaseWeight>("/api/weights", { method: "POST", body: form });
   },
   deleteWeight: (name: string) => request<void>(`/api/weights/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  mergeDatasetFromFtp: (datasetId: string, payload: { path: string; source: "zip" | "dir" }) =>
+    request<{ dataset: Dataset }>(`/api/datasets/${datasetId}/images/merge-from-ftp`, json(payload)),
   mergeDatasetYoloZip: async (datasetId: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
     return request<{ dataset: Dataset }>(`/api/datasets/${datasetId}/images/upload-yolo`, { method: "POST", body: form });
   },
   cancelDatasetImport: (datasetId: string) => request<Dataset>(`/api/datasets/${datasetId}/import/cancel`, json({})),
-  importDatasetFromFtp: (payload: { path: string; name: string; task_type: TaskType; format: "yolo" | "coco"; description?: string }, wait = true) =>
+  importDatasetFromFtp: (payload: { path: string; name: string; task_type: TaskType; format: "yolo" | "coco"; source?: "zip" | "dir"; description?: string }, wait = true) =>
     request<DatasetImportResult>(`/api/datasets/import/from-ftp${wait ? "" : "?wait=false"}`, json(payload)),
   exportYoloUrl: (datasetId: string) => apiUrl(`/api/datasets/${datasetId}/export/yolo`),
   exportCocoUrl: (datasetId: string) => apiUrl(`/api/datasets/${datasetId}/export/coco`),

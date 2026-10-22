@@ -17,7 +17,7 @@ from app.core.config import Settings
 from app.core.errors import ValidationError
 from app.core.models import Dataset
 from app.core.schemas import DatasetCreate, SplitName
-from app.dataset.exchange.yolo import YoloArchiveLimits
+from app.dataset.exchange.yolo import YoloArchiveLimits, _tree_zip_bytes
 from app.core.storage import Storage
 from app.core.task_types import TaskType
 from app.dataset.exchange.coco import import_coco
@@ -28,6 +28,15 @@ logger = logging.getLogger("ywa")
 
 _DOWNLOAD_PROGRESS_SPAN = (2.0, 80.0)
 _IMPORT_PROGRESS = 90.0
+
+
+def _import_limits(settings: Settings) -> "YoloArchiveLimits":
+    return YoloArchiveLimits(
+        max_members=settings.max_yolo_archive_members,
+        max_member_bytes=settings.max_yolo_archive_member_bytes,
+        max_total_uncompressed_bytes=settings.max_yolo_archive_uncompressed_bytes,
+        max_compression_ratio=settings.max_yolo_archive_compression_ratio,
+    )
 
 # dataset_id → 取消标记；停止导入通过置位事件让下载/导入循环协作式退出。
 _cancel_events: dict[str, threading.Event] = {}
@@ -56,9 +65,13 @@ def run_async_merge(
     session_factory: sessionmaker[Session],
     storage: Storage,
     dataset_id: str,
-    content: bytes,
+    content: bytes | None = None,
+    *,
+    settings: Settings | None = None,
+    ftp_path: str | None = None,
+    ftp_source: str = "zip",
 ) -> None:
-    """后台把 YOLO 压缩包合并进已有数据集；状态机 merging → (None|merge_failed|merge_stopped)。"""
+    """后台把 YOLO 压缩包/目录合并进已有数据集；状态机 merging → (None|merge_failed|merge_stopped)。"""
     from app.dataset.exchange.yolo import merge_yolo_into_dataset
 
     cancel_event = threading.Event()
@@ -66,6 +79,15 @@ def run_async_merge(
 
     def job() -> None:
         try:
+            payload = content
+            if payload is None and ftp_path is not None and settings is not None:
+                from app.api.routers.datasets import _ftp_yolo_payload
+                from types import SimpleNamespace
+
+                payload = _ftp_yolo_payload(settings, SimpleNamespace(path=ftp_path, source=ftp_source))
+            if payload is None:
+                raise ValidationError("merge_payload_missing", "缺少待合并数据。")
+
             # 进度由合并事务内部分段提交更新（SQLite 单写者，跨事务写同一行会死锁）
             with session_factory() as session:
                 from app.core.models import Dataset as DatasetModel
@@ -74,7 +96,7 @@ def run_async_merge(
                 if dataset is None:
                     return
                 merge_yolo_into_dataset(
-                    session, storage, dataset, content,
+                    session, storage, dataset, payload,
                     should_cancel=cancel_event.is_set,
                 )
             if cancel_event.is_set():
@@ -122,6 +144,7 @@ def run_async_import(
     default_split: SplitName,
     archive_format: str,
     ftp_path: str | None = None,
+    ftp_source: str = "zip",
     content: bytes | None = None,
 ) -> None:
     """启动后台导入线程；只做调度，不阻塞、不抛错（失败落在数据集状态上）。"""
@@ -131,26 +154,42 @@ def run_async_import(
 
     def job() -> None:
         create = DatasetCreate(name=name, description=description, task_type=task_type)
-        limits = YoloArchiveLimits(
-            max_members=settings.max_yolo_archive_members,
-            max_member_bytes=settings.max_yolo_archive_member_bytes,
-            max_total_uncompressed_bytes=settings.max_yolo_archive_uncompressed_bytes,
-            max_compression_ratio=settings.max_yolo_archive_compression_ratio,
-        )
+        limits = _import_limits(settings)
         try:
             payload = content
             if ftp_path is not None and payload is None:
-                def on_progress(received: int, total: int | None) -> None:
-                    if cancel_event.is_set():
-                        raise ValidationError("import_cancelled", "导入已停止。")
-                    fraction = received / total if total else 0.0
-                    percent = _DOWNLOAD_PROGRESS_SPAN[0] + (_DOWNLOAD_PROGRESS_SPAN[1] - _DOWNLOAD_PROGRESS_SPAN[0]) * fraction
-                    _update(session_factory, dataset_id, import_progress=round(min(percent, _DOWNLOAD_PROGRESS_SPAN[1]), 1))
+                from types import SimpleNamespace
 
-                _update(session_factory, dataset_id, import_progress=_DOWNLOAD_PROGRESS_SPAN[0], import_message="正在从 FTP 下载压缩包…")
-                _, payload = FtpService(settings).download_with_progress(ftp_path, on_progress)
+                if ftp_source == "zip":
+                    def on_progress(received: int, total: int | None) -> None:
+                        if cancel_event.is_set():
+                            raise ValidationError("import_cancelled", "导入已停止。")
+                        fraction = received / total if total else 0.0
+                        percent = _DOWNLOAD_PROGRESS_SPAN[0] + (_DOWNLOAD_PROGRESS_SPAN[1] - _DOWNLOAD_PROGRESS_SPAN[0]) * fraction
+                        _update(session_factory, dataset_id, import_progress=round(min(percent, _DOWNLOAD_PROGRESS_SPAN[1]), 1))
+
+                    _update(session_factory, dataset_id, import_progress=_DOWNLOAD_PROGRESS_SPAN[0], import_message="正在从 FTP 下载压缩包…")
+                    _, payload = FtpService(settings).download_with_progress(ftp_path, on_progress)
+                else:
+                    from app.api.routers.datasets import _ftp_yolo_payload
+
+                    _update(session_factory, dataset_id, import_progress=_DOWNLOAD_PROGRESS_SPAN[0], import_message="正在从 FTP 采集目录…")
+
+                    def tree_progress(done: int, skipped: int) -> None:
+                        _update(session_factory, dataset_id, import_progress=round(_DOWNLOAD_PROGRESS_SPAN[1] * min(done / max(settings.max_yolo_archive_members, 1), 1.0), 1))
+
+                    tree, truncated, _skipped = FtpService(settings).fetch_yolo_tree(
+                        ftp_path,
+                        recursive=True,
+                        max_bytes=settings.max_yolo_archive_member_bytes,
+                        max_files=settings.max_yolo_archive_members,
+                        on_progress=tree_progress,
+                    )
+                    if truncated:
+                        raise ValidationError("ftp_dir_too_many_files", f"目录文件数超过 {settings.max_yolo_archive_members} 上限。")
+                    payload = _tree_zip_bytes(tree, limits)
                 if len(payload) > settings.max_upload_bytes:
-                    raise ValidationError("upload_too_large", f"FTP 文件超过 {settings.max_upload_bytes // (1024 * 1024)} MB 导入上限。")
+                    raise ValidationError("upload_too_large", f"FTP 数据超过 {settings.max_upload_bytes // (1024 * 1024)} MB 导入上限。")
 
             _update(session_factory, dataset_id, import_progress=_IMPORT_PROGRESS, import_message="正在解压并导入…")
             with session_factory() as session:

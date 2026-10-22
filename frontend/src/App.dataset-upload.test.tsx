@@ -31,7 +31,8 @@ describe("DatasetHome image upload", () => {
       root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={vi.fn()} onImport={vi.fn()}
         onFtpImport={vi.fn()}
         onCancelImport={vi.fn()}
-        onMergeYolo={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={onUpload} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
+        onMergeYolo={vi.fn()}
+        onMergeYoloFromFtp={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={onUpload} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
 
     act(() => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "+ 添加图片")?.click());

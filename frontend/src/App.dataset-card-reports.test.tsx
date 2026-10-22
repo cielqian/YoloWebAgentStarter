@@ -35,7 +35,8 @@ describe("DatasetHome card reports", () => {
       root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={vi.fn()} onImport={vi.fn()}
         onFtpImport={vi.fn()}
         onCancelImport={vi.fn()}
-        onMergeYolo={vi.fn()} onValidate={onValidate} onQuality={onQuality} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn().mockResolvedValue(duplicates)} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
+        onMergeYolo={vi.fn()}
+        onMergeYoloFromFtp={vi.fn()} onValidate={onValidate} onQuality={onQuality} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn().mockResolvedValue(duplicates)} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
     const button = (label: string) => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === label);
 
@@ -58,7 +59,8 @@ describe("DatasetHome card reports", () => {
       root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={vi.fn()} onImport={vi.fn()}
         onFtpImport={vi.fn()}
         onCancelImport={vi.fn()}
-        onMergeYolo={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={onContinueAnnotation} onUpload={vi.fn()} onTrain={onTrain} onDuplicates={onDuplicates} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
+        onMergeYolo={vi.fn()}
+        onMergeYoloFromFtp={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={onContinueAnnotation} onUpload={vi.fn()} onTrain={onTrain} onDuplicates={onDuplicates} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
     expect(container?.textContent).toContain("50%");
     act(() => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "继续标注")?.click());

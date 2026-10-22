@@ -41,7 +41,8 @@ describe("DatasetHome delete flow", () => {
       root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={vi.fn()} onImport={vi.fn()}
         onFtpImport={vi.fn()}
         onCancelImport={vi.fn()}
-        onMergeYolo={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={onDelete} />);
+        onMergeYolo={vi.fn()}
+        onMergeYoloFromFtp={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={onDelete} />);
     });
 
     const button = (label: string) => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === label);

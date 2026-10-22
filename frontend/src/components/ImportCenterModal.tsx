@@ -22,7 +22,7 @@ export function ImportCenterModal({
   busy: boolean;
   onClose: () => void;
   onArchiveImport: (file: File, name: string, taskType: TaskType, format: "yolo" | "coco") => void;
-  onFtpImport: (path: string, name: string, taskType: TaskType, format: "yolo" | "coco") => void;
+  onFtpImport: (path: string, name: string, taskType: TaskType, format: "yolo" | "coco", source: "zip" | "dir") => void;
   onVideoCompleted: (task: VideoImportTask) => Promise<void> | void;
 }) {
   const [source, setSource] = useState<ImportSource>("yolo");
@@ -36,6 +36,7 @@ export function ImportCenterModal({
   const [ftpError, setFtpError] = useState("");
   const [ftpLoading, setFtpLoading] = useState(false);
   const [ftpSelected, setFtpSelected] = useState("");
+  const [ftpKind, setFtpKind] = useState<"zip" | "dir">("zip");
   const inputRef = useRef<HTMLInputElement>(null);
   const activeSource = SOURCES.find((item) => item.id === source)!;
 
@@ -66,7 +67,7 @@ export function ImportCenterModal({
     if (!name.trim() || source === "video") return;
     if (origin === "ftp") {
       if (!ftpSelected) return;
-      onFtpImport(ftpSelected, name.trim(), taskType, source);
+      onFtpImport(ftpSelected, name.trim(), taskType, source, ftpKind);
     } else {
       if (!archive) return;
       onArchiveImport(archive, name.trim(), taskType, source);
@@ -109,6 +110,10 @@ export function ImportCenterModal({
                   <button type="button" className="button" disabled={ftpLoading || ftpPath === "/"} onClick={() => browseFtp(parentOf(ftpPath))}>↑ 上级</button>
                   <input value={ftpPath} aria-label="FTP 路径" onChange={(event) => setFtpPath(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") browseFtp(ftpPath); }} />
                   <button type="button" className="button" disabled={ftpLoading} onClick={() => browseFtp(ftpPath)}>浏览</button>
+                  <div className="import-origin-toggle" role="group" aria-label="FTP 来源类型">
+                    <button type="button" className={ftpKind === "zip" ? "active" : ""} onClick={() => { setFtpKind("zip"); setFtpSelected(""); }}>ZIP 文件</button>
+                    <button type="button" className={ftpKind === "dir" ? "active" : ""} onClick={() => { setFtpKind("dir"); setFtpSelected(""); }}>YOLO 目录</button>
+                  </div>
                 </div>
                 <div className="import-ftp-list">
                   {ftpLoading && <p className="muted">正在读取目录…</p>}

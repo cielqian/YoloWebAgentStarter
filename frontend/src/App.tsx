@@ -17,7 +17,7 @@ import { ImportCenterModal } from "./components/ImportCenterModal";
 import { DatasetVersionDialog } from "./components/DatasetVersionDialog";
 import { Toast } from "./components/Toast";
 import { readLocale, saveLocale, type AppLocale } from "./locale";
-import type { Annotation, BBox, ClassLabel, Dataset, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
+import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
 
 type View = "workspace" | "classes" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources";
 type CardReportKind = "validation" | "quality" | "duplicates";
@@ -456,7 +456,7 @@ export default function App() {
             setNotice(`已克隆为“${result.dataset.name}”：复制 ${result.imported_images} 张图片、${result.imported_annotations} 条标注${result.skipped_images ? `，${result.skipped_images} 张因文件缺失被跳过` : ""}`);
           })}
           onImport={(file, name, taskType, format) => run(async () => { const result = format === "coco" ? await api.importCoco(file, name, taskType, false) : await api.importYolo(file, name, taskType, false); await refreshDatasets(); setNotice(`已开始导入「${result.dataset.name}」，进度见数据集列表。`); })}
-          onFtpImport={(path, name, taskType, format) => run(async () => { const result = await api.importDatasetFromFtp({ path, name, task_type: taskType, format }, false); await refreshDatasets(); setNotice(`已开始从 FTP 导入「${result.dataset.name}」，进度见数据集列表。`); })}
+          onFtpImport={(path, name, taskType, format, source) => run(async () => { const result = await api.importDatasetFromFtp({ path, name, task_type: taskType, format, source }, false); await refreshDatasets(); setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}导入「${result.dataset.name}」，进度见数据集列表。`); })}
           onCancelImport={(dataset) => run(async () => { await api.cancelDatasetImport(dataset.id); await refreshDatasets(); setNotice(`已请求停止「${dataset.name}」的导入。`); })}
           onValidate={(dataset) => runResult(() => api.validateDataset(dataset.id))}
           onQuality={(dataset) => runResult(() => api.qualityReport(dataset.id))}
@@ -479,6 +479,11 @@ export default function App() {
               setImages(nextImages.items);
             }
             setNotice(`已添加 ${result.imported} 张图片到 ${split}`);
+          })}
+          onMergeYoloFromFtp={(dataset, path, source) => run(async () => {
+            await api.mergeDatasetFromFtp(dataset.id, { path, source });
+            await refreshDatasets();
+            setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}合并到「${dataset.name}」，进度见数据集列表。`);
           })}
           onMergeYolo={(dataset, file) => run(async () => {
             await api.mergeDatasetYoloZip(dataset.id, file);
@@ -527,8 +532,9 @@ export function DatasetHome(props: {
   onCreate: (name: string, type: TaskType, poseConfig?: { kpt_count: number; kpt_dim: number }) => void;
   onClone: (datasetId: string, versionId: string | null, name: string) => void;
   onImport: (file: File, name: string, type: TaskType, format: "yolo" | "coco") => void;
-  onFtpImport: (path: string, name: string, type: TaskType, format: "yolo" | "coco") => void;
+  onFtpImport: (path: string, name: string, type: TaskType, format: "yolo" | "coco", source: "zip" | "dir") => void;
   onMergeYolo: (dataset: Dataset, file: File) => void;
+  onMergeYoloFromFtp: (dataset: Dataset, path: string, source: "zip" | "dir") => void;
   onCancelImport: (dataset: Dataset) => void;
   onValidate: (dataset: Dataset) => Promise<ValidationReport | undefined>;
   onQuality: (dataset: Dataset) => Promise<DatasetQualityReport | undefined>;
@@ -554,6 +560,30 @@ export function DatasetHome(props: {
   const [uploadMode, setUploadMode] = useState<"local" | "zip" | "source">("local");
   const [zipFile, setZipFile] = useState<File>();
   const zipInputRef = useRef<HTMLInputElement>(null);
+  const [zipOrigin, setZipOrigin] = useState<"local" | "ftp">("local");
+  const [zipFtpPath, setZipFtpPath] = useState("/");
+  const [zipFtpEntries, setZipFtpEntries] = useState<FtpEntry[]>();
+  const [zipFtpError, setZipFtpError] = useState("");
+  const [zipFtpLoading, setZipFtpLoading] = useState(false);
+  const [zipFtpSelected, setZipFtpSelected] = useState("");
+  const [zipFtpKind, setZipFtpKind] = useState<"zip" | "dir">("zip");
+
+  const browseZipFtp = (path: string) => {
+    setZipFtpLoading(true);
+    setZipFtpError("");
+    return api.listFtp(path).then((result) => {
+      setZipFtpPath(result.path);
+      setZipFtpEntries(result.entries);
+    }).catch((reason) => {
+      setZipFtpEntries(undefined);
+      setZipFtpError(reason instanceof Error ? reason.message : "无法读取 FTP 目录。");
+    }).finally(() => setZipFtpLoading(false));
+  };
+  const zipFtpParent = (path: string) => {
+    const trimmed = path.replace(/\/+$/, "");
+    const index = trimmed.lastIndexOf("/");
+    return index <= 0 ? "/" : trimmed.slice(0, index);
+  };
   const [sourceDatasets, setSourceDatasets] = useState<SourceDataset[]>([]);
   const [sourceId, setSourceId] = useState("");
   const [sourceTags, setSourceTags] = useState<SourceTag[]>([]);
@@ -651,8 +681,14 @@ export function DatasetHome(props: {
     closeUpload();
   };
   const startZipMerge = () => {
-    if (!uploadTarget || !zipFile) return;
-    props.onMergeYolo(uploadTarget, zipFile);
+    if (!uploadTarget) return;
+    if (zipOrigin === "ftp") {
+      if (!zipFtpSelected) return;
+      props.onMergeYoloFromFtp(uploadTarget, zipFtpSelected, zipFtpKind);
+    } else {
+      if (!zipFile) return;
+      props.onMergeYolo(uploadTarget, zipFile);
+    }
     closeUpload();
   };
   const openSourceMode = async () => {
@@ -802,9 +838,36 @@ export function DatasetHome(props: {
           <button className={draggingImages ? "exchange-dropzone dragging" : "exchange-dropzone"} onClick={() => uploadFileRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDraggingImages(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDraggingImages(false)} onDrop={(event) => { event.preventDefault(); setDraggingImages(false); chooseImages(event.dataTransfer.files); }}><span className="exchange-dropzone-icon">⇧</span><strong>{uploadFiles.length ? `已选择 ${uploadFiles.length} 张图片` : "拖放或选择图片"}</strong><small>{uploadFiles.length ? uploadFiles.slice(0, 3).map((file) => file.name).join("、") + (uploadFiles.length > 3 ? ` 等 ${uploadFiles.length} 张` : "") : "支持 JPG、PNG、WEBP 等常见图片格式，可多选"}</small></button>
           <footer className="data-exchange-footer"><span>原图会复制到受管数据目录，现有标注不会受影响。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !uploadFiles.length} onClick={startUpload}>添加 {uploadFiles.length || ""} 张图片</button></div></footer>
         </> : uploadMode === "zip" ? <>
-          <input ref={zipInputRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => { setZipFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
-          <button type="button" className="exchange-dropzone" onClick={() => zipInputRef.current?.click()}><span className="exchange-dropzone-icon">⇧</span><strong>{zipFile?.name ?? "选择标准 YOLO 数据集 ZIP"}</strong><small>{zipFile ? `${Math.ceil(zipFile.size / 1024 / 1024)} MB · 已准备合并` : "ZIP 内应包含 images 与 labels（可带 data.yaml）；类别按名称合并，同名图片跳过"}</small></button>
-          <footer className="data-exchange-footer"><span>图片与标注会追加到当前数据集；压缩包内 train/val/test 目录决定 split。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !zipFile} onClick={startZipMerge}>合并压缩包</button></div></footer>
+          <div className="import-origin-toggle" role="group" aria-label="合并来源" style={{ margin: "0 28px" }}>
+            <button type="button" className={zipOrigin === "local" ? "active" : ""} onClick={() => { setZipOrigin("local"); setZipFtpSelected(""); }}>本地上传</button>
+            <button type="button" className={zipOrigin === "ftp" ? "active" : ""} onClick={() => { setZipOrigin("ftp"); if (zipFtpEntries === undefined && !zipFtpLoading && !zipFtpError) void browseZipFtp(zipFtpPath); }}>FTP 选择</button>
+          </div>
+          {zipOrigin === "local" ? <>
+            <input ref={zipInputRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => { setZipFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+            <button type="button" className="exchange-dropzone" onClick={() => zipInputRef.current?.click()}><span className="exchange-dropzone-icon">⇧</span><strong>{zipFile?.name ?? "选择标准 YOLO 数据集 ZIP"}</strong><small>{zipFile ? `${Math.ceil(zipFile.size / 1024 / 1024)} MB · 已准备合并` : "ZIP 内应包含 images 与 labels（可带 data.yaml）；类别按名称合并，同名图片跳过"}</small></button>
+          </> : (
+            <div className="import-ftp-picker">
+              <div className="import-ftp-toolbar">
+                <button type="button" className="button" disabled={zipFtpLoading || zipFtpPath === "/"} onClick={() => void browseZipFtp(zipFtpParent(zipFtpPath))}>↑ 上级</button>
+                <input value={zipFtpPath} aria-label="FTP 路径" onChange={(event) => setZipFtpPath(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void browseZipFtp(zipFtpPath); }} />
+                <button type="button" className="button" disabled={zipFtpLoading} onClick={() => void browseZipFtp(zipFtpPath)}>浏览</button>
+                <div className="import-origin-toggle" role="group" aria-label="FTP 来源类型">
+                  <button type="button" className={zipFtpKind === "zip" ? "active" : ""} onClick={() => { setZipFtpKind("zip"); setZipFtpSelected(""); }}>ZIP 文件</button>
+                  <button type="button" className={zipFtpKind === "dir" ? "active" : ""} onClick={() => { setZipFtpKind("dir"); setZipFtpSelected(""); }}>YOLO 目录</button>
+                </div>
+              </div>
+              <div className="import-ftp-list">
+                {zipFtpLoading && <p className="muted">正在读取目录…</p>}
+                {zipFtpError && <p className="annotation-form-error">{zipFtpError}（请先在「FTP 管理」页配置连接）</p>}
+                {!zipFtpLoading && !zipFtpError && zipFtpEntries?.map((entry) => entry.is_dir
+                  ? <button key={entry.name} type="button" className="import-ftp-row dir" onClick={() => void browseZipFtp(`${zipFtpPath.replace(/\/+$/, "")}/${entry.name}`)}><span>📁</span><strong>{entry.name}</strong><small>目录</small></button>
+                  : <button key={entry.name} type="button" disabled={!entry.name.toLowerCase().endsWith(".zip")} className={`import-ftp-row file${zipFtpSelected === `${zipFtpPath.replace(/\/+$/, "")}/${entry.name}` ? " selected" : ""}`} onClick={() => setZipFtpSelected(`${zipFtpPath.replace(/\/+$/, "")}/${entry.name}`)}><span>🗜</span><strong>{entry.name}</strong><small>{entry.size != null ? `${Math.ceil(entry.size / 1024)} KB` : ""}</small></button>)}
+                {zipFtpKind === "dir" && !zipFtpLoading && !zipFtpError && <button type="button" className={`import-ftp-row dir${zipFtpSelected === zipFtpPath ? " selected" : ""}`} onClick={() => setZipFtpSelected(zipFtpPath)}><span>📁</span><strong>合并当前目录：{zipFtpPath}</strong><small>递归收集 images / labels / data.yaml</small></button>}
+                {zipFtpSelected && <p className="import-ftp-selected">已选择：{zipFtpSelected}</p>}
+              </div>
+            </div>
+          )}
+          <footer className="data-exchange-footer"><span>图片与标注会追加到当前数据集；压缩包/目录内 train/val/test 决定 split。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || (zipOrigin === "local" ? !zipFile : !zipFtpSelected)} onClick={startZipMerge}>开始合并</button></div></footer>
         </> : <>
           <div className="exchange-fields"><label>选择数据源<select value={sourceId} disabled={!sourceDatasets.length} onChange={(event) => setSourceId(event.target.value)}>{sourceDatasets.map((item) => <option key={item.id} value={item.id}>{item.name}（{item.image_count} 张）</option>)}</select></label></div>
           {!sourceDatasets.length && <p className="muted">{sourceLoading ? "正在加载数据源…" : "还没有数据源，可先在“数据源”页创建并导入图片。"}</p>}

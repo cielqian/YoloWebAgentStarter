@@ -46,6 +46,6 @@ describe("ImportCenterModal ftp picker", () => {
     expect(nameInput?.value).toBe("ds");
 
     await act(async () => { submit?.click(); });
-    expect(onFtpImport).toHaveBeenCalledWith("/export/ds.zip", "ds", "detect", "yolo");
+    expect(onFtpImport).toHaveBeenCalledWith("/export/ds.zip", "ds", "detect", "yolo", "zip");
   });
 });

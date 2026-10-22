@@ -56,6 +56,7 @@ describe("DatasetHome source sync dialog", () => {
         onFtpImport={vi.fn()}
         onCancelImport={vi.fn()}
         onMergeYolo={vi.fn()}
+        onMergeYoloFromFtp={vi.fn()}
           onValidate={vi.fn().mockResolvedValue(undefined)}
           onQuality={vi.fn().mockResolvedValue(undefined)}
           onContinueAnnotation={vi.fn()}

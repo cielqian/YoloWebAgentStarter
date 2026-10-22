@@ -157,6 +157,52 @@ class FtpService:
                             on_progress(len(collected))
         return collected, truncated
 
+    def fetch_yolo_tree(
+        self,
+        path: str,
+        *,
+        recursive: bool,
+        max_bytes: int,
+        max_files: int | None = None,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> tuple[dict[str, bytes], bool, int]:
+        """递归收集 YOLO 数据集目录（images/labels/data.yaml 等），保留相对路径。
+
+        返回 (相对路径 → 内容, 是否被 max_files 截断, 跳过数)。
+        与 fetch_directory_images 的区别：同时收集 .txt 标签与 data.yaml，
+        供导入器按目录结构解析。
+        """
+        from app.dataset.exchange.yolo import SUPPORTED_LABEL_SUFFIXES
+
+        root = normalize_ftp_path(path, allow_root=False)
+        wanted = SUPPORTED_IMAGE_SUFFIXES | SUPPORTED_LABEL_SUFFIXES | {".yaml", ".yml"}
+        collected: dict[str, bytes] = {}
+        skipped = 0
+        truncated = False
+        with self._managed_client() as client:
+            pending: list[tuple[str, str]] = [("", root)]
+            while pending and not truncated:
+                relative, current = pending.pop(0)
+                for entry in self._entries(client, current):
+                    display = f"{relative}/{entry.name}" if relative else entry.name
+                    if entry.is_dir:
+                        if recursive:
+                            pending.append((display, entry.path))
+                        continue
+                    if posixpath.splitext(entry.name)[1].lower() not in wanted:
+                        continue
+                    if max_files is not None and len(collected) >= max_files:
+                        truncated = True
+                        break
+                    data = self._download_limited(client, entry.path, max_bytes)
+                    if data is None:
+                        skipped += 1
+                        continue
+                    collected[display] = data
+                    if on_progress is not None:
+                        on_progress(len(collected), skipped)
+        return collected, truncated, skipped
+
     def fetch_files(
         self,
         paths: list[str],

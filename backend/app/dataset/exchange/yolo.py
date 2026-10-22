@@ -20,6 +20,9 @@ from app.core.ids import new_id
 from app.core.models import Annotation, ClassLabel, Dataset, ImageItem
 from app.core.schemas import BBox, DatasetCreate, OBB, SplitName
 from app.core.storage import SUPPORTED_IMAGE_SUFFIXES, Storage
+
+# YOLO 目录导入需要同时收集的标签与配置后缀（供 FTP 目录采集复用）
+SUPPORTED_LABEL_SUFFIXES = {".txt"}
 from app.dataset.annotation.geometry import obb_corners, validate_bbox, validate_obb, validate_polygon
 from app.dataset.service import get_dataset, refresh_dataset_counts
 
@@ -46,6 +49,38 @@ def _safe_member_name(name: str) -> str:
     if not _SAFE_MEMBER.fullmatch(normalized):
         raise ValidationError("unsafe_archive_path", "YOLO archive contains an unsafe path.")
     return normalized
+
+
+def _normalize_tree_root(names: list[str]) -> dict[str, str]:
+    """目录树导入：去掉所有文件共享的最外层目录前缀（如整个 v3/ 包一层）。"""
+    split = [[part for part in name.split("/") if part] for name in names]
+    prefixes = [parts[:-1] for parts in split if len(parts) > 1]
+    if not prefixes:
+        return {name: None for name in names}
+    common = []
+    for index in range(min(len(parts) for parts in prefixes)):
+        candidate = prefixes[0][index]
+        if all(parts[index] == candidate for parts in prefixes):
+            common.append(candidate)
+        else:
+            break
+    keep = len(common)
+    return {name: "/".join(parts[keep:]) for parts, name in zip(split, names)}
+
+
+def _tree_zip_bytes(tree: dict[str, bytes], limits: YoloArchiveLimits) -> bytes:
+    """把 {相对路径: 内容} 的 YOLO 目录树打包为 zip 字节流，走既有导入管线。"""
+    if len(tree) > limits.max_members:
+        raise ValidationError("archive_too_many_members", f"目录包含超过 {limits.max_members} 个文件。")
+    total = sum(len(data) for data in tree.values())
+    if total > limits.max_total_uncompressed_bytes:
+        raise ValidationError("archive_too_large", f"目录总大小超过 {limits.max_total_uncompressed_bytes // (1024 * 1024)} MB 上限。")
+    normalized = _normalize_tree_root(list(tree.keys()))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for original, data in tree.items():
+            zf.writestr(normalized[original], data)
+    return buffer.getvalue()
 
 
 def _archive_entries(payload: bytes, limits: YoloArchiveLimits) -> tuple[zipfile.ZipFile, dict[str, zipfile.ZipInfo]]:

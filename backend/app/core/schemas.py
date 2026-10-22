@@ -65,6 +65,18 @@ class DatasetCreate(BaseModel):
         return self
 
 
+class DatasetFtpMergeCreate(BaseModel):
+    """从 FTP 上的 ZIP 或 YOLO 目录合并进已有数据集（异步）。"""
+
+    path: str = Field(min_length=1, max_length=1024)
+    source: Literal["zip", "dir"] = "zip"
+
+    @field_validator("path")
+    @classmethod
+    def strip_path(cls, value: str) -> str:
+        return value.strip()
+
+
 class DatasetMergeStarted(BaseModel):
     """异步合并已启动；进度与结果见 dataset.import_state。"""
 
@@ -89,12 +101,13 @@ class DatasetImportStarted(BaseModel):
 
 
 class DatasetFtpImportCreate(BaseModel):
-    """从 FTP 上的 ZIP 压缩包导入数据集。"""
+    """从 FTP 上的 ZIP 压缩包或 YOLO 目录导入数据集。"""
 
     path: str = Field(min_length=1, max_length=1024)
     name: str = Field(min_length=1, max_length=255)
     task_type: TaskType
     format: Literal["yolo", "coco"]
+    source: Literal["zip", "dir"] = "zip"
     description: str | None = Field(default=None, max_length=2000)
     default_split: SplitName = "train"
 

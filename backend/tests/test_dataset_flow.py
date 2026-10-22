@@ -898,3 +898,52 @@ def test_merge_failure_marks_dataset_but_keeps_it_usable(client):
     # 数据集本身仍可用：可继续新增类别
     ok = client.post(f"/api/datasets/{dataset_id}/classes", json={"name": "still-alive"})
     assert ok.status_code == 201, ok.text
+
+
+def _ftp_tree_fixture() -> dict:
+    return {
+        "export-v3/data.yaml": b"names: [cat]\n",
+        "export-v3/images/train/cat2.png": png_bytes("#1122aa"),
+        "export-v3/labels/train/cat2.txt": b"0 0.5 0.5 0.4 0.4\n",
+    }
+
+
+def test_async_import_from_ftp_directory(client, monkeypatch):
+    from app.ftp.service import FtpService
+
+    tree = _ftp_tree_fixture()
+
+    def fake_tree(self, path, *, recursive, max_bytes, max_files=None, on_progress=None):
+        assert recursive is True
+        return dict(tree), False, 0
+
+    monkeypatch.setattr(FtpService, "fetch_yolo_tree", fake_tree)
+
+    started = client.post(
+        "/api/datasets/import/from-ftp?wait=false",
+        json={"path": "/export/export-v3", "name": "ftp-dir", "task_type": "detect", "format": "yolo", "source": "dir"},
+    )
+    assert started.status_code == 201, started.text
+    dataset_id = started.json()["dataset"]["id"]
+    settled = _wait_import_settled(client, dataset_id)
+    assert settled["import_state"] == "completed", settled.get("import_message")
+    assert settled["image_count"] == 1
+
+
+def test_merge_from_ftp_directory_into_existing(client, monkeypatch):
+    from app.ftp.service import FtpService
+
+    tree = _ftp_tree_fixture()
+    monkeypatch.setattr(FtpService, "fetch_yolo_tree", lambda self, path, *, recursive, max_bytes, max_files=None, on_progress=None: (dict(tree), False, 0))
+
+    dataset_id = create_dataset(client)
+    started = client.post(
+        f"/api/datasets/{dataset_id}/images/merge-from-ftp",
+        json={"path": "/export/export-v3", "source": "dir"},
+    )
+    assert started.status_code == 201, started.text
+    settled = _wait_merge_settled(client, dataset_id)
+    assert settled["import_state"] is None, settled.get("import_message")
+    assert settled["image_count"] == 1
+    classes = client.get(f"/api/datasets/{dataset_id}/classes").json()
+    assert [item["name"] for item in classes] == ["cat"]

@@ -22,6 +22,7 @@ from app.core.schemas import (
     ClassLabelResponse,
     DatasetCreate,
     DatasetFtpImportCreate,
+    DatasetFtpMergeCreate,
     DatasetImportStarted,
     DatasetMergeResult,
     DatasetMergeStarted,
@@ -51,12 +52,12 @@ from app.core.schemas import (
     ValidationReport,
     YoloImportResponse,
 )
-from app.core.storage import Storage
+from app.core.storage import SUPPORTED_IMAGE_SUFFIXES, Storage
 from app.ftp.service import FtpService
 from app.core.task_types import TaskType
 from app.dataset.annotation.service import list_annotations, replace_annotations
 from app.dataset.import_runner import request_cancel, run_async_import, run_async_merge
-from app.dataset.exchange.yolo import YoloArchiveLimits, export_dataset, import_dataset, merge_yolo_into_dataset
+from app.dataset.exchange.yolo import YoloArchiveLimits, _tree_zip_bytes, export_dataset, import_dataset, merge_yolo_into_dataset
 from app.dataset.exchange.coco import export_coco, import_coco
 from app.dataset.quality.schemas import DatasetQualityReport
 from app.dataset.quality.service import DatasetQualityService
@@ -208,6 +209,7 @@ def _start_async_import(
     default_split: str,
     archive_format: str,
     ftp_path: str | None = None,
+    ftp_source: str = "zip",
     content: bytes | None = None,
 ) -> DatasetImportStarted:
     placeholder = Dataset(
@@ -232,6 +234,7 @@ def _start_async_import(
         default_split=default_split,  # type: ignore[arg-type]
         archive_format=archive_format,
         ftp_path=ftp_path,
+        ftp_source=ftp_source,
         content=content,
     )
     return DatasetImportStarted(dataset=_dataset_responses(session, [placeholder])[0])
@@ -315,6 +318,33 @@ async def import_coco_archive(
     return YoloImportResponse(dataset=_dataset_responses(session, [dataset])[0], imported_images=images, imported_annotations=annotations)
 
 
+
+def _ftp_yolo_payload(settings: Settings, payload) -> bytes:
+    """按 source 类型从 FTP 取回 YOLO 数据：zip 直接返回，目录树打包为 zip。"""
+    from app.ftp.service import FtpService
+
+    limits = YoloArchiveLimits(
+        max_members=settings.max_yolo_archive_members,
+        max_member_bytes=settings.max_yolo_archive_member_bytes,
+        max_total_uncompressed_bytes=settings.max_yolo_archive_uncompressed_bytes,
+        max_compression_ratio=settings.max_yolo_archive_compression_ratio,
+    )
+    ftp = FtpService(settings)
+    if getattr(payload, "source", "zip") == "dir":
+        tree, truncated, skipped = ftp.fetch_yolo_tree(
+            payload.path,
+            recursive=True,
+            max_bytes=settings.max_yolo_archive_member_bytes,
+            max_files=settings.max_yolo_archive_members,
+        )
+        if truncated:
+            raise ValidationError("ftp_dir_too_many_files", f"目录文件数超过 {settings.max_yolo_archive_members} 上限。")
+        if not any(name.lower().endswith(tuple(SUPPORTED_IMAGE_SUFFIXES)) for name in tree):
+            raise ValidationError("no_images_in_archive", "FTP 目录中未找到图片文件。")
+        return _tree_zip_bytes(tree, limits)
+    _, content = ftp.download(payload.path)
+    return content
+
 @router.post("/import/from-ftp", response_model=YoloImportResponse | DatasetImportStarted, status_code=201)
 def import_archive_from_ftp(
     payload: DatasetFtpImportCreate,
@@ -324,17 +354,18 @@ def import_archive_from_ftp(
     storage: Storage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
 ) -> YoloImportResponse | DatasetImportStarted:
-    if not payload.path.lower().endswith(".zip"):
-        raise ValidationError("ftp_import_not_zip", "FTP 导入仅支持 .zip 文件。")
+    if payload.source == "zip" and not payload.path.lower().endswith(".zip"):
+        raise ValidationError("ftp_import_not_zip", "FTP 导入仅支持 .zip 文件或 YOLO 目录。")
     if not payload.name.strip():
         raise ValidationError("dataset_name_required", "Dataset name is required.")
     if not wait:
         return _start_async_import(
             session, storage, settings, request,
             name=payload.name, task_type=payload.task_type, description=payload.description,
-            default_split=payload.default_split, archive_format=payload.format, ftp_path=payload.path,
+            default_split=payload.default_split, archive_format=payload.format,
+            ftp_path=payload.path, ftp_source=payload.source,
         )
-    _, content = FtpService(settings).download(payload.path)
+    content = _ftp_yolo_payload(settings, payload)
     if len(content) > settings.max_upload_bytes:
         raise ValidationError("upload_too_large", f"FTP 文件超过 {settings.max_upload_bytes // (1024 * 1024)} MB 导入上限。")
     create = DatasetCreate(name=payload.name, description=payload.description, task_type=payload.task_type)
@@ -359,6 +390,39 @@ def get_datasets(session: Session = Depends(get_session)) -> list[DatasetRespons
 @router.post("", response_model=DatasetResponse, status_code=201)
 def post_dataset(payload: DatasetCreate, session: Session = Depends(get_session)) -> DatasetResponse:
     return _dataset_response(create_dataset(session, payload))
+
+
+@router.post("/{dataset_id}/images/merge-from-ftp", response_model=DatasetMergeStarted, status_code=201)
+def merge_yolo_from_ftp(
+    dataset_id: str,
+    payload: DatasetFtpMergeCreate,
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
+) -> DatasetMergeStarted:
+    """从 FTP 的 ZIP 或 YOLO 目录异步合并进已有数据集。"""
+    dataset = get_dataset(session, dataset_id)
+    if dataset.import_state in ("importing", "merging"):
+        raise ValidationError("import_already_running", "该数据集已有进行中的导入/合并任务。")
+    if payload.source == "zip" and not payload.path.lower().endswith(".zip"):
+        raise ValidationError("ftp_import_not_zip", "仅支持 .zip 文件或 YOLO 目录。")
+    dataset.import_state = "merging"
+    dataset.import_progress = 0.0
+    dataset.import_message = "正在准备从 FTP 合并…"
+    session.commit()
+    session.refresh(dataset)
+    from app.dataset.import_runner import run_async_merge
+
+    run_async_merge(
+        request.app.state.database.session_factory,
+        storage,
+        dataset_id,
+        settings=settings,
+        ftp_path=payload.path,
+        ftp_source=payload.source,
+    )
+    return DatasetMergeStarted(dataset=_dataset_responses(session, [dataset])[0])
 
 
 @router.post("/{dataset_id}/import/cancel", response_model=DatasetDetailResponse)
