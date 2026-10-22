@@ -160,12 +160,18 @@ export default function App() {
         setError(`「${dataset.name}」导入失败：${dataset.import_message ?? "未知错误"}`);
       } else if (before === "importing" && now === "stopped") {
         setNotice(`「${dataset.name}」已停止导入。`);
+      } else if (before === "merging" && now == null) {
+        setNotice(`「${dataset.name}」合并完成，图片与标注已入集。`);
+      } else if (before === "merging" && now === "merge_failed") {
+        setError(`「${dataset.name}」合并失败：${dataset.import_message ?? "未知错误"}`);
+      } else if (before === "merging" && now === "merge_stopped") {
+        setNotice(`「${dataset.name}」已停止合并，已合并部分保留。`);
       }
     }
     importStatesRef.current = states;
   }, [datasets]);
 
-  const hasImportingDataset = datasets.some((dataset) => dataset.import_state === "importing");
+  const hasImportingDataset = datasets.some((dataset) => dataset.import_state === "importing" || dataset.import_state === "merging");
   useEffect(() => {
     if (!hasImportingDataset) return;
     const timer = window.setInterval(() => {
@@ -474,6 +480,17 @@ export default function App() {
             }
             setNotice(`已添加 ${result.imported} 张图片到 ${split}`);
           })}
+          onMergeYolo={(dataset, file) => run(async () => {
+            await api.mergeDatasetYoloZip(dataset.id, file);
+            await refreshDatasets();
+            if (selected?.id === dataset.id) {
+              const nextImages = await api.listImages(dataset.id);
+              setImages(nextImages.items);
+              const nextClasses = await api.listClasses(dataset.id);
+              setClasses(nextClasses);
+            }
+            setNotice(`已开始合并到「${dataset.name}」，进度见数据集列表。`);
+          })}
           onSourceSync={(dataset, sourceDatasetId, tagIds, tagMatch, split) => run(async () => {
             const result = await api.syncDatasetFromSource(dataset.id, { sourceDatasetId, tagIds, tagMatch, split });
             await refreshDatasets();
@@ -511,6 +528,7 @@ export function DatasetHome(props: {
   onClone: (datasetId: string, versionId: string | null, name: string) => void;
   onImport: (file: File, name: string, type: TaskType, format: "yolo" | "coco") => void;
   onFtpImport: (path: string, name: string, type: TaskType, format: "yolo" | "coco") => void;
+  onMergeYolo: (dataset: Dataset, file: File) => void;
   onCancelImport: (dataset: Dataset) => void;
   onValidate: (dataset: Dataset) => Promise<ValidationReport | undefined>;
   onQuality: (dataset: Dataset) => Promise<DatasetQualityReport | undefined>;
@@ -533,7 +551,9 @@ export function DatasetHome(props: {
   const [uploadTarget, setUploadTarget] = useState<Dataset>();
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadSplit, setUploadSplit] = useState<SplitName>("train");
-  const [uploadMode, setUploadMode] = useState<"local" | "source">("local");
+  const [uploadMode, setUploadMode] = useState<"local" | "zip" | "source">("local");
+  const [zipFile, setZipFile] = useState<File>();
+  const zipInputRef = useRef<HTMLInputElement>(null);
   const [sourceDatasets, setSourceDatasets] = useState<SourceDataset[]>([]);
   const [sourceId, setSourceId] = useState("");
   const [sourceTags, setSourceTags] = useState<SourceTag[]>([]);
@@ -630,6 +650,11 @@ export function DatasetHome(props: {
     props.onUpload(uploadTarget, uploadFiles, uploadSplit);
     closeUpload();
   };
+  const startZipMerge = () => {
+    if (!uploadTarget || !zipFile) return;
+    props.onMergeYolo(uploadTarget, zipFile);
+    closeUpload();
+  };
   const openSourceMode = async () => {
     setUploadMode("source");
     if (sourceDatasets.length) return;
@@ -706,10 +731,12 @@ export function DatasetHome(props: {
     <section className="dataset-overview">
       <div className="section-title-row"><div><span className="eyebrow">ALL DATASETS</span><h2>所有数据集</h2></div><span className="dataset-total">{props.datasets.length} 个数据集</span></div>
       <div className="dataset-grid">
-        {props.datasets.map((dataset, index) => { const importing = dataset.import_state === "importing"; const importBlocked = importing || dataset.import_state === "failed" || dataset.import_state === "stopped"; const failedImport = dataset.import_state === "failed" || dataset.import_state === "stopped"; return <article key={dataset.id} className="dataset-card">
-          <header><span className={`dataset-icon tone-${index % 3}`}>{dataset.task_type === "segment" || dataset.task_type === "obb" ? "◇" : dataset.task_type === "classify" ? "○" : dataset.task_type === "pose" ? "✥" : "□"}</span><div><h2>{dataset.name}</h2><small>{taskDescription(dataset.task_type)}{dataset.task_type === "pose" && dataset.pose_config ? ` · ${dataset.pose_config.kpt_count} 关键点` : ""}</small></div><div className="dataset-card-header-actions"><span className={`status ${dataset.import_state === "failed" ? "failed" : dataset.import_state === "stopped" ? "stopped" : importing ? "" : "ready"}`}>{importing ? "导入中" : dataset.import_state === "failed" ? "导入失败" : dataset.import_state === "stopped" ? "已停止" : "就绪"}</span>{!importBlocked && <button className="dataset-add-image-action" disabled={props.busy || importing || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>+ 添加图片</button>}</div></header>
-          {importing && <div className="dataset-import-progress" role="status"><div className="dataset-import-progress-top"><span>{dataset.import_message ?? "正在导入…"}</span><span>{Math.round(dataset.import_progress ?? 0)}%</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, Math.max(2, dataset.import_progress ?? 0))}%` }} /></div></div>}
+        {props.datasets.map((dataset, index) => { const importing = dataset.import_state === "importing"; const merging = dataset.import_state === "merging"; const failedImport = dataset.import_state === "failed" || dataset.import_state === "stopped"; const mergeIssue = dataset.import_state === "merge_failed" || dataset.import_state === "merge_stopped"; const importBlocked = importing || merging || failedImport; return <article key={dataset.id} className="dataset-card">
+          <header><span className={`dataset-icon tone-${index % 3}`}>{dataset.task_type === "segment" || dataset.task_type === "obb" ? "◇" : dataset.task_type === "classify" ? "○" : dataset.task_type === "pose" ? "✥" : "□"}</span><div><h2>{dataset.name}</h2><small>{taskDescription(dataset.task_type)}{dataset.task_type === "pose" && dataset.pose_config ? ` · ${dataset.pose_config.kpt_count} 关键点` : ""}</small></div><div className="dataset-card-header-actions"><span className={`status ${dataset.import_state === "failed" || dataset.import_state === "merge_failed" ? "failed" : dataset.import_state === "stopped" || dataset.import_state === "merge_stopped" ? "stopped" : importing || merging ? "" : "ready"}`}>{merging ? "合并中" : importing ? "导入中" : dataset.import_state === "failed" ? "导入失败" : dataset.import_state === "stopped" ? "已停止" : dataset.import_state === "merge_failed" ? "合并失败" : dataset.import_state === "merge_stopped" ? "已停止" : "就绪"}</span>{!importBlocked && <button className="dataset-add-image-action" disabled={props.busy || importing || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>+ 添加图片</button>}</div></header>
+          {(importing || merging) && <div className="dataset-import-progress" role="status"><div className="dataset-import-progress-top"><span>{dataset.import_message ?? "正在导入…"}</span><span>{Math.round(dataset.import_progress ?? 0)}%</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, Math.max(2, dataset.import_progress ?? 0))}%` }} /></div></div>}
           {dataset.import_state === "failed" && <div className="validation invalid"><span>导入失败：{dataset.import_message ?? "未知错误"}</span></div>}
+          {dataset.import_state === "merge_failed" && <div className="validation invalid"><span>合并失败：{dataset.import_message ?? "未知错误"}</span><small>数据集仍可正常使用；重新上传压缩包会跳过已合并的同名图片。</small></div>}
+          {dataset.import_state === "merge_stopped" && <div className="validation valid"><span>合并已停止：已合并部分保留，可重新上传继续。</span></div>}
           <div className="dataset-metrics"><span><small>图片</small><strong>{dataset.image_count.toLocaleString()}</strong></span><span><small>类别</small><strong>{dataset.class_count.toLocaleString()}</strong></span></div>
           <div className="dataset-version-line">
             {dataset.latest_version_number ? <><span>版本</span><strong>v{dataset.latest_version_number}</strong>{dataset.active_version_number != null && dataset.active_version_number !== dataset.latest_version_number && <em>只读 · 已激活 v{dataset.active_version_number}（非最新）</em>}</> : <span className="muted">未创建版本</span>}
@@ -718,7 +745,7 @@ export function DatasetHome(props: {
           <div className="progress-track"><i style={{ width: `${dataset.image_count ? dataset.annotated_image_count / dataset.image_count * 100 : 0}%` }} /></div>
           {!importBlocked && <button className="button primary dataset-primary-action" disabled={props.busy || importing || !dataset.image_count} onClick={() => props.onContinueAnnotation(dataset)}>继续标注</button>}
           <div className="dataset-card-actions">
-            {importing ? <button className="button danger" disabled={props.busy} onClick={() => props.onCancelImport?.(dataset)}>停止导入</button> : failedImport ? <button className="button dataset-delete-action" disabled={props.busy} onClick={() => setDeleteTarget(dataset)}>删除</button> : <>
+            {importing || merging ? <button className="button danger" disabled={props.busy} onClick={() => props.onCancelImport?.(dataset)}>{importing ? "停止导入" : "停止合并"}</button> : failedImport ? <button className="button dataset-delete-action" disabled={props.busy} onClick={() => setDeleteTarget(dataset)}>删除</button> : <>
             {props.onAskAgent ? <button className="button" disabled={props.busy || importing} onClick={() => props.onAskAgent?.(dataset)}>{props.agentLabel ?? "询问助手"}</button> : null}
             <button className="button" disabled={props.busy || importing} onClick={() => props.onTrain(dataset)}>训练</button>
             <button className="button dataset-auto-annotation-action" disabled={props.busy || importing || !dataset.image_count || isHistoricalActive(dataset)} onClick={() => setAutoAnnotationTarget(dataset)}>自动标注</button>
@@ -766,6 +793,7 @@ export function DatasetHome(props: {
         <header className="data-exchange-header"><div><span className="eyebrow">ADD IMAGES</span><h2 id="dataset-upload-dialog-title">添加图片到“{uploadTarget.name}”</h2><p>从本地上传或数据源同步，图片会复制进当前数据集。</p></div><button className="icon-button" onClick={closeUpload} aria-label="关闭">×</button></header>
         <div className="upload-mode-switch" role="tablist" aria-label="图片来源">
           <button role="tab" aria-selected={uploadMode === "local"} className={uploadMode === "local" ? "active" : ""} onClick={() => setUploadMode("local")}>本地上传</button>
+          <button role="tab" aria-selected={uploadMode === "zip"} className={uploadMode === "zip" ? "active" : ""} onClick={() => setUploadMode("zip")}>YOLO 压缩包</button>
           <button role="tab" aria-selected={uploadMode === "source"} className={uploadMode === "source" ? "active" : ""} onClick={() => void openSourceMode()}>从数据源同步</button>
         </div>
         {uploadMode === "local" ? <>
@@ -773,6 +801,10 @@ export function DatasetHome(props: {
           <input ref={uploadFileRef} type="file" accept="image/*" multiple hidden onChange={(event) => { chooseImages(event.target.files ?? undefined); event.currentTarget.value = ""; }} />
           <button className={draggingImages ? "exchange-dropzone dragging" : "exchange-dropzone"} onClick={() => uploadFileRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDraggingImages(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDraggingImages(false)} onDrop={(event) => { event.preventDefault(); setDraggingImages(false); chooseImages(event.dataTransfer.files); }}><span className="exchange-dropzone-icon">⇧</span><strong>{uploadFiles.length ? `已选择 ${uploadFiles.length} 张图片` : "拖放或选择图片"}</strong><small>{uploadFiles.length ? uploadFiles.slice(0, 3).map((file) => file.name).join("、") + (uploadFiles.length > 3 ? ` 等 ${uploadFiles.length} 张` : "") : "支持 JPG、PNG、WEBP 等常见图片格式，可多选"}</small></button>
           <footer className="data-exchange-footer"><span>原图会复制到受管数据目录，现有标注不会受影响。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !uploadFiles.length} onClick={startUpload}>添加 {uploadFiles.length || ""} 张图片</button></div></footer>
+        </> : uploadMode === "zip" ? <>
+          <input ref={zipInputRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => { setZipFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+          <button type="button" className="exchange-dropzone" onClick={() => zipInputRef.current?.click()}><span className="exchange-dropzone-icon">⇧</span><strong>{zipFile?.name ?? "选择标准 YOLO 数据集 ZIP"}</strong><small>{zipFile ? `${Math.ceil(zipFile.size / 1024 / 1024)} MB · 已准备合并` : "ZIP 内应包含 images 与 labels（可带 data.yaml）；类别按名称合并，同名图片跳过"}</small></button>
+          <footer className="data-exchange-footer"><span>图片与标注会追加到当前数据集；压缩包内 train/val/test 目录决定 split。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !zipFile} onClick={startZipMerge}>合并压缩包</button></div></footer>
         </> : <>
           <div className="exchange-fields"><label>选择数据源<select value={sourceId} disabled={!sourceDatasets.length} onChange={(event) => setSourceId(event.target.value)}>{sourceDatasets.map((item) => <option key={item.id} value={item.id}>{item.name}（{item.image_count} 张）</option>)}</select></label></div>
           {!sourceDatasets.length && <p className="muted">{sourceLoading ? "正在加载数据源…" : "还没有数据源，可先在“数据源”页创建并导入图片。"}</p>}

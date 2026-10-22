@@ -20,11 +20,20 @@ export interface Dataset {
   class_count: number;
   latest_version_number?: number | null;
   active_version_number?: number | null;
-  import_state?: "importing" | "completed" | "failed" | "stopped" | null;
+  import_state?: "importing" | "completed" | "failed" | "stopped" | "merging" | "merge_failed" | "merge_stopped" | null;
   import_progress?: number;
   import_message?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface DatasetYoloMergeResult {
+  dataset: Dataset;
+  imported_images: number;
+  imported_annotations: number;
+  created_classes: number;
+  skipped_images: number;
+  split_counts: Record<string, number>;
 }
 
 export interface DatasetVersion {

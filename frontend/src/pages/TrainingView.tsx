@@ -13,7 +13,6 @@ import {
   defaultModelFor,
   estimateMinutes,
   pickPreset,
-  resolveDeviceString,
   taskTypeLabel,
   type HistoryFilter,
   type PresetId,
@@ -106,16 +105,9 @@ export function TrainingView({
       setDevices(result.items);
       setNodes(result.nodes ?? []);
       setForm((prev) => {
-        let next = prev;
-        if (!next.gpu_ids.length) {
-          const first = result.items.find((item) => item.type === "cuda" && item.index !== null && !item.node_id);
-          if (first) next = { ...next, gpu_ids: [String(first.index)] };
-        }
-        if (!next.node_id) {
-          const selection = defaultRemoteSelection(result.items);
-          if (selection) next = { ...next, ...selection };
-        }
-        return next;
+        if (prev.node_id) return prev;
+        const selection = defaultRemoteSelection(result.items);
+        return selection ? { ...prev, ...selection } : prev;
       });
     }).catch((reason) => setError(errorMessage(reason)));
   }, []);
@@ -191,18 +183,17 @@ export function TrainingView({
     }));
   };
 
-  const canSubmit = form.node_id !== null
-    || !(form.device_type === "cuda" && (!form.gpu_ids.length || (form.compute_mode === "multi" && form.gpu_ids.length < 2)));
+  const canSubmit = Boolean(form.node_id && form.node_device);
 
   const riskText = dataset.image_count < 2
     ? "图片不足 2 张时无法同时构成 train / val，创建任务可能失败。"
     : `将使用已持久化的 split 训练 ${taskTypeLabel(dataset.task_type)} 模型；请确认 train 与 val 均非空。`;
 
   const deviceSummaryText = form.node_id
-    ? `远程 ${devices.find((item) => item.node_id === form.node_id)?.node_name ?? "节点"} · ${form.node_device ?? "auto"}`
-    : resolveDeviceString(form);
+    ? `${devices.find((item) => item.node_id === form.node_id)?.node_name ?? "节点"} · ${form.node_device ?? "auto"}`
+    : "未选择节点";
 
-  const summaryBottomBar = `${form.model} · ${form.epochs} ep · batch ${form.batch_size} · ${form.img_size}px · ${deviceSummaryText} · 约 ${estimateMinutes(form.epochs, dataset.image_count, form.batch_size, form.node_id ? Math.max(form.node_device?.split(",").filter(Boolean).length ?? 1, 1) : form.device_type === "cuda" ? Math.max(form.gpu_ids.length, 1) : 1)} 分钟`;
+  const summaryBottomBar = `${form.model} · ${form.epochs} ep · batch ${form.batch_size} · ${form.img_size}px · ${deviceSummaryText} · 约 ${estimateMinutes(form.epochs, dataset.image_count, form.batch_size, Math.max(form.node_device?.split(",").filter(Boolean).length ?? 1, 1))} 分钟`;
 
   const start = async (event: FormEvent) => {
     event.preventDefault();
@@ -211,6 +202,10 @@ export function TrainingView({
     setNotice("");
     setSplitRecovery(false);
     try {
+      if (!form.node_id) {
+        setError("请先在右侧选择训练节点与设备。");
+        return;
+      }
       const patience = form.patience.trim() ? Number(form.patience) : undefined;
       const lr0 = form.lr0.trim() ? Number(form.lr0) : undefined;
       const task = await api.createTrainingTask({
@@ -221,7 +216,7 @@ export function TrainingView({
         epochs: form.epochs,
         img_size: form.img_size,
         batch_size: form.batch_size,
-        device: form.node_id ? form.node_device ?? "auto" : resolveDeviceString(form),
+        device: form.node_device ?? "auto",
         node_id: form.node_id ?? undefined,
         workers: form.workers,
         seed: form.seed,

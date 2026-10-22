@@ -45,7 +45,8 @@ describe("DatasetHome create dialog clone mode", () => {
     await act(async () => {
       root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={onClone} onImport={vi.fn()}
         onFtpImport={vi.fn()}
-        onCancelImport={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
+        onCancelImport={vi.fn()}
+        onMergeYolo={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
     await clickButton("新建数据集");
     await clickButton("从现有版本克隆");
@@ -65,7 +66,8 @@ describe("DatasetHome create dialog clone mode", () => {
     await act(async () => {
       root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={vi.fn()} onImport={vi.fn()}
         onFtpImport={vi.fn()}
-        onCancelImport={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
+        onCancelImport={vi.fn()}
+        onMergeYolo={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
     await clickButton("新建数据集");
     await clickButton("从现有版本克隆");
@@ -81,7 +83,8 @@ describe("DatasetHome create dialog clone mode", () => {
     await act(async () => {
       root?.render(<DatasetHome datasets={[unversioned]} busy={false} onCreate={vi.fn()} onClone={onClone} onImport={vi.fn()}
         onFtpImport={vi.fn()}
-        onCancelImport={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
+        onCancelImport={vi.fn()}
+        onMergeYolo={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
     await clickButton("新建数据集");
     await clickButton("从现有版本克隆");

@@ -86,7 +86,7 @@ export function ImportCenterModal({
 
   return <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="dataset-dialog data-exchange-dialog import-center-dialog" role="dialog" aria-modal="true" aria-labelledby="import-center-title" onMouseDown={(event) => event.stopPropagation()}>
-      <header className="data-exchange-header"><div><span className="eyebrow">IMPORT CENTER</span><h2 id="import-center-title">导入数据</h2><p>选择数据来源。视频会先预检，确认后才在本机后台抽帧创建数据集。</p></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></header>
+      <header className="data-exchange-header"><div><span className="eyebrow">IMPORT CENTER</span><h2 id="import-center-title">导入数据</h2><p>选择数据来源。视频会先预检，确认后才在服务端后台抽帧创建数据集。</p></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></header>
       <div className="import-center-layout">
         <aside className="import-center-sources" aria-label="导入来源">
           <span className="exchange-label">导入来源</span>
@@ -121,7 +121,7 @@ export function ImportCenterModal({
                 {ftpSelected && <p className="import-ftp-selected">已选择:{ftpSelected}</p>}
               </div>
             )}
-            <footer className="data-exchange-footer"><span>{origin === "ftp" ? "后端会从 FTP 下载所选 ZIP 并导入本机受管目录。" : "文件仅导入到本机受管数据目录。"}</span><div><button className="button" onClick={onClose}>取消</button><button className="button primary" disabled={busy || !canImport} onClick={importArchive}>开始导入</button></div></footer>
+            <footer className="data-exchange-footer"><span>{origin === "ftp" ? "后端会从 FTP 下载所选 ZIP 并导入服务端受管目录。" : "文件仅导入到服务端受管数据目录。"}</span><div><button className="button" onClick={onClose}>取消</button><button className="button primary" disabled={busy || !canImport} onClick={importArchive}>开始导入</button></div></footer>
           </>}
         </section>
       </div>

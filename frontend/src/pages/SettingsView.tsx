@@ -151,7 +151,7 @@ const copy = {
     disabledStatus: "已关闭",
     samFooter: "SAM 只对 segment 数据集开放。",
     languageTitle: "语言设置",
-    languageSubtitle: "切换工作台界面语言。偏好只保存在本机浏览器中。",
+    languageSubtitle: "切换工作台界面语言。偏好只保存在当前浏览器中。",
     displayLanguage: "显示语言",
     chinese: "简体中文",
     english: "English",
@@ -398,7 +398,6 @@ export function SettingsView({
             icon={<LlmIcon />}
             title={text.llmNav}
             description={text.llmNavDescription}
-            badge={text.local}
             onClick={() => onTabChange("llm")}
           />
           <SettingsNavigationItem
@@ -406,7 +405,6 @@ export function SettingsView({
             icon={<SamIcon />}
             title={text.samNav}
             description={text.samNavDescription}
-            badge={text.local}
             onClick={() => onTabChange("sam")}
           />
           <SettingsNavigationItem
@@ -414,7 +412,6 @@ export function SettingsView({
             icon={<FtpIcon />}
             title={text.ftpNav}
             description={text.ftpNavDescription}
-            badge={text.local}
             onClick={() => onTabChange("ftp")}
           />
           <SettingsNavigationItem
@@ -422,7 +419,6 @@ export function SettingsView({
             icon={<NodeIcon />}
             title={text.nodesNav}
             description={text.nodesNavDescription}
-            badge={text.local}
             onClick={() => onTabChange("nodes")}
           />
           <SettingsNavigationItem
@@ -430,7 +426,6 @@ export function SettingsView({
             icon={<NodeIcon />}
             title={text.weightsNav}
             description={text.weightsNavDescription}
-            badge={text.local}
             onClick={() => onTabChange("weights")}
           />
           <SettingsNavigationItem
@@ -438,7 +433,6 @@ export function SettingsView({
             icon={<WebhookIcon />}
             title={text.webhookNav}
             description={text.webhookNavDescription}
-            badge={text.local}
             onClick={() => onTabChange("webhook")}
           />
           <SettingsNavigationItem
@@ -1022,19 +1016,32 @@ function BaseWeightsPanel({ text }: { text: SettingsText }) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const upload = async (file: File | undefined) => {
-    if (!file) return;
+  const upload = async (files: FileList | null) => {
+    const list = Array.from(files ?? []);
+    if (!list.length) return;
     setBusy(true); setError(""); setMessage("");
-    try {
-      await api.uploadWeight(file);
-      setMessage(`已上传 ${file.name}`);
-      refresh();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "上传失败。");
-    } finally {
-      setBusy(false);
-      if (fileInput.current) fileInput.current.value = "";
+    const succeeded: string[] = [];
+    const failed: string[] = [];
+    for (let index = 0; index < list.length; index += 1) {
+      const file = list[index];
+      setBusy(true);
+      setMessage(list.length > 1 ? `正在上传 ${index + 1}/${list.length}：${file.name}` : "");
+      try {
+        await api.uploadWeight(file);
+        succeeded.push(file.name);
+      } catch (reason) {
+        failed.push(`${file.name}（${reason instanceof Error ? reason.message : "上传失败"}）`);
+      }
     }
+    const summary = [
+      succeeded.length ? `已上传 ${succeeded.length} 个权重` : "",
+      failed.length ? `失败 ${failed.length} 个：${failed.join("、")}` : "",
+    ].filter(Boolean).join("；");
+    if (failed.length && !succeeded.length) setError(summary);
+    else setMessage(summary);
+    refresh();
+    setBusy(false);
+    if (fileInput.current) fileInput.current.value = "";
   };
 
   const remove = async (name: string) => {
@@ -1063,10 +1070,10 @@ function BaseWeightsPanel({ text }: { text: SettingsText }) {
       {message && !error ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
 
       <div className="settings-form-grid">
-        <input ref={fileInput} type="file" accept=".pt" hidden onChange={(event) => { void upload(event.target.files?.[0]); }} />
+        <input ref={fileInput} type="file" accept=".pt" multiple hidden onChange={(event) => { void upload(event.target.files); }} />
         <label className="settings-span-2">
           <span>{text.weightsUpload}</span>
-          <button type="button" className="button primary" disabled={busy} onClick={() => fileInput.current?.click()}>选择 .pt 文件上传</button>
+          <button type="button" className="button primary" disabled={busy} onClick={() => fileInput.current?.click()}>选择 .pt 文件上传（可多选）</button>
         </label>
         {weights.map((weight) => (
           <div key={weight.name} className="settings-weight-row">

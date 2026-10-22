@@ -134,7 +134,7 @@ export function TrainingTaskList({
         <div className="training-ws-history-empty">
           <div className="training-ws-history-empty-icon" aria-hidden>+</div>
           <strong>还没有训练记录</strong>
-          <p>新建训练任务并下发执行，记录会出现在这里（本机与远程节点均支持）。</p>
+          <p>新建训练任务并下发执行，记录会出现在这里（下发到训练节点执行）。</p>
           <button type="button" className="button primary" onClick={onCreate}>新建训练</button>
         </div>
       ) : !filteredTasks.length ? (
@@ -216,7 +216,7 @@ function RecordRow({
           <span>{task.epochs} ep</span>
           <span>batch {task.batch_size}</span>
           <span>{task.img_size}px</span>
-          <span>{task.node_id ? "远程节点" : "本机"} · {task.device}</span>
+          <span>{task.node_id ? "训练节点" : "管理端"} · {task.device}</span>
         </div>
         {task.status === "failed" && task.error_message && (
           <p className="training-record-error" title={task.error_message}>{task.error_message}</p>

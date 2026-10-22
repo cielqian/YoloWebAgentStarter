@@ -4,12 +4,10 @@ import { Toast } from "../components/Toast";
 import type { Dataset, ModelComparison, ModelEvaluationRecord, ModelVersion, SplitName } from "../types";
 import { ModelTestModal } from "../components/ModelTestModal";
 import { ModelComparisonBar } from "../components/model-list/ModelComparisonBar";
-import { ModelLibraryCard } from "../components/model-list/ModelLibraryCard";
-import { ModelLibraryHero } from "../components/model-list/ModelLibraryHero";
 import { ModelLibraryStats } from "../components/model-list/ModelLibraryStats";
 import { ModelDetailView } from "../components/model-detail/ModelDetailView";
 import { formatDelta, filterModels, formatMetric, newerFirst, pickBestModel, sortModels, type ModelListFilter, type ModelListSort } from "../models/helpers";
-import { taskTypeLabel } from "../training/helpers";
+import { formatRelativeTime, taskTypeLabel } from "../training/helpers";
 import { IconSearch } from "../components/training/icons";
 
 interface Props {
@@ -214,17 +212,6 @@ export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskA
         bestMap50={formatMetric(bestModel?.map50)}
       />
 
-      {bestModel && (
-        <ModelLibraryHero
-          bestModel={bestModel}
-          dataset={dataset}
-          busy={busy}
-          onTest={setTesting}
-          onOpenDetail={(model) => setDetailId(model.id)}
-          onExportOnnx={(model) => void exportOnnx(model)}
-        />
-      )}
-
       {comparison && (
         <section className="models-comparison-result">
           <div className="models-comparison-result-head">
@@ -311,22 +298,58 @@ export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskA
             )}
           </div>
         ) : (
-          <div className="library-grid">
-            {filteredModels.map((model) => (
-              <ModelLibraryCard
-                key={model.id}
-                model={model}
-                models={models}
-                datasetName={dataset.name}
-                selected={selectedIds.includes(model.id)}
-                busy={busy}
-                onToggleSelect={(id) => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])}
-                onTest={setTesting}
-                onOpenDetail={(item) => setDetailId(item.id)}
-                onExportOnnx={(item) => void exportOnnx(item)}
-                onDelete={remove}
-              />
-            ))}
+          <div className="model-table-wrap">
+            <table className="model-table">
+              <thead>
+                <tr>
+                  <th className="model-table-check"></th>
+                  <th>名称</th>
+                  <th>类型</th>
+                  <th>格式</th>
+                  <th>mAP50</th>
+                  <th>mAP50-95</th>
+                  <th>Precision</th>
+                  <th>Recall</th>
+                  <th>状态</th>
+                  <th>创建</th>
+                  <th className="model-table-actions">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredModels.map((model) => {
+                  const selected = selectedIds.includes(model.id);
+                  return (
+                    <tr key={model.id} className={`${selected ? "selected" : ""} ${model.status}`}>
+                      <td className="model-table-check">
+                        <input type="checkbox" checked={selected} aria-label={`选择 ${model.name}`} onChange={() => setSelectedIds((ids) => ids.includes(model.id) ? ids.filter((item) => item !== model.id) : [...ids, model.id])} />
+                      </td>
+                      <td className="model-table-name">
+                        <button type="button" onClick={() => setDetailId(model.id)} title={model.name}>{model.name}</button>
+                        <small title={dataset.name}>{dataset.name || "未关联数据集"}</small>
+                      </td>
+                      <td>{model.artifact_type.toUpperCase()}</td>
+                      <td>{model.format.toUpperCase()}</td>
+                      <td className="model-table-metric">{formatMetric(model.map50)}</td>
+                      <td className="model-table-metric">{formatMetric(model.map50_95)}</td>
+                      <td className="model-table-metric">{formatMetric(model.precision)}</td>
+                      <td className="model-table-metric">{formatMetric(model.recall)}</td>
+                      <td><span className={`model-table-status ${model.status}`}>{model.status === "active" ? "启用" : "已归档"}</span></td>
+                      <td className="model-table-time" title={model.created_at}>{formatRelativeTime(model.created_at)}</td>
+                      <td className="model-table-actions">
+                        {model.format === "pt" ? (
+                          <>
+                            <button type="button" className="model-action-btn model-action-btn--primary" disabled={busy} onClick={() => setTesting(model)}>测试</button>
+                            <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => void exportOnnx(model)}>ONNX</button>
+                          </>
+                        ) : null}
+                        <button type="button" className="model-action-btn model-action-btn--ghost" onClick={() => setDetailId(model.id)}>详情</button>
+                        <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => remove(model)}>删除</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>

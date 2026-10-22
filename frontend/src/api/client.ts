@@ -3,6 +3,7 @@ import type {
   ClassLabel,
   ClassTemplate,
   Dataset,
+  DatasetYoloMergeResult,
   DatasetVersion,
   DatasetQualityReport,
   DuplicateReport,
@@ -325,6 +326,11 @@ export const api = {
     return request<BaseWeight>("/api/weights", { method: "POST", body: form });
   },
   deleteWeight: (name: string) => request<void>(`/api/weights/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  mergeDatasetYoloZip: async (datasetId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ dataset: Dataset }>(`/api/datasets/${datasetId}/images/upload-yolo`, { method: "POST", body: form });
+  },
   cancelDatasetImport: (datasetId: string) => request<Dataset>(`/api/datasets/${datasetId}/import/cancel`, json({})),
   importDatasetFromFtp: (payload: { path: string; name: string; task_type: TaskType; format: "yolo" | "coco"; description?: string }, wait = true) =>
     request<DatasetImportResult>(`/api/datasets/import/from-ftp${wait ? "" : "?wait=false"}`, json(payload)),

@@ -1526,3 +1526,22 @@
 }
 
 .premium-card { cursor: pointer; }
+
+/* ---- 模型列表表格 ---- */
+.model-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
+.model-table { width: 100%; min-width: 980px; border-collapse: collapse; font-size: 13px; }
+.model-table thead th { padding: 10px 12px; text-align: left; color: #8994a8; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; background: #fbfcfe; white-space: nowrap; }
+.model-table tbody td { padding: 10px 12px; border-bottom: 1px solid #eef1f6; color: #334058; vertical-align: middle; white-space: nowrap; }
+.model-table tbody tr:last-child td { border-bottom: 0; }
+.model-table tbody tr:hover { background: #f7f9ff; }
+.model-table tbody tr.selected { background: #eaf0ff; }
+.model-table-check { width: 34px; text-align: center; }
+.model-table-name button { max-width: 260px; overflow: hidden; text-overflow: ellipsis; color: #1d4ed8; font-weight: 650; background: none; border: 0; padding: 0; cursor: pointer; font-size: 13px; }
+.model-table-name small { display: block; margin-top: 2px; color: #8994a8; font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.model-table-metric { font-variant-numeric: tabular-nums; }
+.model-table-status { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.model-table-status.active { background: #f0fdf4; color: #166534; }
+.model-table-status.archived { background: #eef0f4; color: #68748a; }
+.model-table-time { color: #8994a8; font-size: 12px; }
+.model-table-actions { text-align: right; }
+.model-table-actions .model-action-btn { margin-left: 6px; }

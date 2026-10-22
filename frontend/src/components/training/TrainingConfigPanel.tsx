@@ -72,7 +72,7 @@ export function TrainingConfigPanel({
       <div className="training-ws-card-head">
         <div>
           <h2>训练配置</h2>
-          <p className="training-ws-muted">{form.node_id ? "选择权重与超参后提交，任务将下发到选定的远程节点执行。" : "选择权重与超参后提交，任务进入本机 FIFO 队列由 Ultralytics 执行。"}</p>
+          <p className="training-ws-muted">选择权重与超参后提交，任务将下发到选定的训练节点执行。</p>
         </div>
         {onExit && (
           <button type="button" className="button" onClick={onExit}>← 返回记录列表</button>
@@ -126,7 +126,6 @@ export function TrainingConfigPanel({
             <div className="training-dataset-ai-head">
               <IconSpark size={16} />
               <span className="training-dataset-ai-badge">推荐起点</span>
-              <span className="training-dataset-ai-active-pill">本地</span>
             </div>
             <div className="training-recommend-grid">
               <div>
