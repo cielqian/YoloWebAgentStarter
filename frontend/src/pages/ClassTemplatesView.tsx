@@ -3,7 +3,12 @@ import { api } from "../api/client";
 import { Toast } from "../components/Toast";
 import type { ClassTemplate } from "../types";
 
-const CLASS_COLORS = ["#22c55e", "#ef4444", "#3b82f6", "#f59e0b", "#a855f7", "#14b8a6", "#f97316", "#06b6d4", "#ec4899"];
+const CLASS_COLORS = [
+  "#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#a855f7",
+  "#14b8a6", "#f97316", "#06b6d4", "#ec4899", "#84cc16",
+  "#6366f1", "#eab308", "#10b981", "#f43f5e", "#0ea5e9",
+  "#8b5cf6", "#d946ef", "#facc15", "#4ade80", "#fb923c",
+];
 
 function errorMessage(reason: unknown): string { return reason instanceof Error ? reason.message : "操作失败，请检查后端服务。"; }
 
@@ -133,7 +138,7 @@ export function ClassTemplatesView() {
     {showForm && <form className="class-library-form panel" onSubmit={(event) => void submitCreate(event)}>
       <div className="class-library-form-grid">
         <label><span>类别名称 *</span><input value={name} placeholder="例如：安全帽 / helmet" autoFocus onChange={(event) => setName(event.target.value)} /></label>
-        <label><span>颜色</span><input aria-label="类别颜色" type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label>
+        <label><span>颜色</span><div className="class-color-palette" role="radiogroup" aria-label="类别颜色">{CLASS_COLORS.map((item) => <button type="button" key={item} role="radio" aria-checked={color === item} className={`class-color-swatch${color === item ? " selected" : ""}`} style={{ background: item }} onClick={() => setColor(item)} aria-label={item} />)}</div></label>
       </div>
       <label className="class-library-prompt-row"><span>SAM3 英文提示词（实例分割可选）</span>
         <div className="class-library-prompt-controls">
@@ -151,7 +156,7 @@ export function ClassTemplatesView() {
             <form className="class-library-edit-form" onSubmit={(event) => void submitEdit(event)}>
               <div className="class-library-form-grid">
                 <label><span>类别名称</span><input value={editState.name} autoFocus onChange={(event) => setEditState({ ...editState, name: event.target.value })} /></label>
-                <label><span>颜色</span><input aria-label="类别颜色" type="color" value={editState.color} onChange={(event) => setEditState({ ...editState, color: event.target.value })} /></label>
+                <label><span>颜色</span><div className="class-color-palette" role="radiogroup" aria-label="类别颜色">{CLASS_COLORS.map((item) => <button type="button" key={item} role="radio" aria-checked={editState.color === item} className={`class-color-swatch${editState.color === item ? " selected" : ""}`} style={{ background: item }} onClick={() => setEditState({ ...editState, color: item })} aria-label={item} />)}</div></label>
               </div>
               <label className="class-library-prompt-row"><span>SAM3 英文提示词</span>
                 <div className="class-library-prompt-controls">
