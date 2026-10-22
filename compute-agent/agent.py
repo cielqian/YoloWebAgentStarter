@@ -754,6 +754,10 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                     },
                 )
                 return
+            if segments == ["weights"]:
+                WEIGHTS_CACHE.mkdir(parents=True, exist_ok=True)
+                self._send(200, {"weights": sorted(item.name for item in WEIGHTS_CACHE.glob("*.pt") if item.is_file())})
+                return
             if segments == ["devices"]:
                 self._send(
                     200,

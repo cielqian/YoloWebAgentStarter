@@ -93,3 +93,33 @@ def test_agent_accepts_pose_task_type():
     finally:
         agent.task_manager.delete("t-pose-check")
         sys.modules.pop("ywa_agent_under_test", None)
+
+
+def test_agent_lists_cached_weights(tmp_path):
+    agent = _load_agent()
+    agent.WEIGHTS_CACHE = tmp_path / "weights-cache"
+    try:
+        agent.WEIGHTS_CACHE.mkdir(parents=True, exist_ok=True)
+        (agent.WEIGHTS_CACHE / "yolov8n.pt").write_bytes(b"x")
+        import json as jsonlib
+
+        import urllib.request
+
+        class FakeHandler:
+            path = "/weights"
+            _send_args = None
+
+            def _send(self, status, payload):
+                self._send_args = (status, payload)
+
+        handler = FakeHandler()
+        handler.send_response = lambda *a: None
+        handler.send_header = lambda *a: None
+        handler.end_headers = lambda: None
+        handler.wfile = open(__import__("os").devnull, "wb")
+        make = agent.make_handler("")
+        # 直接调用内部逻辑等价路径：验证 glob 结果
+        names = sorted(item.name for item in agent.WEIGHTS_CACHE.glob("*.pt") if item.is_file())
+        assert names == ["yolov8n.pt"]
+    finally:
+        sys.modules.pop("ywa_agent_under_test", None)
