@@ -122,6 +122,19 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
   }, [samCapabilities?.point_prompt_available, tool]);
 
   useEffect(() => {
+    const undo = (event: KeyboardEvent) => {
+      if (readOnly || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z" || event.shiftKey) return;
+      if (tool === "polygon" && polygonPoints.length > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        setPolygonPoints((current) => current.slice(0, -1));
+      }
+    };
+    window.addEventListener("keydown", undo, true);
+    return () => window.removeEventListener("keydown", undo, true);
+  });
+
+  useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (readOnly || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
