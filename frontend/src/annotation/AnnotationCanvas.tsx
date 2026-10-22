@@ -72,6 +72,7 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState<PanState>();
   const [panModifier, setPanModifier] = useState(false);
+  const [shapeMenu, setShapeMenu] = useState<{ x: number; y: number } | null>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const obbRefs = useRef<Record<string, Konva.Rect | null>>({});
   const bboxRefs = useRef<Record<string, Konva.Rect | null>>({});
@@ -312,38 +313,12 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
     setHoverPoint(undefined);
   };
 
-  const finishCircle = () => {
-    if (polygonPoints.length < 2) return;
-    const [a, b] = polygonPoints;
-    const r = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    if (r < 1) { setPolygonPoints([]); setHoverPoint(undefined); return; }
-    // 圆形用内接 48 边形近似：与多边形标注/分割导出格式完全兼容
-    const pts: [number, number][] = Array.from({ length: 48 }, (_, i) => {
-      const angle = (2 * Math.PI * i) / 48;
-      return [a[0] + r * Math.cos(angle), a[1] + r * Math.sin(angle)] as [number, number];
-    });
-    onChange([...annotations.map(toDraft), { id: newDraftId(), class_id: activeClassId, type: "polygon", polygon: pts.map(toOriginal), source: "manual" }]);
-    setPolygonPoints([]);
-    setHoverPoint(undefined);
-  };
+  const finishActiveShape = () => finishPolygon();
 
-  const finishRect = () => {
-    if (polygonPoints.length < 2) return;
-    const [a, b] = polygonPoints;
-    const x = Math.min(a[0], b[0]); const y = Math.min(a[1], b[1]);
-    const w = Math.abs(b[0] - a[0]); const h = Math.abs(b[1] - a[1]);
-    if (w < 1 || h < 1) { setPolygonPoints([]); setHoverPoint(undefined); return; }
-    const pts: [number, number][] = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-    onChange([...annotations.map(toDraft), { id: newDraftId(), class_id: activeClassId, type: "polygon", polygon: pts.map(toOriginal), source: "manual" }]);
-    setPolygonPoints([]);
-    setHoverPoint(undefined);
-  };
-
-  const finishActiveShape = () => {
-    if (tool === "circle") finishCircle();
-    else if (tool === "rect") finishRect();
-    else finishPolygon();
-  };
+  const clampPoint = (point: [number, number]): [number, number] => [
+    clamp(point[0], 0, image.width),
+    clamp(point[1], 0, image.height),
+  ];
   const distanceToFirst = (point: [number, number]) => polygonPoints.length >= 3 ? Math.hypot(point[0] - polygonPoints[0][0], point[1] - polygonPoints[0][1]) : Infinity;
   const snapActive = tool === "polygon" && hoverPoint !== undefined && distanceToFirst(hoverPoint) <= SNAP_CLOSE_RADIUS_PX / zoom;
   const clearAllDrafts = () => {
@@ -397,11 +372,7 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
                     : taskType === "segment" && !samConfigured ? "SAM 未配置；可使用 Polygon，或使用仅供审阅的框形建议。" : "";
   const polygonTip = tool === "polygon" && polygonPoints.length > 0
     ? "已放置的顶点可直接拖动调整、双击删除；靠近第一个点点击可自动闭合多边形。"
-    : tool === "rect" && polygonPoints.length > 0
-      ? (polygonPoints.length === 1 ? "再点一次确定矩形对角，Enter 完成。" : "Enter 完成矩形；再次点击可重新确定对角。")
-      : tool === "circle" && polygonPoints.length > 0
-        ? (polygonPoints.length === 1 ? "再点一次确定半径，Enter 完成。" : "Enter 完成圆形；再次点击可重新确定半径。")
-        : "";
+    : "";
 
   return (
     <section className="canvas-card">
@@ -409,7 +380,11 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
         <div className="tool-group">
           {taskType === "detect" && <button className={tool === "bbox" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("bbox"); setPolygonPoints([]); }}>BBox</button>}
           {taskType === "pose" && <button className={tool === "pose" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("pose"); setPolygonPoints([]); }}>Pose</button>}
-          {taskType === "segment" && <><button className={tool === "polygon" ? "button active" : "button"} disabled={!canAnnotate} title="快捷键 P" onClick={() => { setTool("polygon"); setPolygonPoints([]); setDragStart(undefined); }}>多边形</button><button className={tool === "rect" ? "button active" : "button"} disabled={!canAnnotate} title="两点定矩形 · 快捷键 R" onClick={() => { setTool("rect"); setPolygonPoints([]); setDragStart(undefined); }}>矩形</button><button className={tool === "circle" ? "button active" : "button"} disabled={!canAnnotate} title="圆心+半径 · 快捷键 C" onClick={() => { setTool("circle"); setPolygonPoints([]); setDragStart(undefined); }}>圆形</button><button className={`button${tool === "sam" ? " active" : ""}${samBusy ? " sam-busy" : ""}`} disabled={!canAnnotate || samBusy || !samCapabilities?.box_prompt_available} onClick={() => { setTool("sam"); setPolygonPoints([]); }}>{samBusy ? `推理中 ${samElapsed}s…` : samConfigured ? "SAM 框选" : "框形建议"}</button><button className={`button${tool === "sam_point" ? " active" : ""}${samBusy ? " sam-busy" : ""}`} disabled={!canAnnotate || samBusy || !pointPromptAvailable} title={pointPromptAvailable ? undefined : "配置 YWA_SAM_MODEL 后可用"} onClick={() => { setTool("sam_point"); setPolygonPoints([]); }}>{samBusy ? `推理中 ${samElapsed}s…` : pointPromptAvailable ? "SAM 点选" : "SAM 点选（需配置）"}</button></>}
+          {taskType === "segment" && <><select aria-label="绘制形状" className={tool === "polygon" || tool === "rect" || tool === "circle" ? "shape-tool-select active" : "shape-tool-select"} disabled={!canAnnotate} value={tool === "rect" ? "rect" : tool === "circle" ? "circle" : "polygon"} onChange={(event) => { setTool(event.target.value as DrawingTool); setPolygonPoints([]); setDragStart(undefined); }}>
+              <option value="polygon">多边形（P）· 逐点</option>
+              <option value="rect">矩形（R）· 拖拽</option>
+              <option value="circle">圆形（C）· 拖拽</option>
+            </select><button className={`button${tool === "sam" ? " active" : ""}${samBusy ? " sam-busy" : ""}`} disabled={!canAnnotate || samBusy || !samCapabilities?.box_prompt_available} onClick={() => { setTool("sam"); setPolygonPoints([]); }}>{samBusy ? `推理中 ${samElapsed}s…` : samConfigured ? "SAM 框选" : "框形建议"}</button><button className={`button${tool === "sam_point" ? " active" : ""}${samBusy ? " sam-busy" : ""}`} disabled={!canAnnotate || samBusy || !pointPromptAvailable} title={pointPromptAvailable ? undefined : "配置 YWA_SAM_MODEL 后可用"} onClick={() => { setTool("sam_point"); setPolygonPoints([]); }}>{samBusy ? `推理中 ${samElapsed}s…` : pointPromptAvailable ? "SAM 点选" : "SAM 点选（需配置）"}</button></>}
           {taskType === "obb" && <><button className={tool === "obb" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("obb"); setPolygonPoints([]); }}>OBB</button><label className="angle-input">角度<input aria-label="OBB angle" type="number" value={selectedAngle} disabled={readOnly} onChange={(event) => { const nextAngle = Number(event.target.value); if (!Number.isFinite(nextAngle)) return; if (selectedObb?.obb) replaceObb(selectedObb.id, { ...toStageObb(selectedObb.obb), angle: nextAngle }); else setAngle(nextAngle); }} /></label>{selectedObb && <button className="button danger" disabled={readOnly} onClick={removeSelectedObb}>删除所选 OBB</button>}</>}
           {(tool === "polygon" || tool === "rect" || tool === "circle") && <button className="button primary" disabled={!canAnnotate} onClick={finishActiveShape} title="快捷键 Enter">{tool === "rect" ? "完成矩形" : tool === "circle" ? "完成圆形" : "完成多边形"}</button>}
           {selectedPolygon && <><select aria-label="简化精度" className="simplify-tolerance" value={simplifyTolerance} onChange={(event) => setSimplifyTolerance(Number(event.target.value))}><option value={1}>1px</option><option value={2}>2px</option><option value={4}>4px</option><option value={8}>8px</option><option value={16}>16px</option></select><button className="button" disabled={readOnly} onClick={simplifySelectedPolygon}>简化顶点</button></>}
@@ -428,11 +403,25 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
       </p>
       <div className="stage-wrap" ref={stageWrapRef}>
         {(polygonTip || guide) && <div className="canvas-floating-tip" role="status">{polygonTip || guide}</div>}
+        {shapeMenu && (
+          <div className="canvas-context-menu" style={{ left: shapeMenu.x, top: shapeMenu.y }} onMouseLeave={() => setShapeMenu(null)}>
+            <button type="button" onClick={() => { setTool("polygon"); setPolygonPoints([]); setShapeMenu(null); }}>多边形（P）</button>
+            <button type="button" onClick={() => { setTool("rect"); setPolygonPoints([]); setShapeMenu(null); }}>矩形（R）</button>
+            <button type="button" onClick={() => { setTool("circle"); setPolygonPoints([]); setShapeMenu(null); }}>圆形（C）</button>
+          </div>
+        )}
         {imageElement ? (
           <Stage
             width={displaySize.width}
             height={displaySize.height}
             style={{ cursor: panning ? "grabbing" : snapActive ? "pointer" : undefined }}
+            onContextMenu={(event) => {
+              if (taskType !== "segment" || readOnly || !activeClassId) return;
+              event.evt.preventDefault();
+              const stage = event.target.getStage();
+              const position = stage?.container().getBoundingClientRect();
+              if (position) setShapeMenu({ x: event.evt.clientX - position.left, y: event.evt.clientY - position.top });
+            }}
             onWheel={handleWheel}
             onMouseDown={(event) => {
               if (event.evt.ctrlKey || event.evt.metaKey) {
@@ -453,11 +442,8 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
                 setTool("select");
                 return;
               }
-              if (tool !== "polygon" && tool !== "rect" && tool !== "circle") setDragStart(point);
-              else if (tool === "rect" || tool === "circle") {
-                // 两次点击：第一点起点，第二点终点；再点则重置重画
-                setPolygonPoints((current) => (current.length >= 2 ? [point] : [...current, point]));
-              } else {
+              if (tool !== "polygon") setDragStart(point);
+              else {
                 if (distanceToFirst(point) <= SNAP_CLOSE_RADIUS_PX / zoom) {
                   finishPolygon();
                   return;
@@ -498,6 +484,23 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
               const displayBox = normalizeBBox(dragStart, point);
               const box = { x: displayBox.x / scale.x, y: displayBox.y / scale.y, width: displayBox.width / scale.x, height: displayBox.height / scale.y };
               if (box.width >= MIN_SHAPE_SIZE && box.height >= MIN_SHAPE_SIZE) {
+                if (tool === "rect") {
+                  const pts: [number, number][] = [[box.x, box.y], [box.x + box.width, box.y], [box.x + box.width, box.y + box.height], [box.x, box.y + box.height]];
+                  const id = newDraftId();
+                  onChange([...annotations.map(toDraft), { id, class_id: activeClassId, type: "polygon", polygon: pts.map(([x, y]) => clampPoint([x, y])), source: "manual" }]);
+                  setSelectedPolygonId(id);
+                }
+                if (tool === "circle") {
+                  const cx = box.x + box.width / 2; const cy = box.y + box.height / 2;
+                  const r = Math.min(box.width, box.height) / 2;
+                  const pts: [number, number][] = Array.from({ length: 48 }, (_, i) => {
+                    const angle = (2 * Math.PI * i) / 48;
+                    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)] as [number, number];
+                  });
+                  const id = newDraftId();
+                  onChange([...annotations.map(toDraft), { id, class_id: activeClassId, type: "polygon", polygon: pts.map(([x, y]) => clampPoint([x, y])), source: "manual" }]);
+                  setSelectedPolygonId(id);
+                }
                 if (tool === "bbox") onChange([...annotations.map(toDraft), { id: newDraftId(), class_id: activeClassId, type: "bbox", bbox: box, source: "manual" }]);
                 if (tool === "pose" && poseConfig) {
                   const id = newDraftId();
