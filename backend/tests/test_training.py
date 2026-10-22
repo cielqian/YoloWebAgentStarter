@@ -1049,7 +1049,7 @@ def test_delete_training_record(client, tmp_path, monkeypatch):
     assert stop.status_code == 200
 
 
-def test_remote_dispatch_includes_weights_url_when_preset_available(client, monkeypatch, tmp_path):
+def test_remote_dispatch_skips_push_when_agent_has_cache(client, monkeypatch):
     from app.training.runtime import remote_nodes, remote_training
     import app.training.service as training_service_module
 
@@ -1072,7 +1072,7 @@ def test_remote_dispatch_includes_weights_url_when_preset_available(client, monk
     node = client.post("/api/training/nodes", json={"name": "gpu-01", "url": "http://gpu-01:8010", "token": "s", "enabled": True}).json()
     dataset_id, _ = prepared_dataset(client)
 
-    # 权重库为空：裸名模型不带 weights_url，也不推送
+    # 中心端无副本：不推送、无 URL，任务照常下发
     created = client.post("/api/training/tasks", json={
         "dataset_id": dataset_id, "name": "no-weight", "model": "yolov8n.pt",
         "epochs": 1, "batch_size": 1, "node_id": node["id"], "device": "cuda:0",
@@ -1089,20 +1089,21 @@ def test_remote_dispatch_includes_weights_url_when_preset_available(client, monk
         first.status = "completed"
         db.commit()
 
-    # 上传基础权重后：spec 附中心端拉取地址（agent 按需拉取并缓存）
-    uploaded = client.post("/api/weights", files={"file": ("yolov8n.pt", b"preset", "application/octet-stream")})
-    assert uploaded.status_code == 201, uploaded.text
+    # 上传基础权重且 agent 已缓存：跳过推送（agent 端 resolve 命中缓存）
+    client.post("/api/weights", files={"file": ("yolov8n.pt", b"preset", "application/octet-stream")})
+    monkeypatch.setattr(remote_training, "agent_cached_weights", lambda node: {"yolov8n.pt"})
     created2 = client.post("/api/training/tasks", json={
-        "dataset_id": dataset_id, "name": "with-weight", "model": "yolov8n.pt",
+        "dataset_id": dataset_id, "name": "cached-weight", "model": "yolov8n.pt",
         "epochs": 1, "batch_size": 1, "node_id": node["id"], "device": "cuda:0",
     })
     assert created2.status_code == 201, created2.text
     wait_for_task_status(client, created2.json()["id"], ("running",))
     assert captured["weights"] is None
-    assert captured["spec"]["weights_url"].endswith("/api/weights/file/yolov8n.pt")
+    assert "weights_url" not in captured["spec"]
 
 
-def test_weights_library_crud_and_dispatch_url(client):
+
+def test_weights_library_crud_and_push_on_dispatch(client):
     uploaded = client.post(
         "/api/weights",
         files={"file": ("yolov8n.pt", b"fake-weight-bytes", "application/octet-stream")},
@@ -1122,7 +1123,7 @@ def test_weights_library_crud_and_dispatch_url(client):
     assert downloaded.status_code == 200
     assert downloaded.content == b"fake-weight-bytes"
 
-    # 裸名模型下发：spec 附带中心端拉取地址，而非推送上传
+    # 裸名模型下发：agent 无缓存 → 权重随任务推送
     from app.training.runtime import remote_nodes, remote_training
     import app.training.service as training_service_module
 
@@ -1143,17 +1144,18 @@ def test_weights_library_crud_and_dispatch_url(client):
         monkeypatch.setattr(training_service_module, "fetch_node_snapshot", fake_snapshot)
         monkeypatch.setattr(training_service_module, "dispatch_remote_task", fake_dispatch)
         monkeypatch.setattr(remote_training, "dispatch_remote_task", fake_dispatch)
+        monkeypatch.setattr(remote_training, "agent_cached_weights", lambda node: set())
         node = client.post("/api/training/nodes", json={"name": "gpu-01", "url": "http://gpu-01:8010", "token": "s", "enabled": True}).json()
         dataset_id, _ = prepared_dataset(client)
 
         created = client.post("/api/training/tasks", json={
-            "dataset_id": dataset_id, "name": "with-url", "model": "yolov8n.pt",
+            "dataset_id": dataset_id, "name": "push-weight", "model": "yolov8n.pt",
             "epochs": 1, "batch_size": 1, "node_id": node["id"], "device": "cuda:0",
         })
         assert created.status_code == 201, created.text
         wait_for_task_status(client, created.json()["id"], ("running",))
-        assert captured["weights"] is None
-        assert captured["spec"]["weights_url"].endswith("/api/weights/file/yolov8n.pt")
+        assert captured["weights"] is not None and captured["weights"].name == "yolov8n.pt"
+        assert "weights_url" not in captured["spec"]
     finally:
         monkeypatch.undo()
 

@@ -65,6 +65,23 @@ class DatasetCreate(BaseModel):
         return self
 
 
+class DatasetMergeStarted(BaseModel):
+    """异步合并已启动；进度与结果见 dataset.import_state。"""
+
+    dataset: "DatasetResponse"
+
+
+class DatasetMergeResult(BaseModel):
+    """Yolo 压缩包合并进已有数据集的结果。"""
+
+    dataset: "DatasetResponse"
+    imported_images: int
+    imported_annotations: int
+    created_classes: int
+    skipped_images: int
+    split_counts: dict[str, int] = Field(default_factory=dict)
+
+
 class DatasetImportStarted(BaseModel):
     """wait=false 的异步导入：占位数据集已创建，进度见 dataset.import_state。"""
 

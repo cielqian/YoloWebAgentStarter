@@ -9,6 +9,7 @@ and final artifacts back into the managed training directory.
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 import time
 import zipfile
@@ -201,16 +202,34 @@ def _mapped_metrics(raw: dict[str, Any]) -> dict[str, float]:
 
 
 def _append_new_logs(node: dict[str, Any], task: TrainingTask) -> None:
+    """增量镜像 agent 日志。
+
+    偏移量用独立的 sidecar 计数文件维护：train.log 里还混有后端自己写入的
+    下发/终态消息，若直接用本地行数当 after，会跳过 agent 日志的开头几行
+    （恰是权重拉取记录）。
+    """
     if not task.logs_path:
         return
     store = TrainingLogStore(task.logs_path)
-    local_count = store.line_count()
-    payload = fetch_task_logs(node, task.id, after=local_count)
-    if int(payload.get("line_count") or 0) < local_count:
-        return
+    counter_path = Path(task.logs_path).with_suffix(".agent-count")
+    mirrored = 0
+    if counter_path.is_file():
+        try:
+            mirrored = int(counter_path.read_text(encoding="utf-8").strip() or 0)
+        except ValueError:
+            mirrored = 0
+    payload = fetch_task_logs(node, task.id, after=mirrored)
+    remote_count = int(payload.get("line_count") or 0)
+    if remote_count < mirrored:
+        # agent 侧任务被重建，从头镜像
+        mirrored = 0
+        payload = fetch_task_logs(node, task.id, after=0)
+        remote_count = int(payload.get("line_count") or 0)
     new_logs = str(payload.get("logs") or "")
     if new_logs.strip():
         store.append(new_logs)
+    if remote_count != mirrored:
+        counter_path.write_text(str(remote_count), encoding="utf-8")
 
 
 def sync_remote_task(session: Session, storage: Storage, settings: Settings, task: TrainingTask, unreachable_since: dict[str, float]) -> None:
@@ -259,6 +278,7 @@ def sync_remote_task(session: Session, storage: Storage, settings: Settings, tas
             error = str(status.get("error") or "") or ("Training stopped by user." if remote_status == "stopped" else "远程训练失败。")
             _salvage_checkpoints(storage, node, task, status)
             _finalize(session, task, remote_status, error)
+            _cleanup_after_terminal(node, storage, task)
     session.commit()
 
 
@@ -301,6 +321,7 @@ def _complete_remote_task(session: Session, storage: Storage, node: dict[str, An
         return
     write_training_summary(task, task.dataset)
     TrainingLogStore(task.logs_path or "train.log").append(f"Registered {len(registered)} model artifacts from remote node.")
+    _cleanup_after_terminal(node, storage, task)
     notify_training_status("completed", task)
 
 
@@ -351,14 +372,41 @@ def resolve_dispatch_weights(storage: Storage, task: TrainingTask) -> Path | Non
     return None
 
 
-def preset_weight_url(settings: Settings, storage: Storage, task: TrainingTask) -> str | None:
-    """裸名基础权重：中心端 data/weights 有副本时，给 agent 一个按需拉取地址。"""
+def agent_cached_weights(node: dict[str, Any]) -> set[str]:
+    """查询 agent 已缓存的基础权重名；旧版 agent（无该接口）视为无缓存。"""
+    try:
+        with httpx.Client(timeout=POLL_TIMEOUT_SECONDS) as client:
+            response = client.get(f"{_base(node)}/weights", headers=_headers(node))
+        if response.status_code != 200:
+            return set()
+        values = response.json().get("weights")
+        return {str(item) for item in values} if isinstance(values, list) else set()
+    except (httpx.HTTPError, ValueError):
+        return set()
+
+
+def preset_weight_file(storage: Storage, task: TrainingTask) -> Path | None:
+    """裸名基础权重：中心端 data/weights 有副本时随任务推送（不依赖 agent 回连）。"""
     stem = Path(task.model_name or "").name
     if not stem or Path(task.model_path or "").is_absolute():
         return None
-    if (storage.data_dir / "weights" / stem).is_file():
-        return f"{settings.backend_base_url}/api/weights/file/{stem}"
-    return None
+    candidate = storage.data_dir / "weights" / stem
+    return candidate if candidate.is_file() else None
+
+
+def _cleanup_after_terminal(node: dict[str, Any] | None, storage: Storage, task: TrainingTask) -> None:
+    """终态清理：删除 agent 上的任务工作区（数据集副本+产物已回收），并清后端侧数据集导出目录。"""
+    if node is not None:
+        delete_remote_task(node, task.id)
+    export = str(task.export_path or "")
+    if not export:
+        return
+    try:
+        path = storage.managed_training_path(export)
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+    except Exception:  # noqa: BLE001 - 清理失败不影响状态流转
+        logger.warning("清理任务 %s 的数据集导出失败", task.id)
 
 
 def spec_from_task(task: TrainingTask) -> dict[str, Any]:
@@ -394,13 +442,12 @@ def dispatch_task_from_row(session: Session, storage: Storage, node: dict[str, A
         _finalize(session, task, "failed", "排队任务的数据集导出已丢失，请重试该任务。")
         return False
     spec = spec_from_task(task)
-    if settings is not None:
-        weights_url = preset_weight_url(settings, storage, task)
-        if weights_url:
-            spec["weights_url"] = weights_url
     archive = storage.tmp_dir / f"{task.id}-dataset.zip"
     zip_export_dir(export_root, archive)
     weights_path = resolve_dispatch_weights(storage, task)
+    preset = preset_weight_file(storage, task)
+    if weights_path is None and preset is not None and preset.name not in agent_cached_weights(node):
+        weights_path = preset
     try:
         dispatch_remote_task(node, spec, archive, weights_path)
     except RemoteTrainingError as exc:
@@ -529,6 +576,10 @@ def _dispatch_flow(session_factory: sessionmaker[Session], storage: Storage, set
         node = find_node(settings, node_id)
         if node is None:
             _dispatching_update(session_factory, task_id, require_status=None, status="failed", error_message="训练节点已被删除，数据下发中止。", finished_at=utc_now())
+            with session_factory() as session:
+                row = session.get(TrainingTask, task_id)
+                if row is not None:
+                    _cleanup_after_terminal(None, storage, row)
             return
 
         # 打包后复查占用：被占用则转入排队队列，由调度器接管（复用已导出的目录）。
@@ -548,10 +599,12 @@ def _dispatch_flow(session_factory: sessionmaker[Session], storage: Storage, set
                 return
             spec = spec_from_task(row)
             weights_path = resolve_dispatch_weights(storage, row)
-            weights_url = preset_weight_url(settings, storage, row)
-            if weights_url:
-                spec["weights_url"] = weights_url
-            elif weights_path is None and not Path(row.model_path or "").is_absolute():
+            preset = preset_weight_file(storage, row)
+            if preset is not None and weights_path is None:
+                # agent 已缓存则不重复推送；未缓存（或旧版 agent）随任务推送
+                if preset.name not in agent_cached_weights(node):
+                    weights_path = preset
+            elif preset is None and weights_path is None and not Path(row.model_path or "").is_absolute():
                 TrainingLogStore(storage.training_task_dir(task_id) / "train.log").append(
                     f"提示：中心端基础权重库没有 {row.model_name}，训练节点需自行获取；"
                     "请在「设置 → 基础权重」上传后重试。"

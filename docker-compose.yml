@@ -3,6 +3,8 @@ services:
     build: ./backend
     image: yolowebagent-starter-backend
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     environment:
       YWA_HOST: 0.0.0.0
       YWA_PORT: "8000"
@@ -13,6 +15,8 @@ services:
       YWA_SAM_DEVICE: auto
       # 本地 SAM 权重（远程服务不可用时的回退），文件名不同的话改这里
       YWA_SAM_MODEL: /app/models/sam_b.pt
+      # 训练节点上的 agent 回连管理端拉取基础权重用的地址（agent 能访问的本机/容器地址）
+      YWA_BACKEND_BASE_URL: http://10.11.107.94:8000
       # 需要覆盖其他 YWA_* 配置时，可改用 env_file: ./backend/.env
     volumes:
       - ywa-data:/app/data

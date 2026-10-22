@@ -23,6 +23,8 @@ from app.core.schemas import (
     DatasetCreate,
     DatasetFtpImportCreate,
     DatasetImportStarted,
+    DatasetMergeResult,
+    DatasetMergeStarted,
     DatasetDetailResponse,
     DatasetResponse,
     DatasetUpdate,
@@ -53,8 +55,8 @@ from app.core.storage import Storage
 from app.ftp.service import FtpService
 from app.core.task_types import TaskType
 from app.dataset.annotation.service import list_annotations, replace_annotations
-from app.dataset.import_runner import request_cancel, run_async_import
-from app.dataset.exchange.yolo import YoloArchiveLimits, export_dataset, import_dataset
+from app.dataset.import_runner import request_cancel, run_async_import, run_async_merge
+from app.dataset.exchange.yolo import YoloArchiveLimits, export_dataset, import_dataset, merge_yolo_into_dataset
 from app.dataset.exchange.coco import export_coco, import_coco
 from app.dataset.quality.schemas import DatasetQualityReport
 from app.dataset.quality.service import DatasetQualityService
@@ -365,13 +367,37 @@ def cancel_dataset_import(
     session: Session = Depends(get_session),
 ) -> DatasetDetailResponse:
     dataset = get_dataset(session, dataset_id)
-    if dataset.import_state != "importing":
-        raise ValidationError("import_not_running", "该数据集当前没有进行中的导入。")
+    if dataset.import_state not in ("importing", "merging"):
+        raise ValidationError("import_not_running", "该数据集当前没有进行中的导入或合并。")
     request_cancel(dataset_id)
     dataset.import_message = "正在停止导入…"
     session.commit()
     session.refresh(dataset)
     return get_dataset_detail(dataset_id, session)
+
+
+@router.post("/{dataset_id}/images/upload-yolo", response_model=DatasetMergeStarted, status_code=201)
+async def merge_yolo_archive_into_dataset(
+    dataset_id: str,
+    file: UploadFile = File(...),
+    default_split: SplitName = Form(default="train"),
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
+) -> DatasetMergeStarted:
+    """向已有数据集异步合并标准 YOLO 压缩包；立即返回，进度见 dataset.import_state=merging。"""
+    dataset = get_dataset(session, dataset_id)
+    if dataset.import_state in ("importing", "merging"):
+        raise ValidationError("import_already_running", "该数据集已有进行中的导入/合并任务。")
+    content = await _read_upload(file, settings.max_upload_bytes)
+    dataset.import_state = "merging"
+    dataset.import_progress = 0.0
+    dataset.import_message = "正在合并 YOLO 压缩包…"
+    session.commit()
+    session.refresh(dataset)
+    run_async_merge(request.app.state.database.session_factory, storage, dataset_id, content)
+    return DatasetMergeStarted(dataset=_dataset_responses(session, [dataset])[0])
 
 
 @router.get("/{dataset_id}", response_model=DatasetDetailResponse)

@@ -83,3 +83,13 @@ def test_agent_resolves_base_weight_from_cache_and_center(tmp_path, monkeypatch)
         assert resolved2.endswith("yolov8s.pt") and tmp_path.as_posix() in resolved2
     finally:
         sys.modules.pop("ywa_agent_under_test", None)
+
+
+def test_agent_accepts_pose_task_type():
+    agent = _load_agent()
+    try:
+        agent.task_manager.create({"task_id": "t-pose-check", "task_type": "pose", "model": "yolov8n-pose.pt"})
+        assert agent.task_manager.tasks["t-pose-check"]["spec"]["task_type"] == "pose"
+    finally:
+        agent.task_manager.delete("t-pose-check")
+        sys.modules.pop("ywa_agent_under_test", None)

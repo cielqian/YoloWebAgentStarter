@@ -828,3 +828,73 @@ def test_yolo_import_rejects_severely_overflowing_bbox_with_context(client):
     message = response.json()["error"]["message"]
     assert "labels/train/object.txt" in message
     assert "image 100x80" in message
+
+
+def _merge_zip() -> bytes:
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("data.yaml", "names: [cat, dog]\n")
+        zf.writestr("images/train/cat1.png", png_bytes("#aa1122"))
+        zf.writestr("labels/train/cat1.txt", "0 0.5 0.5 0.4 0.4\n")
+        zf.writestr("images/val/dog1.png", png_bytes("#2233aa"))
+        zf.writestr("labels/val/dog1.txt", "1 0.4 0.4 0.2 0.2\n")
+    return archive.getvalue()
+
+
+def _wait_merge_settled(client, dataset_id: str) -> dict:
+    import time as timelib
+
+    for _ in range(100):
+        body = client.get(f"/api/datasets/{dataset_id}").json()
+        state = body.get("import_state")
+        if state != "merging":
+            return body
+        timelib.sleep(0.05)
+    raise AssertionError(f"merge did not settle, last state: {body.get('import_state')} {body.get('import_message')}")
+
+
+def test_merge_yolo_zip_into_existing_dataset(client):
+    dataset_id = create_dataset(client)
+    created = client.post(f"/api/datasets/{dataset_id}/classes", json={"name": "cat"})
+    assert created.status_code == 201, created.text
+
+    started = client.post(
+        f"/api/datasets/{dataset_id}/images/upload-yolo",
+        files={"file": ("merge.zip", _merge_zip(), "application/zip")},
+    )
+    assert started.status_code == 201, started.text
+    assert started.json()["dataset"]["import_state"] == "merging"
+
+    settled = _wait_merge_settled(client, dataset_id)
+    assert settled["import_state"] is None, settled.get("import_message")
+    assert settled["image_count"] == 2
+    classes = client.get(f"/api/datasets/{dataset_id}/classes").json()
+    assert sorted(item["name"] for item in classes) == ["cat", "dog"]
+
+    # 同名图片再次合并：全部跳过，不产生重复
+    again = client.post(
+        f"/api/datasets/{dataset_id}/images/upload-yolo",
+        files={"file": ("merge.zip", _merge_zip(), "application/zip")},
+    )
+    assert again.status_code == 201, again.text
+    settled2 = _wait_merge_settled(client, dataset_id)
+    assert settled2["import_state"] is None
+    assert settled2["image_count"] == 2
+
+
+def test_merge_failure_marks_dataset_but_keeps_it_usable(client):
+    dataset_id = create_dataset(client)
+    bad = io.BytesIO()
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("annotations.json", "{}")
+    started = client.post(
+        f"/api/datasets/{dataset_id}/images/upload-yolo",
+        files={"file": ("bad.zip", bad.getvalue(), "application/zip")},
+    )
+    assert started.status_code == 201, started.text
+    settled = _wait_merge_settled(client, dataset_id)
+    assert settled["import_state"] == "merge_failed"
+    assert settled["import_message"]
+    # 数据集本身仍可用：可继续新增类别
+    ok = client.post(f"/api/datasets/{dataset_id}/classes", json={"name": "still-alive"})
+    assert ok.status_code == 201, ok.text

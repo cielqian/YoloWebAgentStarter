@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """YWA Compute Agent — 零依赖算力巡检 + 远程训练执行服务（仅用 Python 标准库）。
 
+支持任务类型：detect / segment / obb / classify / pose。
 适配离线内网服务器：不需要 pip install 任何包。torch / torch_npu 若在
 当前 Python 环境中可用则自动探测 CUDA / NPU 设备，否则只上报 CPU。
 训练任务通过 ultralytics 子进程执行（要求该 Python 环境已装 ultralytics）。
@@ -32,13 +33,13 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.3.2"
+AGENT_VERSION = "0.3.4"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
 WEIGHTS_CACHE = Path(__file__).resolve().parent / "weights-cache"
 MAX_BODY_BYTES = 32 * 1024 * 1024 * 1024
-_TASK_TYPES = {"detect", "segment", "obb", "classify"}
+_TASK_TYPES = {"detect", "segment", "obb", "classify", "pose"}
 _TASK_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 _SAFE_FILE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _EPOCH_LINE = re.compile(r"^\s*(\d+)\s*/\s*(\d+)\s")
@@ -505,6 +506,14 @@ class TaskManager:
         weights_candidate = workspace / "weights" / Path(model_ref).name
         if weights_candidate.is_file():
             model_ref = str(weights_candidate)
+            # 后端推送的基础权重顺手入缓存，后续任务无需重复推送
+            try:
+                WEIGHTS_CACHE.mkdir(parents=True, exist_ok=True)
+                cached = WEIGHTS_CACHE / weights_candidate.name
+                if not cached.is_file():
+                    shutil.copy2(weights_candidate, cached)
+            except OSError:
+                pass
         else:
             model_ref = str(self.resolve_base_weight(model_ref, spec, log))
         args = [

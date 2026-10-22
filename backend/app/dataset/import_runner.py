@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
@@ -38,15 +39,72 @@ def request_cancel(dataset_id: str) -> None:
         event.set()
 
 
-def _update(session_factory: sessionmaker[Session], dataset_id: str, **fields: Any) -> None:
+def _update(session_factory: sessionmaker[Session], dataset_id: str, *, require_status: tuple[str, ...] | None = None, **fields: Any) -> None:
     with session_factory() as session:
         dataset = session.get(Dataset, dataset_id)
         if dataset is None:
+            return
+        if require_status and dataset.import_state not in require_status:
             return
         for key, value in fields.items():
             setattr(dataset, key, value)
         session.commit()
 
+
+
+def run_async_merge(
+    session_factory: sessionmaker[Session],
+    storage: Storage,
+    dataset_id: str,
+    content: bytes,
+) -> None:
+    """后台把 YOLO 压缩包合并进已有数据集；状态机 merging → (None|merge_failed|merge_stopped)。"""
+    from app.dataset.exchange.yolo import merge_yolo_into_dataset
+
+    cancel_event = threading.Event()
+    _cancel_events[dataset_id] = cancel_event
+
+    def job() -> None:
+        try:
+            # 进度由合并事务内部分段提交更新（SQLite 单写者，跨事务写同一行会死锁）
+            with session_factory() as session:
+                from app.core.models import Dataset as DatasetModel
+
+                dataset = session.get(DatasetModel, dataset_id)
+                if dataset is None:
+                    return
+                merge_yolo_into_dataset(
+                    session, storage, dataset, content,
+                    should_cancel=cancel_event.is_set,
+                )
+            if cancel_event.is_set():
+                _update(session_factory, dataset_id, import_state="merge_stopped", import_progress=0.0, import_message="合并已停止。")
+            else:
+                # 合并成功：数据集恢复正常可用状态，不留导入标记
+                _update(session_factory, dataset_id, import_state=None, import_progress=0.0, import_message=None)
+        except Exception as exc:  # noqa: BLE001 - 合并失败不能影响数据集可用性
+            if cancel_event.is_set():
+                _update(session_factory, dataset_id, import_state="merge_stopped", import_progress=0.0, import_message="合并已停止。")
+            else:
+                logger.warning("数据集 %s 合并 YOLO 压缩包失败：%s", dataset_id, exc)
+                _update(session_factory, dataset_id, import_state="merge_failed", import_message=str(exc))
+        finally:
+            _cleanup_cancel(dataset_id)
+
+    threading.Thread(target=job, daemon=True, name=f"dataset-merge-{dataset_id}").start()
+
+
+def recover_interrupted_imports(session_factory: sessionmaker[Session]) -> None:
+    """服务重启后清理中断的合并任务（线程已丢失）。"""
+    from app.core.models import Dataset as DatasetModel
+
+    with session_factory() as session:
+        datasets = list(session.scalars(select(DatasetModel).where(DatasetModel.import_state == "merging")))
+        for dataset in datasets:
+            dataset.import_state = "merge_failed"
+            dataset.import_message = "服务重启导致合并中断，请重新上传压缩包。"
+        if datasets:
+            session.commit()
 
 def _cleanup_cancel(dataset_id: str) -> None:
     _cancel_events.pop(dataset_id, None)

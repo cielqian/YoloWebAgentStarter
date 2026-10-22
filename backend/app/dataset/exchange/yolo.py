@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 import yaml
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import ValidationError
@@ -510,6 +510,179 @@ def export_dataset(session: Session, storage: Storage, dataset_id: str) -> tuple
             archive.writestr(f"labels/{image.split}/{export_stem}.txt", "\n".join(label_lines) + ("\n" if label_lines else ""))
     return output.getvalue(), f"{dataset.name.replace(' ', '_') or 'dataset'}.zip"
 
+
+_CLASS_COLORS = ("#22c55e", "#3157d5", "#f97316", "#9b5de5", "#0ea5e9", "#ef4444", "#14b8a6", "#eab308")
+
+
+def merge_yolo_into_dataset(
+    session: Session,
+    storage: Storage,
+    dataset: Dataset,
+    payload: bytes,
+    default_split: SplitName = "train",
+    limits: YoloArchiveLimits = YoloArchiveLimits(),
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict:
+    """把标准 YOLO 数据集压缩包合并进已有数据集：图片追加、类别按名称映射（缺则创建）、标签解析为标注。
+
+    同名图片跳过。进度写在 dataset.import_progress 并分段提交（每 25 张），
+    失败/停止只回滚未提交的分段，已提交部分保留——重试时同名图片自动跳过。
+    """
+    archive, entries = _archive_entries(payload, limits)
+    try:
+        image_entries = {name: info for name, info in entries.items() if PurePosixPath(name).suffix.lower() in SUPPORTED_IMAGE_SUFFIXES}
+        if not image_entries:
+            raise ValidationError("no_images_in_archive", "The YOLO archive does not contain supported images.")
+        labels = {
+            _relative_key(name, "labels"): info
+            for name, info in entries.items()
+            if PurePosixPath(name).suffix.lower() == ".txt" and ("labels" in PurePosixPath(name).parts or PurePosixPath(name).name != "classes.txt")
+        }
+        task_type = dataset.task_type
+        if task_type == "classify":
+            folder_classes = {_class_for_image(member_name) for member_name in image_entries}
+            if None in folder_classes:
+                raise ValidationError("invalid_classification_layout", "Classification archives must use train|val|test/<class-name>/<image> paths.")
+            names = sorted(str(name) for name in folder_classes)
+        else:
+            names = _names_from_yaml(archive, entries)
+            max_class_index = -1
+            if not names:
+                for info in labels.values():
+                    for line in _read_archive_member(archive, info, _MAX_LABEL_BYTES).decode("utf-8", errors="ignore").splitlines():
+                        if line.strip():
+                            try:
+                                max_class_index = max(max_class_index, int(line.split()[0]))
+                            except (ValueError, IndexError):
+                                pass
+                names = [f"class_{index}" for index in range(max_class_index + 1)]
+        if not names:
+            raise ValidationError("no_classes_in_archive", "The YOLO archive does not define any classes.")
+
+        pose_kpt_shape: tuple[int, int] | None = None
+        if task_type == "pose":
+            config = dataset.pose_config_json or {}
+            if config.get("kpt_count") and config.get("kpt_dim"):
+                pose_kpt_shape = (int(config["kpt_count"]), int(config["kpt_dim"]))
+            else:
+                pose_kpt_shape = _pose_shape_from_yaml(archive, entries) or _infer_pose_shape(archive, labels)
+            if pose_kpt_shape is None:
+                raise ValidationError("pose_shape_missing", "数据集未配置关键点骨架，且压缩包无法推断 kpt_shape。")
+
+        existing_classes = {item.name: item for item in session.scalars(select(ClassLabel).where(ClassLabel.dataset_id == dataset.id))}
+        next_index = session.scalar(select(func.max(ClassLabel.class_index)).where(ClassLabel.dataset_id == dataset.id))
+        next_index = (next_index if next_index is not None else -1) + 1
+        class_ids: dict[int, str] = {}
+        created_classes = 0
+        for index, name in enumerate(names):
+            existing = existing_classes.get(name)
+            if existing is not None:
+                class_ids[index] = existing.id
+                continue
+            created = ClassLabel(
+                id=new_id("cls"),
+                dataset_id=dataset.id,
+                class_index=next_index,
+                name=name,
+                color=_CLASS_COLORS[next_index % len(_CLASS_COLORS)],
+            )
+            session.add(created)
+            existing_classes[name] = created
+            class_ids[index] = created.id
+            next_index += 1
+            created_classes += 1
+        class_ids_by_name = {name: item.id for name, item in existing_classes.items()}
+        session.flush()
+
+        existing_filenames = {
+            row[0]
+            for row in session.execute(select(ImageItem.file_name).where(ImageItem.dataset_id == dataset.id))
+        }
+        staged_paths: list[tuple[str, str]] = []
+        imported_images = 0
+        imported_annotations = 0
+        skipped_images = 0
+        split_counts: dict[str, int] = {}
+        try:
+            total_members = len(image_entries)
+            processed = 0
+            for member_name, info in sorted(image_entries.items()):
+                if should_cancel is not None and should_cancel():
+                    raise ValidationError("import_cancelled", "合并已停止。")
+                file_name = PurePosixPath(member_name).name
+                processed += 1
+                if file_name in existing_filenames:
+                    skipped_images += 1
+                    continue
+                image_id = new_id("img")
+                storage_name = storage.safe_storage_name(file_name, image_id)
+                try:
+                    with archive.open(info) as source:
+                        width, height = storage.write_image_stream(dataset.id, storage_name, source, max_bytes=limits.max_member_bytes)
+                except zipfile.BadZipFile as exc:
+                    raise ValidationError("invalid_yolo_archive", "The YOLO archive contains a corrupt image member.") from exc
+                staged_paths.append((dataset.id, storage_name))
+                split = _split_for_image(member_name, default_split)
+                image = ImageItem(
+                    id=image_id,
+                    dataset_id=dataset.id,
+                    file_name=file_name,
+                    storage_name=storage_name,
+                    width=width,
+                    height=height,
+                    split=split,
+                    status="unannotated",
+                )
+                session.add(image)
+                session.flush()
+                if task_type == "classify":
+                    class_name = _class_for_image(member_name)
+                    class_id = class_ids_by_name.get(class_name or "")
+                    if class_id is None:
+                        raise ValidationError("invalid_classification_layout", "Image class folder is not defined by the archive.")
+                    parsed = [Annotation(id=new_id("ann"), class_id=class_id, type="classify", source="imported")]
+                else:
+                    label_info = _label_for_image(member_name, labels)
+                    label = _read_archive_member(archive, label_info, _MAX_LABEL_BYTES) if label_info else None
+                    parsed = _parse_yolo_labels(
+                        label,
+                        task_type,
+                        width,
+                        height,
+                        class_ids,
+                        source_name=getattr(label_info, "filename", None) or member_name,
+                        pose_kpt_shape=pose_kpt_shape,
+                    )
+                for annotation in parsed:
+                    annotation.image_id = image.id
+                    annotation.dataset_id = dataset.id
+                session.add_all(parsed)
+                image.status = "annotated" if parsed else "unannotated"
+                imported_annotations += len(parsed)
+                imported_images += 1
+                existing_filenames.add(file_name)
+                split_counts[split] = split_counts.get(split, 0) + 1
+                dataset.import_progress = round(min(10.0 + 80.0 * processed / max(total_members, 1), 90.0), 1)
+                dataset.import_message = f"正在合并 YOLO 压缩包… {processed}/{total_members}"
+                if processed % 25 == 0:
+                    session.commit()
+                    staged_paths.clear()
+            refresh_dataset_counts(session, dataset.id)
+            session.commit()
+        except Exception:
+            session.rollback()
+            for stored_dataset_id, storage_name in staged_paths:
+                storage.image_path(stored_dataset_id, storage_name).unlink(missing_ok=True)
+            raise
+        return {
+            "imported_images": imported_images,
+            "imported_annotations": imported_annotations,
+            "created_classes": created_classes,
+            "skipped_images": skipped_images,
+            "split_counts": split_counts,
+        }
+    finally:
+        archive.close()
 
 def export_dataset_directory(
     session: Session,
