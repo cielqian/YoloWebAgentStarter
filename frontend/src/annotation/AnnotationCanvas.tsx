@@ -21,6 +21,8 @@ interface Props {
   image: ImageItem;
   annotations: Annotation[];
   activeClassId: string;
+  /** 当前绘制类别的颜色：绘制中的形状用它着色，未提供时回退橙色。 */
+  activeClassColor?: string;
   selectedAnnotationId?: string | null;
   onSelectAnnotation?: (id: string | null) => void;
   taskType: TaskType;
@@ -54,7 +56,7 @@ function panModifierActive(event: { ctrlKey?: boolean; metaKey?: boolean }): boo
   return Boolean(event.ctrlKey || event.metaKey);
 }
 
-export function AnnotationCanvas({ image, annotations, activeClassId, selectedAnnotationId, onSelectAnnotation, taskType, onChange, onSamBox, onSamPoints, samBusy = false, samCapabilities, poseConfig, hiddenAnnotationIds, readOnly = false }: Props) {
+export function AnnotationCanvas({ image, annotations, activeClassId, activeClassColor, selectedAnnotationId, onSelectAnnotation, taskType, onChange, onSamBox, onSamPoints, samBusy = false, samCapabilities, poseConfig, hiddenAnnotationIds, readOnly = false }: Props) {
   const [imageElement, setImageElement] = useState<HTMLImageElement>();
   const [tool, setTool] = useState<DrawingTool>(() => taskTool(taskType));
   const [dragStart, setDragStart] = useState<[number, number]>();
@@ -150,6 +152,7 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
   }, []);
 
   const scale = useMemo(() => ({ x: displaySize.width / image.width, y: displaySize.height / image.height }), [displaySize, image]);
+  const draftColor = activeClassColor || "#f97316";
   const effectiveSelectedAnnotationId = selectedAnnotationId !== undefined ? selectedAnnotationId : selectedObbId ?? selectedBboxId ?? selectedPolygonId;
   const selectedObb = annotations.find((item) => item.id === effectiveSelectedAnnotationId && item.type === "obb");
   const selectedBbox = annotations.find((item) => item.id === effectiveSelectedAnnotationId && (item.type === "bbox" || item.type === "pose"));
@@ -532,15 +535,15 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
             <Layer x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom}>
               <KonvaImage image={imageElement} width={displaySize.width} height={displaySize.height} listening={false} />
               {orderedAnnotations.map((annotation) => annotation.type === "obb" && annotation.obb ? <EditableObb key={annotation.id} annotation={annotation} stageObb={toStageObb(annotation.obb)} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { obbRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedObbId(annotation.id); setSelectedBboxId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier || readOnly} onChange={(updated) => replaceObb(annotation.id, updated)} /> : annotation.type === "pose" && annotation.bbox ? <PoseShape key={annotation.id} annotation={annotation} scale={scale} zoom={zoom} selected={annotation.id === effectiveSelectedAnnotationId} panModifier={panModifier || readOnly} skeleton={poseConfig?.skeleton ?? null} kptNames={poseConfig?.kpt_names ?? null} setNodeRef={(node) => { bboxRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedBboxId(annotation.id); setSelectedObbId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} onChange={(updated) => replaceBbox(annotation.id, updated)} onMoveKeypoint={(index, point) => movePoseKeypoint(annotation.id, index, point)} onToggleKeypoint={(index) => togglePoseKeypoint(annotation.id, index)} /> : annotation.type === "bbox" && annotation.bbox ? <EditableBbox key={annotation.id} annotation={annotation} scale={scale} selected={annotation.id === effectiveSelectedAnnotationId} setNodeRef={(node) => { bboxRefs.current[annotation.id] = node; }} onSelect={() => { setSelectedBboxId(annotation.id); setSelectedObbId(undefined); setSelectedPolygonId(undefined); onSelectAnnotation?.(annotation.id); }} panModifier={panModifier || readOnly} onChange={(updated) => replaceBbox(annotation.id, updated)} /> : annotation.type === "polygon" && annotation.polygon && annotation.id === selectedPolygon?.id ? <EditablePolygon key={annotation.id} annotation={annotation} scale={scale} zoom={zoom} onSelect={() => { setSelectedPolygonId(annotation.id); setSelectedObbId(undefined); setSelectedBboxId(undefined); onSelectAnnotation?.(annotation.id); }} onMoveVertex={(index, point) => movePolygonVertex(annotation.id, index, point)} onDeleteVertex={(index) => deletePolygonVertex(annotation.id, index)} onInsertVertex={(point) => insertPolygonVertex(annotation.id, point)} panModifier={panModifier || readOnly} /> : <AnnotationShape key={annotation.id} annotation={annotation} scale={scale} onSelect={() => { setSelectedPolygonId(annotation.type === "polygon" ? annotation.id : undefined); onSelectAnnotation?.(annotation.id); }} />)}
-              {dragStart && dragEnd && tool !== "obb" && <Rect {...displayBox(normalizeBBox(dragStart, dragEnd))} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
-              {draftObb && <Rect x={draftObb.x + draftObb.width / 2} y={draftObb.y + draftObb.height / 2} width={draftObb.width} height={draftObb.height} offsetX={draftObb.width / 2} offsetY={draftObb.height / 2} rotation={angle} stroke="#f97316" strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
+              {dragStart && dragEnd && tool !== "obb" && <Rect {...displayBox(normalizeBBox(dragStart, dragEnd))} stroke={draftColor} strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
+              {draftObb && <Rect x={draftObb.x + draftObb.width / 2} y={draftObb.y + draftObb.height / 2} width={draftObb.width} height={draftObb.height} offsetX={draftObb.width / 2} offsetY={draftObb.height / 2} rotation={angle} stroke={draftColor} strokeWidth={2} strokeScaleEnabled={false} dash={[6, 4]} />}
               {polygonPoints.length > 0 && (
                 <>
-                  <Line points={[...polygonPoints.flat(), ...(hoverPoint ? hoverPoint : [])]} stroke="rgba(249,115,22,.55)" strokeWidth={1.5} strokeScaleEnabled={false} closed={false} dash={[6, 4]} />
+                  <Line points={[...polygonPoints.flat(), ...(hoverPoint ? hoverPoint : [])]} stroke={`${draftColor}8c`} strokeWidth={1.5} strokeScaleEnabled={false} closed={false} dash={[6, 4]} />
                   <Line
                     points={[...polygonPoints.flat(), ...(hoverPoint ? hoverPoint : []), polygonPoints[0][0], polygonPoints[0][1]]}
-                    fill="rgba(249,115,22,.22)"
-                    stroke="rgba(249,115,22,.35)"
+                    fill={`${draftColor}38`}
+                    stroke={`${draftColor}59`}
                     strokeWidth={1}
                     strokeScaleEnabled={false}
                     closed
@@ -556,7 +559,7 @@ export function AnnotationCanvas({ image, annotations, activeClassId, selectedAn
                     y={point[1]}
                     radius={snapped ? Math.max(7 / zoom, 3) : Math.max(3.5 / zoom, 1.5)}
                     fill={snapped ? "#22c55e" : "#fff"}
-                    stroke={snapped ? "#22c55e" : "#f97316"}
+                    stroke={snapped ? "#22c55e" : draftColor}
                     strokeWidth={1.5}
                     strokeScaleEnabled={false}
                     draggable={!panModifier}
