@@ -8,7 +8,7 @@ import type { SourceImage } from "../types";
 
 vi.mock("../api/client", () => {
   const dataset = { id: "sd-1", name: "路口白天", description: null, image_count: 3, tag_count: 2, created_at: "", updated_at: "" };
-  const tagA = { id: "stag-a", name: "白天", color: "#3157d5", image_count: 0 };
+  const tagA = { id: "stag-a", name: "白天", color: "#3157d5", values: ["晴", "阴"], image_count: 0 };
   const tagB = { id: "stag-b", name: "夜间", color: "#22c55e", image_count: 0 };
   const image = (id: string, name: string): SourceImage => ({
     id, file_name: name, width: 60, height: 40, size_bytes: 1024, source_type: "upload", tags: [],
@@ -88,7 +88,7 @@ describe("DataSourceView batch tags and upload tags", () => {
 
     await clickButton("+ 白天");
     await clickButton("关联 1 个标签");
-    expect(api.batchUpdateSourceImageTags).toHaveBeenCalledWith("sd-1", ["simg-1", "simg-2"], ["stag-a"], false, {});
+    expect(api.batchUpdateSourceImageTags).toHaveBeenCalledWith("sd-1", ["simg-1", "simg-2"], ["stag-a"], false, { "stag-a": "晴" });
 
     await clickButton("取消关联");
     await clickButton("－ 白天");
@@ -160,7 +160,7 @@ describe("DataSourceView FTP picker", () => {
     await act(async () => {});
 
     await clickButton("同步整个文件夹");
-    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/cam1", recursive: true, tagIds: ["stag-a"], tagValues: {} }, expect.any(Function));
+    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/cam1", recursive: true, tagIds: ["stag-a"], tagValues: { "stag-a": "晴" } }, expect.any(Function));
   });
 
   it("imports multiple selected files across folders", async () => {

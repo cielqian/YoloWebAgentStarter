@@ -326,13 +326,20 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // 枚举标签未手动改过取值时,默认用第一个取值(与下拉框显示一致),避免"看着选了值实际没传"
+  const resolveTagValues = (pickedIds: string[], values: Record<string, string>) =>
+    Object.fromEntries(
+      tags.filter((tag) => pickedIds.includes(tag.id) && tag.values?.length).map((tag) => [tag.id, values[tag.id] ?? tag.values![0]]),
+    );
+
   const submitUpload = async () => {
     if (!pendingFiles.length) return;
     const files = pendingFiles;
     const tagIds = [...uploadTagIds];
+    const tagValues = resolveTagValues(tagIds, uploadTagValues);
     setUploadOpen(false);
     await runAction(async () => {
-      const result = await api.uploadSourceImages(dataset.id, files, tagIds, uploadTagValues);
+      const result = await api.uploadSourceImages(dataset.id, files, tagIds, tagValues);
       const tagNote = tagIds.length ? `，已附加 ${tagIds.length} 个标签` : "";
       return result.imported
         ? `已导入 ${result.imported} 张图片${tagNote}${result.invalid ? `，跳过 ${result.invalid} 个无效文件` : ""}`
@@ -353,9 +360,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     const imageIds = [...selectedIds];
     const tagIds = [...batchPickedTagIds];
     const remove = batchMode === "remove";
-    const tagValues = remove ? {} : Object.fromEntries(
-      tags.filter((tag) => tagIds.includes(tag.id) && tag.values?.length && batchValues[tag.id]).map((tag) => [tag.id, batchValues[tag.id]]),
-    );
+    const tagValues = remove ? {} : resolveTagValues(tagIds, batchValues);
     await runAction(async () => {
       await api.batchUpdateSourceImageTags(dataset.id, imageIds, tagIds, remove, tagValues);
       const names = tags.filter((tag) => tagIds.includes(tag.id)).map((tag) => tag.name).join("、");
@@ -401,7 +406,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     const tagIds = [...ftpTagIds];
     setFtpOpen(false);
     await runAction(async () => {
-      const result = await api.syncSourceFromFtp(dataset.id, { path, recursive: ftpRecursive, tagIds, tagValues: ftpTagValues }, handleSyncEvent);
+      const result = await api.syncSourceFromFtp(dataset.id, { path, recursive: ftpRecursive, tagIds, tagValues: resolveTagValues(tagIds, ftpTagValues) }, handleSyncEvent);
       const hint = result.truncated ? "；目录图片较多，已达单次同步上限，请分目录分批同步" : "";
       return `FTP 同步完成：新增 ${result.synced} 张${result.skipped ? `，跳过 ${result.skipped} 个` : ""}${hint}`;
     });
@@ -413,7 +418,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     const tagIds = [...ftpTagIds];
     setFtpOpen(false);
     await runAction(async () => {
-      const result = await api.syncSourceFromFtp(dataset.id, { path: "/", recursive: false, filePaths: files, tagIds, tagValues: ftpTagValues }, handleSyncEvent);
+      const result = await api.syncSourceFromFtp(dataset.id, { path: "/", recursive: false, filePaths: files, tagIds, tagValues: resolveTagValues(tagIds, ftpTagValues) }, handleSyncEvent);
       return `FTP 导入完成：新增 ${result.synced} 张${result.skipped ? `，跳过 ${result.skipped} 个` : ""}`;
     });
   };
