@@ -502,6 +502,20 @@ class SourceImage(Base, TimestampMixin):
     tag_links: Mapped[list["SourceImageTag"]] = relationship(back_populates="image", cascade="all, delete-orphan", order_by="SourceImageTag.tag_id")
 
 
+class TagTemplate(Base, TimestampMixin):
+    """Reusable tag library shared across source datasets; values is the enum
+    value list for two-level tags (e.g. 光线 = [强, 弱])."""
+
+    __tablename__ = "tag_templates"
+    __table_args__ = (UniqueConstraint("name", name="uq_tag_template_name"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    color: Mapped[str] = mapped_column(String(16), default="#3157d5", nullable=False)
+    values: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class SourceTag(Base, TimestampMixin):
     __tablename__ = "source_tags"
     __table_args__ = (UniqueConstraint("source_dataset_id", "name", name="uq_source_tag_dataset_name"),)

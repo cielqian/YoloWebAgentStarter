@@ -34,6 +34,7 @@ import type {
   SourceDataset,
   SourceImagePage,
   SourceTag,
+  TagTemplate,
   SystemInfo,
   RuntimeLogResponse,
   VideoImportTask,
@@ -196,6 +197,13 @@ export const api = {
     request<SourceImagePage["items"][number]>(`/api/source-datasets/${datasetId}/images/${imageId}`, json(payload, "PATCH")),
   deleteSourceImage: (datasetId: string, imageId: string) =>
     request<void>(`/api/source-datasets/${datasetId}/images/${imageId}`, { method: "DELETE" }),
+  listTagTemplates: () => request<TagTemplate[]>("/api/tag-templates"),
+  createTagTemplate: (payload: { name: string; color: string; values?: string[] | null; description?: string | null }) =>
+    request<TagTemplate>("/api/tag-templates", json(payload)),
+  updateTagTemplate: (id: string, payload: { name?: string; color?: string; values?: string[] | null; description?: string | null }) =>
+    request<TagTemplate>(`/api/tag-templates/${id}`, json(payload, "PATCH")),
+  deleteTagTemplate: (id: string) => request<void>(`/api/tag-templates/${id}`, { method: "DELETE" }),
+  syncTagTemplates: (datasetId: string) => request<TagTemplate[]>(`/api/tag-templates/sync/${datasetId}`, json({})),
   listSourceTags: (datasetId: string) => request<SourceTag[]>(`/api/source-datasets/${datasetId}/tags`),
   createSourceTag: (datasetId: string, name: string, color = "#3157d5", values?: string[] | null) =>
     request<SourceTag>(`/api/source-datasets/${datasetId}/tags`, json({ name, color, values: values ?? null })),

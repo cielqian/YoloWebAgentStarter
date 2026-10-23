@@ -61,6 +61,17 @@ export interface ClassLabel {
   updated_at: string;
 }
 
+/** 全局标签库模板：可同步到各数据源作为标签;values 为枚举取值(二级标签)。 */
+export interface TagTemplate {
+  id: string;
+  name: string;
+  color: string;
+  values?: string[] | null;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** 全局类别库条目：数据集可从中导入类别，实例分割任务会带上 SAM3 英文提示词。 */
 export interface ClassTemplate {
   id: string;

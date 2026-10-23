@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
-import type { ClassTemplate } from "../types";
+import type { ClassTemplate, TagTemplate } from "../types";
+
+type LibraryTab = "classes" | "tags";
 
 const CLASS_COLORS = [
   "#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#a855f7",
@@ -23,6 +25,25 @@ export function sam3TranslateMessage(result: { sam3_prompt: string | null; sourc
 type EditState = { id: string; name: string; color: string; sam3Prompt: string } | null;
 
 export function ClassTemplatesView() {
+  const [tab, setTab] = useState<LibraryTab>("classes");
+  return (
+    <main className="class-library-page">
+      <header className="dataset-home-header">
+        <div>
+          <h1>基础数据管理</h1>
+          <p>维护全局类别库与标签库;数据集导入类别、数据源打标签都从这里取数。标签支持枚举取值(如 光线=强/弱)。</p>
+        </div>
+      </header>
+      <div className="import-origin-toggle base-data-tabs" role="tablist" aria-label="基础数据">
+        <button type="button" role="tab" aria-selected={tab === "classes"} className={tab === "classes" ? "active" : ""} onClick={() => setTab("classes")}>类别库</button>
+        <button type="button" role="tab" aria-selected={tab === "tags"} className={tab === "tags" ? "active" : ""} onClick={() => setTab("tags")}>标签库</button>
+      </div>
+      {tab === "classes" ? <ClassLibraryPanel /> : <TagLibraryPanel />}
+    </main>
+  );
+}
+
+function ClassLibraryPanel() {
   const [templates, setTemplates] = useState<ClassTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -186,4 +207,137 @@ export function ClassTemplatesView() {
       </section>
     </div>}
   </main>;
+}
+
+const TAG_COLORS = CLASS_COLORS;
+
+function TagLibraryPanel() {
+  const [tags, setTags] = useState<TagTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState("");
+  const [color, setColor] = useState(TAG_COLORS[0]);
+  const [valuesInput, setValuesInput] = useState("");
+  const [description, setDescription] = useState("");
+  const [editState, setEditState] = useState<{ id: string; name: string; color: string; values: string; description: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TagTemplate>();
+
+  const refresh = () => api.listTagTemplates().then(setTags).catch((reason: unknown) => setError(errorMessage(reason)));
+  useEffect(() => { refresh().finally(() => setLoading(false)); }, []);
+
+  const parseValues = (raw: string) => raw.split(/[,，、\s]+/).map((item) => item.trim()).filter(Boolean);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = (editState ? editState.name : name).trim();
+    if (!trimmed) return;
+    const values = parseValues(editState ? editState.values : valuesInput);
+    setBusy(true); setError(""); setNotice("");
+    try {
+      if (editState) {
+        await api.updateTagTemplate(editState.id, { name: trimmed, color: editState.color, values: values.length ? values : null, description: (editState.description || "").trim() || null });
+        setNotice(`标签“${trimmed}”已更新`);
+      } else {
+        await api.createTagTemplate({ name: trimmed, color, values: values.length ? values : null, description: description.trim() || null });
+        setNotice(`已新增标签“${trimmed}”`);
+      }
+      setEditState(null); setShowForm(false); setName(""); setValuesInput(""); setDescription("");
+      await refresh();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally { setBusy(false); }
+  };
+
+  const remove = async (tag: TagTemplate) => {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await api.deleteTagTemplate(tag.id);
+      setNotice(`已删除标签“${tag.name}”`);
+      await refresh();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally { setBusy(false); setDeleteTarget(undefined); }
+  };
+
+  const syncAll = async () => {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const datasets = await api.listSourceDatasets();
+      for (const dataset of datasets) {
+        await api.syncTagTemplates(dataset.id);
+      }
+      setNotice(datasets.length ? `已同步到 ${datasets.length} 个数据源` : "还没有数据源,同步将在创建数据源后生效");
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <Toast kind="error" message={error} onClose={() => setError("")} />
+      <Toast kind="success" message={notice} onClose={() => setNotice("")} />
+      <div className="header-actions">
+        <button className="button" disabled={busy} onClick={() => void syncAll()} title="把标签库应用到全部数据源">同步到数据源</button>
+        <button className="button primary" onClick={() => { setShowForm((value) => !value); setEditState(null); resetTagForm(tags.length); }}>{showForm && !editState ? "收起" : "+ 新增标签"}</button>
+      </div>
+
+      {showForm || editState ? (
+        <form className="class-library-form panel" onSubmit={(event) => void submit(event)}>
+          <label><span>标签名</span><input autoFocus value={editState ? editState.name : name} placeholder="例如：光线" onChange={(event) => (editState ? setEditState({ ...editState, name: event.target.value }) : setName(event.target.value))} /></label>
+          <div className="class-library-form-row">
+            <label><span>颜色</span>
+              <div className="class-color-palette" role="radiogroup" aria-label="标签颜色">
+                {TAG_COLORS.map((item) => (
+                  <button type="button" key={item} role="radio" aria-checked={(editState ? editState.color : color) === item} className={`class-color-swatch${(editState ? editState.color : color) === item ? " selected" : ""}`} style={{ background: item }} onClick={() => (editState ? setEditState({ ...editState, color: item }) : setColor(item))} aria-label={item} />
+                ))}
+              </div>
+            </label>
+          </div>
+          <label><span>枚举取值<small>选填,逗号/顿号分隔。填写后打标时可选具体取值(如 强/弱)。</small></span><input value={editState ? editState.values : valuesInput} placeholder="例如：强, 弱" onChange={(event) => (editState ? setEditState({ ...editState, values: event.target.value }) : setValuesInput(event.target.value))} /></label>
+          <label><span>备注</span><input value={editState ? editState.description : description} placeholder="选填" onChange={(event) => (editState ? setEditState({ ...editState, description: event.target.value }) : setDescription(event.target.value))} /></label>
+          <div className="class-library-form-actions">
+            <button type="button" className="button" onClick={() => { setShowForm(false); setEditState(null); }}>取消</button>
+            <button className="button primary" type="submit" disabled={busy || !(editState ? editState.name : name).trim()}>保存</button>
+          </div>
+        </form>
+      ) : null}
+
+      {loading ? <p className="muted">正在加载标签库…</p> : tags.length ? (
+        <div className="class-library-list">
+          {tags.map((tag) => (
+            <div key={tag.id} className="class-library-row">
+              <i style={{ background: tag.color }} />
+              <div>
+                <strong>{tag.name}{tag.values?.length ? <small className="tag-values-chips">{tag.values.map((value) => <em key={value}>{value}</em>)}</small> : null}</strong>
+                {tag.description ? <small>{tag.description}</small> : null}
+              </div>
+              <div className="header-actions">
+                <button className="button" disabled={busy} onClick={() => { setEditState({ id: tag.id, name: tag.name, color: tag.color, values: (tag.values ?? []).join(", "), description: tag.description ?? "" }); setShowForm(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>编辑</button>
+                <button className="button danger" disabled={busy} onClick={() => setDeleteTarget(tag)}>删除</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : <p className="muted">标签库还是空的。新增标签(如“光线=强/弱”)后,在数据源页同步使用。</p>}
+
+      {deleteTarget && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
+          <section className="dataset-dialog" role="alertdialog" aria-modal="true">
+            <header><div><span className="eyebrow">DELETE TAG</span><h2>删除标签“{deleteTarget.name}”？</h2><p>只删除标签库模板;已同步到数据源的标签和图片上的标注不受影响。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
+            <footer>
+              <button className="button" onClick={() => setDeleteTarget(undefined)}>取消</button>
+              <button className="button danger" disabled={busy} onClick={() => void remove(deleteTarget)}>确认删除</button>
+            </footer>
+          </section>
+        </div>
+      )}
+    </>
+  );
+
+  function resetTagForm(count: number) {
+    setName(""); setColor(TAG_COLORS[count % TAG_COLORS.length]); setValuesInput(""); setDescription("");
+  }
 }

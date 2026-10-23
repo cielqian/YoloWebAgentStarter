@@ -537,6 +537,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                 <button className={tagMatch === "any" ? "active" : ""} title="包含任一所选标签即可" onClick={() => setTagMatch("any")}>或</button>
               </span>
             )}
+            <button className="button" disabled={busy} title="把「基础数据 → 标签库」同步到当前数据源" onClick={() => void runAction(async () => { const synced = await api.syncTagTemplates(dataset.id); await Promise.all([loadDetail({ quiet: true }), onChanged()]); return synced.length ? `已从标签库同步/更新 ${synced.length} 个标签` : "标签库为空,请先到「基础数据 → 标签库」维护"; })}>从标签库同步</button>
             <button className="button" disabled={busy} onClick={() => { setTagDialog({ mode: "create" }); setTagName(""); setTagColor("#3157d5"); setTagValuesInput(""); }}>＋ 新建标签</button>
           </div>
         </section>
