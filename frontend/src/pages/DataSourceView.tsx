@@ -572,7 +572,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
               <button
                 key={image.id}
                 className={`source-image-card${selectMode ? " selectable" : ""}${selectMode && isSelected ? " selected" : ""}`}
-                onClick={() => (selectMode ? toggleSelected(image.id) : setPreview(image))}
+                onClick={() => { if (selectMode) toggleSelected(image.id); else { setViewMode("browser"); setPreview(image); } }}
               >
                 {selectMode && <span className="source-check" aria-hidden="true">{isSelected ? "✓" : ""}</span>}
                 <img src={apiUrl(image.thumbnail_url)} alt={image.file_name} loading="lazy" />
@@ -790,7 +790,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
         </div>
       )}
 
-      {preview && (
+      {preview && viewMode === "grid" && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setPreview(undefined)}>
           <section className="source-preview" role="dialog" aria-modal="true" aria-labelledby="source-preview-title" onMouseDown={(event) => event.stopPropagation()}>
             <header>
