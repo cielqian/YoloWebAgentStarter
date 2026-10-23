@@ -613,7 +613,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                 <span className="source-image-meta">
                   {image.source_type === "ftp" ? "FTP" : "上传"} · {formatSize(image.size_bytes)}
                   <small>导入 {formatImportTime(image.created_at)}</small>
-                  {image.tags.length > 0 && <i>{image.tags.map((tag) => tag.name).join(" · ")}</i>}
+                  {image.tags.length > 0 && <i>{image.tags.map((tag) => tag.name + (tag.value ? ":" + tag.value : "")).join(" · ")}</i>}
                 </span>
               </button>
             );
