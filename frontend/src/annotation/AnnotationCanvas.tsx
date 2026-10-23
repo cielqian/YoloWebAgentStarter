@@ -572,8 +572,8 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
               )}
               {["bbox", "rect", "circle", "obb"].includes(tool) && hoverPoint && !panning && (
                 <>
-                  <Line points={[0, hoverPoint[1], displaySize.width, hoverPoint[1]]} stroke="rgba(59,130,246,.85)" strokeWidth={1.5} strokeScaleEnabled={false} listening={false} />
-                  <Line points={[hoverPoint[0], 0, hoverPoint[0], displaySize.height]} stroke="rgba(59,130,246,.85)" strokeWidth={1.5} strokeScaleEnabled={false} listening={false} />
+                  <Line points={[0, hoverPoint[1], displaySize.width, hoverPoint[1]]} stroke="rgba(59,130,246,.85)" strokeWidth={1} strokeScaleEnabled={false} listening={false} />
+                  <Line points={[hoverPoint[0], 0, hoverPoint[0], displaySize.height]} stroke="rgba(59,130,246,.85)" strokeWidth={1} strokeScaleEnabled={false} listening={false} />
                 </>
               )}
               {(tool === "polygon" || tool === "rect" || tool === "circle") && polygonPoints.map((point, index) => {
