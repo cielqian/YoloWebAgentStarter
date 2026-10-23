@@ -50,7 +50,7 @@ def _image_response(image) -> SourceImageOut:
         height=image.height,
         size_bytes=image.size_bytes,
         source_type=image.source_type,
-        tags=[SourceTagOut(id=tag.id, name=tag.name, color=tag.color, image_count=0) for tag in image.tags],
+        tags=[SourceTagOut(id=link.tag.id, name=link.tag.name, color=link.tag.color, values=link.tag.values, value=link.value, image_count=0) for link in sorted(image.tag_links, key=lambda link: link.tag.name)],
         file_url=f"/api/source-datasets/{image.source_dataset_id}/images/{image.id}/file",
         thumbnail_url=f"/api/source-datasets/{image.source_dataset_id}/images/{image.id}/thumbnail",
         created_at=image.created_at,
@@ -161,7 +161,7 @@ def ftp_sync(
 
 @router.patch("/{source_dataset_id}/images/{image_id}", response_model=SourceImageOut)
 def update_image(source_dataset_id: str, image_id: str, payload: SourceImageUpdate, session: Session = Depends(get_session)) -> SourceImageOut:
-    return _image_response(service.update_image(session, source_dataset_id, image_id, payload.file_name, payload.tag_ids))
+    return _image_response(service.update_image(session, source_dataset_id, image_id, payload.file_name, payload.tag_ids, payload.tag_values))
 
 
 @router.delete("/{source_dataset_id}/images/{image_id}", status_code=204, response_class=Response, response_model=None)
@@ -195,20 +195,20 @@ def get_image_thumbnail(source_dataset_id: str, image_id: str, session: Session 
 
 @router.get("/{source_dataset_id}/tags", response_model=list[SourceTagOut])
 def list_tags(source_dataset_id: str, session: Session = Depends(get_session)) -> list[SourceTagOut]:
-    return [SourceTagOut(id=tag.id, name=tag.name, color=tag.color, image_count=count) for tag, count in service.list_tags(session, source_dataset_id)]
+    return [SourceTagOut(id=tag.id, name=tag.name, color=tag.color, values=tag.values, image_count=count) for tag, count in service.list_tags(session, source_dataset_id)]
 
 
 @router.post("/{source_dataset_id}/tags", response_model=SourceTagOut, status_code=201)
 def create_tag(source_dataset_id: str, payload: SourceTagCreate, session: Session = Depends(get_session)) -> SourceTagOut:
     tag = service.create_tag(session, source_dataset_id, payload)
-    return SourceTagOut(id=tag.id, name=tag.name, color=tag.color, image_count=0)
+    return SourceTagOut(id=tag.id, name=tag.name, color=tag.color, values=tag.values, image_count=0)
 
 
 @router.patch("/{source_dataset_id}/tags/{tag_id}", response_model=SourceTagOut)
 def update_tag(source_dataset_id: str, tag_id: str, payload: SourceTagUpdate, session: Session = Depends(get_session)) -> SourceTagOut:
     tag = service.update_tag(session, source_dataset_id, tag_id, payload)
     counts = {item.id: count for item, count in service.list_tags(session, source_dataset_id)}
-    return SourceTagOut(id=tag.id, name=tag.name, color=tag.color, image_count=counts.get(tag.id, 0))
+    return SourceTagOut(id=tag.id, name=tag.name, color=tag.color, values=tag.values, image_count=counts.get(tag.id, 0))
 
 
 @router.delete("/{source_dataset_id}/tags/{tag_id}", status_code=204, response_class=Response, response_model=None)

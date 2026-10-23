@@ -30,22 +30,28 @@ class SourceDatasetOut(BaseModel):
 class SourceTagCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     color: str = Field(default="#3157d5", max_length=16)
+    values: list[str] | None = Field(default=None, max_length=32)
 
 
 class SourceTagUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     color: str | None = Field(default=None, max_length=16)
+    values: list[str] | None = Field(default=None, max_length=32)
 
 
 class SourceTagOut(BaseModel):
     id: str
     name: str
     color: str
+    values: list[str] | None = None
+    # 图片上的枚举取值(仅图片标签列表出现)
+    value: str | None = None
     image_count: int
 
 
 class SourceImageUpdate(BaseModel):
     file_name: str | None = Field(default=None, min_length=1, max_length=512)
+    tag_values: dict[str, str] | None = None
     tag_ids: list[str] | None = None
 
 

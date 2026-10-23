@@ -634,6 +634,10 @@ export interface SourceTag {
   id: string;
   name: string;
   color: string;
+  /** 枚举标签的取值列表(如光线=强/弱);普通标签为空 */
+  values?: string[] | null;
+  /** 图片上的枚举取值(仅图片标签列表出现) */
+  value?: string | null;
   image_count: number;
 }
 

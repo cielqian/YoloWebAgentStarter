@@ -192,14 +192,14 @@ export const api = {
     if (!result) throw new Error("FTP 同步中断，请重试。");
     return result;
   },
-  updateSourceImage: (datasetId: string, imageId: string, payload: { file_name?: string; tag_ids?: string[] }) =>
+  updateSourceImage: (datasetId: string, imageId: string, payload: { file_name?: string; tag_ids?: string[]; tag_values?: Record<string, string> }) =>
     request<SourceImagePage["items"][number]>(`/api/source-datasets/${datasetId}/images/${imageId}`, json(payload, "PATCH")),
   deleteSourceImage: (datasetId: string, imageId: string) =>
     request<void>(`/api/source-datasets/${datasetId}/images/${imageId}`, { method: "DELETE" }),
   listSourceTags: (datasetId: string) => request<SourceTag[]>(`/api/source-datasets/${datasetId}/tags`),
-  createSourceTag: (datasetId: string, name: string, color = "#3157d5") =>
-    request<SourceTag>(`/api/source-datasets/${datasetId}/tags`, json({ name, color })),
-  updateSourceTag: (datasetId: string, tagId: string, payload: { name?: string; color?: string }) =>
+  createSourceTag: (datasetId: string, name: string, color = "#3157d5", values?: string[] | null) =>
+    request<SourceTag>(`/api/source-datasets/${datasetId}/tags`, json({ name, color, values: values ?? null })),
+  updateSourceTag: (datasetId: string, tagId: string, payload: { name?: string; color?: string; values?: string[] | null }) =>
     request<SourceTag>(`/api/source-datasets/${datasetId}/tags/${tagId}`, json(payload, "PATCH")),
   deleteSourceTag: (datasetId: string, tagId: string) =>
     request<void>(`/api/source-datasets/${datasetId}/tags/${tagId}`, { method: "DELETE" }),

@@ -244,6 +244,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const [syncTotal, setSyncTotal] = useState(0);
   const [tagDialog, setTagDialog] = useState<{ mode: "create" } | { mode: "edit"; tag: SourceTag }>();
   const [tagName, setTagName] = useState("");
+  const [tagValuesInput, setTagValuesInput] = useState("");
   const [tagColor, setTagColor] = useState("#3157d5");
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -410,15 +411,16 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const submitTagDialog = async () => {
     const name = tagName.trim();
     if (!name) return;
+    const values = tagValuesInput.split(/[,，、\s]+/).map((item) => item.trim()).filter(Boolean);
     const dialog = tagDialog;
     setTagDialog(undefined);
     await runAction(async () => {
       if (dialog?.mode === "edit") {
-        await api.updateSourceTag(dataset.id, dialog.tag.id, { name, color: tagColor });
+        await api.updateSourceTag(dataset.id, dialog.tag.id, { name, color: tagColor, values: values.length ? values : null });
         return `标签已更新为“${name}”`;
       }
-      await api.createSourceTag(dataset.id, name, tagColor);
-      return `已新增标签“${name}”`;
+      await api.createSourceTag(dataset.id, name, tagColor, values.length ? values : null);
+      return `已新增标签“${name}”${values.length ? "(枚举)" : ""}`;
     });
   };
 
@@ -430,13 +432,14 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     });
   };
 
-  const toggleImageTag = async (image: SourceImage, tag: SourceTag) => {
+  const toggleImageTag = async (image: SourceImage, tag: SourceTag, value?: string) => {
     const enabled = image.tags.some((item) => item.id === tag.id);
     const nextTagIds = enabled ? image.tags.filter((item) => item.id !== tag.id).map((item) => item.id) : [...image.tags.map((item) => item.id), tag.id];
+    const tagValues = { ...(tag.values && !enabled ? { [tag.id]: value ?? tag.values[0] } : {}) };
     try {
       setBusy(true);
       setError("");
-      const updated = await api.updateSourceImage(dataset.id, image.id, { tag_ids: nextTagIds });
+      const updated = await api.updateSourceImage(dataset.id, image.id, { tag_ids: nextTagIds, ...(Object.keys(tagValues).length ? { tag_values: tagValues } : {}) });
       setPreview(updated);
       await loadDetail({ quiet: true });
     } catch (reason) {
@@ -524,7 +527,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
             {tags.map((tag) => (
               <span key={tag.id} className={`source-tag-chip${tagFilter.includes(tag.id) ? " active" : ""}`} style={{ borderColor: tag.color }}>
                 <button onClick={() => setTagFilter(tagFilter.includes(tag.id) ? tagFilter.filter((id) => id !== tag.id) : [...tagFilter, tag.id])}>{tag.name} · {tag.image_count}</button>
-                <button className="source-tag-edit" title="编辑标签" onClick={() => { setTagDialog({ mode: "edit", tag }); setTagName(tag.name); setTagColor(tag.color); }}>✎</button>
+                <button className="source-tag-edit" title="编辑标签" onClick={() => { setTagDialog({ mode: "edit", tag }); setTagName(tag.name); setTagColor(tag.color); setTagValuesInput((tag.values ?? []).join(", ")); }}>✎</button>
                 <button className="source-tag-edit" title="删除标签" disabled={busy} onClick={() => void deleteTag(tag)}>×</button>
               </span>
             ))}
@@ -534,7 +537,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                 <button className={tagMatch === "any" ? "active" : ""} title="包含任一所选标签即可" onClick={() => setTagMatch("any")}>或</button>
               </span>
             )}
-            <button className="button" disabled={busy} onClick={() => { setTagDialog({ mode: "create" }); setTagName(""); setTagColor("#3157d5"); }}>＋ 新建标签</button>
+            <button className="button" disabled={busy} onClick={() => { setTagDialog({ mode: "create" }); setTagName(""); setTagColor("#3157d5"); setTagValuesInput(""); }}>＋ 新建标签</button>
           </div>
         </section>
         {selectMode && (
@@ -561,7 +564,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
       ) : items.length ? (
         <>
         <div className="source-view-mode" role="group" aria-label="展示方式">
-          <button type="button" className={viewMode === "grid" ? "active" : ""} onClick={() => setViewMode("grid")}>网格</button>
+          <button type="button" className={viewMode === "grid" ? "active" : ""} onClick={() => { setViewMode("grid"); setPreview(undefined); }}>网格</button>
           <button type="button" className={viewMode === "browser" ? "active" : ""} onClick={() => setViewMode("browser")}>浏览(左列表·右大图)</button>
         </div>
         {viewMode === "grid" ? (
@@ -595,17 +598,17 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                   <img src={apiUrl(image.thumbnail_url)} alt="" loading="lazy" />
                   <div>
                     <strong title={image.file_name}>{image.file_name}</strong>
-                    <small>{formatSize(image.size_bytes)}{image.tags.length ? ` · ${image.tags.map((tag) => tag.name).join("、")}` : ""}</small>
+                    <small>{formatSize(image.size_bytes)}{image.tags.length ? ` · ${image.tags.map((tag) => tag.name + (tag.value ? ":" + tag.value : "")).join("、")}` : ""}</small>
                   </div>
                 </button>
                 <button
                   type="button"
                   className={`source-browser-item-toggle${image.tags.length ? " tagged" : ""}`}
                   disabled={busy || !tags.length}
-                  title={image.tags.length ? `取消标签：${image.tags.map((tag) => tag.name).join("、")}` : (tags.length ? `打标签：${tags[0].name}` : "先创建标签")}
+                  title={image.tags.length ? `取消标签：${image.tags.map((tag) => tag.name + (tag.value ? ":" + tag.value : "")).join("、")}` : (tags.length ? `打标签：${tags[0].name}` : "先创建标签")}
                   onClick={() => void toggleImageTag(image, image.tags[0] ?? tags[0])}
                 >
-                  {image.tags.length ? "✕" : "+"}
+                  {image.tags.length ? `✕ ${image.tags[0].name}${image.tags.length > 1 ? ` +${image.tags.length - 1}` : ""}` : (tags.length ? `+ ${tags[0].name}` : "无标签")}
                 </button>
               </div>
             ))}
@@ -625,7 +628,22 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                 <div className="source-preview-tags" role="group" aria-label="图片标签">
                   {tags.length ? tags.map((tag) => {
                     const enabled = preview.tags.some((item) => item.id === tag.id);
-                    return <button key={tag.id} className={`source-tag-chip${enabled ? " active" : ""}`} style={{ borderColor: tag.color }} disabled={busy} onClick={() => void toggleImageTag(preview, tag)}>{tag.name}</button>;
+                    const current = preview.tags.find((item) => item.id === tag.id);
+                    return (
+                      <span key={tag.id} className={`source-tag-chip enum${enabled ? " active" : ""}`} style={{ borderColor: tag.color }}>
+                        <button type="button" disabled={busy} onClick={() => void toggleImageTag(preview, tag)}>{tag.name}{current?.value ? `:${current.value}` : ""}</button>
+                        {tag.values && enabled && (
+                          <select
+                            aria-label={`${tag.name} 取值`}
+                            value={current?.value ?? tag.values[0]}
+                            disabled={busy}
+                            onChange={(event) => void toggleImageTag(preview, tag, event.target.value)}
+                          >
+                            {tag.values.map((value) => <option key={value} value={value}>{value}</option>)}
+                          </select>
+                        )}
+                      </span>
+                    );
                   }) : <span className="muted">还没有标签。</span>}
                 </div>
               </>
@@ -792,6 +810,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
             <form className="ftp-dialog-form" onSubmit={(event) => { event.preventDefault(); void submitTagDialog(); }}>
               <input autoFocus value={tagName} placeholder="标签名，例如：白天" onChange={(event) => setTagName(event.target.value)} />
               <label className="source-color-row">颜色 <input type="color" value={tagColor} onChange={(event) => setTagColor(event.target.value)} /></label>
+              <label>枚举取值<small>选填。逗号/顿号分隔，例如：强, 弱。填写后图片打标时可选具体取值。</small><input value={tagValuesInput} placeholder="例如：强, 弱" onChange={(event) => setTagValuesInput(event.target.value)} /></label>
               <footer>
                 <button type="button" className="button" onClick={() => setTagDialog(undefined)}>取消</button>
                 <button className="button primary" type="submit" disabled={!tagName.trim()}>保存</button>

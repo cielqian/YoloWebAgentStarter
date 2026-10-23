@@ -365,3 +365,33 @@ def test_ftp_sync_rejects_foreign_tag_before_download(client: TestClient, monkey
     assert len(events) == 1
     assert events[0]["type"] == "error"
     assert events[0]["code"] == "source_tag_not_found"
+
+
+def test_enum_tag_values_end_to_end(client):
+    dataset = client.post("/api/source-datasets", json={"name": "enum-src"}).json()
+    ds_id = dataset["id"]
+    # 创建枚举标签 光线=强/弱
+    tag = client.post(f"/api/source-datasets/{ds_id}/tags", json={"name": "光线", "color": "#f59e0b", "values": ["强", "弱"]}).json()
+    assert tag["values"] == ["强", "弱"]
+    plain = client.post(f"/api/source-datasets/{ds_id}/tags", json={"name": "夜间"}).json()
+
+    client.post(f"/api/source-datasets/{ds_id}/images/upload", files={"files": ("a.png", png_bytes(), "image/png")})
+    page = client.get(f"/api/source-datasets/{ds_id}/images").json()
+    image = page["items"][0]
+
+    # 关联枚举标签并选值
+    updated = client.patch(
+        f"/api/source-datasets/{ds_id}/images/{image['id']}",
+        json={"tag_ids": [tag["id"], plain["id"]], "tag_values": {tag["id"]: "弱"}},
+    ).json()
+    by_name = {item["name"]: item for item in updated["tags"]}
+    assert by_name["光线"]["value"] == "弱"
+    assert by_name["夜间"]["value"] is None
+
+    # 非法取值被拒
+    bad = client.patch(
+        f"/api/source-datasets/{ds_id}/images/{image['id']}",
+        json={"tag_ids": [tag["id"]], "tag_values": {tag["id"]: "中"}},
+    )
+    assert bad.status_code == 422
+    assert "tag_value_invalid" in bad.text

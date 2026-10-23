@@ -499,7 +499,7 @@ class SourceImage(Base, TimestampMixin):
     source_type: Mapped[str] = mapped_column(String(16), default="upload", nullable=False)
 
     source_dataset: Mapped[SourceDataset] = relationship(back_populates="images")
-    tags: Mapped[list["SourceTag"]] = relationship(secondary="source_image_tags", back_populates="images", order_by="SourceTag.name")
+    tag_links: Mapped[list["SourceImageTag"]] = relationship(back_populates="image", cascade="all, delete-orphan", order_by="SourceImageTag.tag_id")
 
 
 class SourceTag(Base, TimestampMixin):
@@ -510,9 +510,11 @@ class SourceTag(Base, TimestampMixin):
     source_dataset_id: Mapped[str] = mapped_column(ForeignKey("source_datasets.id", ondelete="CASCADE"), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#3157d5", nullable=False)
+    # 枚举标签的取值列表(如 ["强", "弱"]);普通标签为空
+    values: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     source_dataset: Mapped[SourceDataset] = relationship(back_populates="tags")
-    images: Mapped[list["SourceImage"]] = relationship(secondary="source_image_tags", back_populates="tags")
+    image_links: Mapped[list["SourceImageTag"]] = relationship(back_populates="tag", cascade="all, delete-orphan")
 
 
 class SourceImageTag(Base):
@@ -520,3 +522,8 @@ class SourceImageTag(Base):
 
     image_id: Mapped[str] = mapped_column(ForeignKey("source_images.id", ondelete="CASCADE"), primary_key=True)
     tag_id: Mapped[str] = mapped_column(ForeignKey("source_tags.id", ondelete="CASCADE"), primary_key=True)
+    # 枚举标签时记录所选取值(如"强");普通标签为空
+    value: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    image: Mapped[SourceImage] = relationship(back_populates="tag_links")
+    tag: Mapped[SourceTag] = relationship(back_populates="image_links")

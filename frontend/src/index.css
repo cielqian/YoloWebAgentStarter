@@ -744,8 +744,12 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .source-browser-bar > div { display: flex; gap: 6px; }
 .source-browser-empty { display: grid; place-items: center; gap: 8px; min-height: 320px; color: #8994a8; border: 1px dashed #dbe1ea; border-radius: 10px; }
 .source-browser-empty strong { color: #536077; }
-.source-browser-item-toggle { position: absolute; top: 6px; right: 6px; display: none; width: 22px; height: 22px; place-items: center; border: 1px solid #cbd8f4; border-radius: 6px; background: #fff; color: #3157d5; font-size: 13px; font-weight: 700; cursor: pointer; }
+.source-browser-item-toggle { position: absolute; top: 5px; right: 5px; display: none; max-width: 130px; padding: 3px 8px; border: 1px solid #cbd8f4; border-radius: 999px; background: #fff; color: #3157d5; font-size: 10px; font-weight: 700; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-browser-item:hover .source-browser-item-toggle { display: grid; }
 .source-browser-item-toggle:hover { background: #e2eaff; }
 .source-browser-item-toggle.tagged { color: #b83a3a; border-color: #f0c9c9; }
 .source-browser-item-toggle:disabled { opacity: .5; cursor: not-allowed; }
+.source-tag-chip.enum { display: inline-flex; align-items: center; gap: 4px; padding: 0; }
+.source-tag-chip.enum > button { padding: 4px 8px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.source-tag-chip.enum > select { max-width: 90px; padding: 3px 6px; border: 0; border-left: 1px solid rgba(0,0,0,.12); border-radius: 0 999px 999px 0; background: rgba(255,255,255,.75); color: #3157d5; font-size: 12px; font-weight: 650; cursor: pointer; }
+.source-tag-chip.enum.active > select { background: #fff; }

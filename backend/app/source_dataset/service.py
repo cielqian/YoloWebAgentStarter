@@ -133,7 +133,7 @@ def add_images(
         if on_progress is not None:
             on_progress(len(staged), invalid)
     for image in staged:
-        image.tags = list(tags)
+        image.tag_links = [SourceImageTag(image_id=image.id, tag_id=tag.id) for tag in tags]
     try:
         session.flush()
         _refresh_counts(session, source_dataset_id)
@@ -232,12 +232,36 @@ def get_image(session: Session, source_dataset_id: str, image_id: str) -> Source
     return image
 
 
-def update_image(session: Session, source_dataset_id: str, image_id: str, file_name: str | None, tag_ids: list[str] | None) -> SourceImage:
+
+def _set_image_tags(session: Session, image: SourceImage, tag_ids: list[str], values_by_tag: dict[str, str] | None = None) -> None:
+    """整体替换图片标签关联;枚举标签记录所选 value。"""
+    from app.core.models import SourceImageTag
+
+    tags = _owned_tags(session, image.source_dataset_id, tag_ids)
+    by_id = {tag.id: tag for tag in tags}
+    image.tag_links = [
+        SourceImageTag(image_id=image.id, tag_id=tag.id, value=(values_by_tag or {}).get(tag.id) if tag.values else None)
+        for tag in tags
+    ]
+
+
+def _validate_enum_values(session: Session, source_dataset_id: str, values_by_tag: dict[str, str]) -> None:
+    if not values_by_tag:
+        return
+    tags = _owned_tags(session, source_dataset_id, list(values_by_tag.keys()))
+    by_id = {tag.id: tag for tag in tags}
+    for tag_id, value in values_by_tag.items():
+        tag = by_id.get(tag_id)
+        if tag is not None and tag.values and value not in tag.values:
+            raise ValidationError("tag_value_invalid", f"标签“{tag.name}”的值必须是 {' / '.join(tag.values)} 之一。")
+
+def update_image(session: Session, source_dataset_id: str, image_id: str, file_name: str | None, tag_ids: list[str] | None, tag_values: dict[str, str] | None = None) -> SourceImage:
     image = get_image(session, source_dataset_id, image_id)
     if file_name is not None:
         image.file_name = Path(file_name).name
     if tag_ids is not None:
-        image.tags = _owned_tags(session, source_dataset_id, tag_ids)
+        _validate_enum_values(session, source_dataset_id, tag_values or {})
+        _set_image_tags(session, image, tag_ids, tag_values)
     session.commit()
     session.refresh(image)
     return image
@@ -256,16 +280,16 @@ def apply_tags_to_images(session: Session, source_dataset_id: str, image_ids: li
     )
     if len(images) != len(set(image_ids)):
         raise NotFoundError("source_image_not_found", "图片不存在或不属于该数据源数据集。")
+    from app.core.models import SourceImageTag
+
     for image in images:
         if remove:
-            for tag in tags:
-                if tag in image.tags:
-                    image.tags.remove(tag)
+            image.tag_links = [link for link in image.tag_links if link.tag_id not in {tag.id for tag in tags}]
         else:
-            existing = {tag.id for tag in image.tags}
+            existing = {link.tag_id for link in image.tag_links}
             for tag in tags:
                 if tag.id not in existing:
-                    image.tags.append(tag)
+                    image.tag_links.append(SourceImageTag(image_id=image.id, tag_id=tag.id))
     session.commit()
     return len(images)
 
@@ -306,7 +330,8 @@ def _get_tag(session: Session, source_dataset_id: str, tag_id: str) -> SourceTag
 
 def create_tag(session: Session, source_dataset_id: str, payload: SourceTagCreate) -> SourceTag:
     get_source_dataset(session, source_dataset_id)
-    tag = SourceTag(id=new_id("stag"), source_dataset_id=source_dataset_id, name=payload.name, color=payload.color)
+    values = [value.strip() for value in (payload.values or []) if value.strip()] or None
+    tag = SourceTag(id=new_id("stag"), source_dataset_id=source_dataset_id, name=payload.name, color=payload.color, values=values)
     session.add(tag)
     try:
         session.flush()
