@@ -278,7 +278,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
 
   useEffect(() => {
     void loadDetail();
-  }, [dataset.id, tagFilter, tagMatch, query, pageIndex]);
+  }, [dataset.id, tagFilter, tagValueFilter, tagMatch, query, pageIndex]);
 
   const items = page?.items ?? [];
   const previewIndex = preview ? items.findIndex((item) => item.id === preview.id) : -1;

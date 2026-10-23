@@ -144,6 +144,21 @@ describe("DataSourceView tag filter", () => {
     await clickButton("全部");
     expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { offset: 0, limit: 60, tagIds: undefined, tagValues: {}, tagMatch: "any" });
   });
+
+  it("refetches when the enum value filter changes on the first page", async () => {
+    const { api } = await import("../api/client");
+    await openDetail();
+
+    await clickButton("白天");
+    const select = container?.querySelector<HTMLSelectElement>('select[aria-label="按白天取值筛选"]');
+    expect(select).toBeDefined();
+    await act(async () => {
+      if (select) select.value = "晴";
+      select?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {});
+    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { offset: 0, limit: 60, tagIds: ["stag-a"], tagValues: { "stag-a": "晴" }, tagMatch: "all" });
+  });
 });
 
 describe("DataSourceView FTP picker", () => {
