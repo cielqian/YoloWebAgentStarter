@@ -590,13 +590,24 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
         <section className="source-browser">
           <aside className="source-browser-list" aria-label="图片列表">
             {items.map((image) => (
-              <button key={image.id} className={`source-browser-item${preview?.id === image.id ? " active" : ""}`} onClick={() => setPreview(image)}>
-                <img src={apiUrl(image.thumbnail_url)} alt="" loading="lazy" />
-                <div>
-                  <strong title={image.file_name}>{image.file_name}</strong>
-                  <small>{formatSize(image.size_bytes)}{image.tags.length ? ` · ${image.tags.map((tag) => tag.name).join("、")}` : ""}</small>
-                </div>
-              </button>
+              <div key={image.id} className={`source-browser-item${preview?.id === image.id ? " active" : ""}`}>
+                <button type="button" className="source-browser-item-main" onClick={() => setPreview(image)}>
+                  <img src={apiUrl(image.thumbnail_url)} alt="" loading="lazy" />
+                  <div>
+                    <strong title={image.file_name}>{image.file_name}</strong>
+                    <small>{formatSize(image.size_bytes)}{image.tags.length ? ` · ${image.tags.map((tag) => tag.name).join("、")}` : ""}</small>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className={`source-browser-item-toggle${image.tags.length ? " tagged" : ""}`}
+                  disabled={busy || !tags.length}
+                  title={image.tags.length ? `取消标签：${image.tags.map((tag) => tag.name).join("、")}` : (tags.length ? `打标签：${tags[0].name}` : "先创建标签")}
+                  onClick={() => void toggleImageTag(image, image.tags[0] ?? tags[0])}
+                >
+                  {image.tags.length ? "✕" : "+"}
+                </button>
+              </div>
             ))}
           </aside>
           <div className="source-browser-main">

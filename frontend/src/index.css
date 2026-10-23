@@ -743,3 +743,10 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .source-browser-bar > div { display: flex; gap: 6px; }
 .source-browser-empty { display: grid; place-items: center; gap: 8px; min-height: 320px; color: #8994a8; border: 1px dashed #dbe1ea; border-radius: 10px; }
 .source-browser-empty strong { color: #536077; }
+.source-browser-item { position: relative; }
+.source-browser-item-main { display: grid; grid-template-columns: 46px minmax(0, 1fr); align-items: center; gap: 10px; width: 100%; padding: 6px; border: 0; background: transparent; text-align: left; cursor: pointer; font-family: inherit; }
+.source-browser-item-toggle { position: absolute; top: 6px; right: 6px; display: none; width: 22px; height: 22px; place-items: center; border: 1px solid #cbd8f4; border-radius: 6px; background: #fff; color: #3157d5; font-size: 13px; font-weight: 700; cursor: pointer; }
+.source-browser-item:hover .source-browser-item-toggle { display: grid; }
+.source-browser-item-toggle:hover { background: #e2eaff; }
+.source-browser-item-toggle.tagged { color: #b83a3a; border-color: #f0c9c9; }
+.source-browser-item-toggle:disabled { opacity: .5; cursor: not-allowed; }
