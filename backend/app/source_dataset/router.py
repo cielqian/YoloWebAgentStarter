@@ -90,11 +90,18 @@ def list_images(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=60, ge=1, le=500),
     tag_ids: list[str] = Query(default=[]),
+    tag_values: str = Query(default=""),
     tag_match: Literal["all", "any"] = Query(default="all"),
     query: str | None = None,
     session: Session = Depends(get_session),
 ) -> SourceImagePage:
-    total, items = service.list_images(session, source_dataset_id, offset=offset, limit=limit, tag_ids=tag_ids or None, tag_match=tag_match, query=query)
+    parsed_tag_values: dict[str, str] = {}
+    if tag_values:
+        try:
+            parsed_tag_values = {str(k): str(v) for k, v in json.loads(tag_values).items()}
+        except ValueError:
+            parsed_tag_values = {}
+    total, items = service.list_images(session, source_dataset_id, offset=offset, limit=limit, tag_ids=tag_ids or None, tag_match=tag_match, tag_values=parsed_tag_values or None, query=query)
     return SourceImagePage(total=total, offset=offset, limit=limit, items=[_image_response(item) for item in items])
 
 

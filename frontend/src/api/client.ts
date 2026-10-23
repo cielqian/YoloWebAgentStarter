@@ -118,11 +118,12 @@ export const api = {
   updateSourceDataset: (datasetId: string, payload: { name?: string; description?: string | null }) =>
     request<SourceDataset>(`/api/source-datasets/${datasetId}`, json(payload, "PATCH")),
   deleteSourceDataset: (datasetId: string) => request<void>(`/api/source-datasets/${datasetId}`, { method: "DELETE" }),
-  listSourceImages: (datasetId: string, options: { offset?: number; limit?: number; tagIds?: string[]; tagMatch?: "all" | "any"; query?: string } = {}) => {
+  listSourceImages: (datasetId: string, options: { offset?: number; limit?: number; tagIds?: string[]; tagMatch?: "all" | "any"; tagValues?: Record<string, string>; query?: string } = {}) => {
     const params = new URLSearchParams();
     if (options.offset) params.set("offset", String(options.offset));
     if (options.limit) params.set("limit", String(options.limit));
     options.tagIds?.forEach((id) => params.append("tag_ids", id));
+    if (options.tagValues && Object.keys(options.tagValues).length) params.set("tag_values", JSON.stringify(options.tagValues));
     if (options.tagMatch) params.set("tag_match", options.tagMatch);
     if (options.query) params.set("query", options.query);
     const suffix = params.toString() ? `?${params.toString()}` : "";

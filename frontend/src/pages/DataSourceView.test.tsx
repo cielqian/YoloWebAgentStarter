@@ -126,23 +126,23 @@ describe("DataSourceView tag filter", () => {
     await openDetail();
 
     const chip = (name: string) =>
-      Array.from(container?.querySelectorAll<HTMLButtonElement>(".source-tag-chip") ?? [])
+      Array.from(container?.querySelectorAll<HTMLButtonElement>(".source-tag-bar .source-tag-chip > button, .source-tag-bar > button.source-tag-chip") ?? [])
         .find((item) => item.textContent?.startsWith(name));
     await act(async () => { chip("白天")?.click(); });
     await act(async () => {});
     await act(async () => { chip("夜间")?.click(); });
     await act(async () => {});
 
-    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { offset: 0, limit: 60, tagIds: ["stag-a", "stag-b"], tagMatch: "all" });
+    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { offset: 0, limit: 60, tagIds: ["stag-a", "stag-b"], tagValues: {}, tagMatch: "all" });
 
     const anyButton = Array.from(container?.querySelectorAll<HTMLButtonElement>(".tag-match-switch button") ?? []).find((item) => item.textContent === "或");
     expect(anyButton).toBeDefined();
     await act(async () => { anyButton?.click(); });
     await act(async () => {});
-    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { offset: 0, limit: 60, tagIds: ["stag-a", "stag-b"], tagMatch: "any" });
+    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { offset: 0, limit: 60, tagIds: ["stag-a", "stag-b"], tagValues: {}, tagMatch: "any" });
 
     await clickButton("全部");
-    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { offset: 0, limit: 60, tagIds: undefined, tagMatch: "any" });
+    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { offset: 0, limit: 60, tagIds: undefined, tagValues: {}, tagMatch: "any" });
   });
 });
 

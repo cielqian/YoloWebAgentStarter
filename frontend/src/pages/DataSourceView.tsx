@@ -227,6 +227,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [tagValueFilter, setTagValueFilter] = useState<Record<string, string>>({});
   const [tagMatch, setTagMatch] = useState<"all" | "any">("all");
   const [query, setQuery] = useState("");
   const [queryInput, setQueryInput] = useState("");
@@ -259,7 +260,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     try {
       const [nextTags, nextPage] = await Promise.all([
         api.listSourceTags(dataset.id),
-        api.listSourceImages(dataset.id, { offset: pageIndex * PAGE_SIZE, limit: PAGE_SIZE, tagIds: tagFilter.length ? tagFilter : undefined, tagMatch, query: query || undefined }),
+        api.listSourceImages(dataset.id, { offset: pageIndex * PAGE_SIZE, limit: PAGE_SIZE, tagIds: tagFilter.length ? tagFilter : undefined, tagValues: tagValueFilter, tagMatch, query: query || undefined }),
       ]);
       setTags(nextTags);
       setPage(nextPage);
@@ -273,7 +274,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   useEffect(() => {
     setPageIndex(0);
     setSelectedIds([]);
-  }, [dataset.id, tagFilter, query]);
+  }, [dataset.id, tagFilter, tagValueFilter, query]);
 
   useEffect(() => {
     void loadDetail();
@@ -521,12 +522,32 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
             </form>
           </div>
           <div className="source-tag-bar" role="group" aria-label="标签筛选">
-            <button className={`source-tag-chip${tagFilter.length ? "" : " active"}`} onClick={() => setTagFilter([])}>全部</button>
-            {tags.map((tag) => (
-              <button key={tag.id} className={`source-tag-chip${tagFilter.includes(tag.id) ? " active" : ""}`} style={{ borderColor: tag.color }} onClick={() => setTagFilter(tagFilter.includes(tag.id) ? tagFilter.filter((id) => id !== tag.id) : [...tagFilter, tag.id])} title={tag.values?.length ? `枚举：${tag.values.join(" / ")}` : undefined}>
-                {tag.name} · {tag.image_count}
-              </button>
-            ))}
+            <button className={`source-tag-chip${tagFilter.length ? "" : " active"}`} onClick={() => { setTagFilter([]); setTagValueFilter({}); }}>全部</button>
+            {tags.map((tag) => {
+              const active = tagFilter.includes(tag.id);
+              return (
+                <span key={tag.id} className={`source-tag-chip enum${active ? " active" : ""}`} style={{ borderColor: tag.color }}>
+                  <button type="button" onClick={() => setTagFilter((ids) => ids.includes(tag.id) ? ids.filter((id) => id !== tag.id) : [...ids, tag.id])}>
+                    {tag.name} · {tag.image_count}
+                  </button>
+                  {active && tag.values && (
+                    <select
+                      aria-label={`按${tag.name}取值筛选`}
+                      value={tagValueFilter[tag.id] ?? ""}
+                      onChange={(event) => setTagValueFilter((prev) => {
+                        const next = { ...prev };
+                        if (event.target.value) next[tag.id] = event.target.value;
+                        else delete next[tag.id];
+                        return next;
+                      })}
+                    >
+                      <option value="">全部取值</option>
+                      {tag.values.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                  )}
+                </span>
+              );
+            })}
             {tagFilter.length > 1 && (
               <span className="tag-match-switch" role="group" aria-label="标签匹配逻辑">
                 <button className={tagMatch === "all" ? "active" : ""} title="需同时包含所有所选标签" onClick={() => setTagMatch("all")}>并</button>

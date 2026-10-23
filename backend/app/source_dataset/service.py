@@ -207,6 +207,7 @@ def list_images(
     limit: int | None = 60,
     tag_ids: list[str] | None = None,
     tag_match: Literal["all", "any"] = "all",
+    tag_values: dict[str, str] | None = None,
     query: str | None = None,
 ) -> tuple[int, list[SourceImage]]:
     get_source_dataset(session, source_dataset_id)
@@ -216,6 +217,12 @@ def list_images(
     else:
         for tag_id in dict.fromkeys(tag_ids or []):
             conditions.append(SourceImage.id.in_(select(SourceImageTag.image_id).where(SourceImageTag.tag_id == tag_id)))
+    for tag_id, value in (tag_values or {}).items():
+        conditions.append(
+            SourceImage.id.in_(
+                select(SourceImageTag.image_id).where(SourceImageTag.tag_id == tag_id, SourceImageTag.value == value)
+            )
+        )
     if query:
         conditions.append(SourceImage.file_name.ilike(f"%{query}%"))
     total = session.scalar(select(func.count()).select_from(SourceImage).where(*conditions)) or 0
