@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../api/client";
+import { ClassTemplatesView } from "./ClassTemplatesView";
 import { Toast } from "../components/Toast";
 import type { AppLocale } from "../locale";
 import { saveLocale } from "../locale";
@@ -17,7 +18,7 @@ import type {
   WebhookSettings,
 } from "../types";
 
-export type SettingsTab = "llm" | "sam" | "ftp" | "nodes" | "weights" | "webhook" | "language";
+export type SettingsTab = "llm" | "sam" | "ftp" | "nodes" | "weights" | "basedata" | "webhook" | "language";
 
 type LlmFormState = LLMSettings & { api_key: string };
 
@@ -100,6 +101,8 @@ const copy = {
     ftpNotConfigured: "未配置",
     nodesNav: "训练节点",
     nodesNavDescription: "远程算力服务器巡检",
+    basedataNav: "基础数据",
+    basedataNavDescription: "类别库与标签库 · 全局共享",
     weightsNav: "基础权重",
     weightsNavDescription: "训练起始权重库 · 远程节点按需拉取",
     weightsTitle: "基础权重库",
@@ -250,6 +253,8 @@ const copy = {
     ftpNotConfigured: "Not configured",
     nodesNav: "Training nodes",
     nodesNavDescription: "Remote compute servers",
+    basedataNav: "Base data",
+    basedataNavDescription: "Class & tag library",
     weightsNav: "Base weights",
     weightsNavDescription: "Training starter weights",
     weightsTitle: "Base weight library",
@@ -429,6 +434,13 @@ export function SettingsView({
             onClick={() => onTabChange("weights")}
           />
           <SettingsNavigationItem
+            active={tab === "basedata"}
+            icon={<ClassIcon />}
+            title={text.basedataNav}
+            description={text.basedataNavDescription}
+            onClick={() => onTabChange("basedata")}
+          />
+          <SettingsNavigationItem
             active={tab === "webhook"}
             icon={<WebhookIcon />}
             title={text.webhookNav}
@@ -454,6 +466,8 @@ export function SettingsView({
             <TrainingNodesPanel text={text} />
           ) : tab === "weights" ? (
             <BaseWeightsPanel text={text} />
+          ) : tab === "basedata" ? (
+            <BaseDataPanel />
           ) : tab === "webhook" ? (
             <WebhookSettingsPanel text={text} />
           ) : (
@@ -1478,3 +1492,13 @@ function LanguageIcon() {
     </svg>
   );
 }
+
+function BaseDataPanel() {
+  return (
+    <div className="settings-basedata">
+      <ClassTemplatesView />
+    </div>
+  );
+}
+
+function ClassIcon() { return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m12 4 2.1 4.6 5 .5-3.7 3.3 1 4.9L12 14.9l-4.4 2.4 1-4.9L4.9 9.1l5-.5L12 4Z" /></svg>; }

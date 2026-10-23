@@ -9,7 +9,7 @@ import { SettingsView } from "./pages/SettingsView";
 import { LogsView } from "./pages/LogsView";
 import { FtpView } from "./pages/FtpView";
 import { DataSourceView } from "./pages/DataSourceView";
-import { ClassTemplatesView, sam3TranslateMessage } from "./pages/ClassTemplatesView";
+import { sam3TranslateMessage } from "./pages/ClassTemplatesView";
 import { AgentView, type AgentPageContext } from "./pages/AgentView";
 import { AutoAnnotationModal } from "./components/AutoAnnotationModal";
 import { ClassLibraryPicker } from "./components/ClassLibraryPicker";
@@ -19,7 +19,7 @@ import { Toast } from "./components/Toast";
 import { readLocale, saveLocale, type AppLocale } from "./locale";
 import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
 
-type View = "workspace" | "classes" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources";
+type View = "workspace" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources";
 type CardReportKind = "validation" | "quality" | "duplicates";
 const ANNOTATION_IMAGE_PAGE_SIZE = 20;
 
@@ -251,7 +251,7 @@ export default function App() {
   const activeSection: StarterSection =
     view === "annotation"
       ? "workspace"
-      : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-weights" || view === "settings-webhook" || view === "settings-language"
+      : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-weights" || view === "settings-basedata" || view === "settings-webhook" || view === "settings-language"
         ? "settings"
         : view;
   const navigate = (section: StarterSection) => {
@@ -263,7 +263,7 @@ export default function App() {
         void loadDataset(datasets[0], section);
         return;
       }
-      const globalSection = section === "settings" || section === "logs" || section === "agent" || section === "classes" || section === "ftp" || section === "datasources";
+      const globalSection = section === "settings" || section === "logs" || section === "agent" || section === "ftp" || section === "datasources";
       if (!globalSection && section !== "workspace" && !selected) {
         setNotice("请先创建或选择一个数据集。");
         return;
@@ -417,20 +417,18 @@ export default function App() {
           onFocusModelConsumed={() => setFocusModelId(undefined)}
           onAskAgent={(model) => { setAgentFocus({ ...(model.dataset_id ? { dataset: { id: model.dataset_id, name: datasets.find((d) => d.id === model.dataset_id)?.name ?? model.dataset_id } } : {}), model: { id: model.id, name: model.name } }); setView("agent"); }}
         />
-      ) : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-weights" || view === "settings-webhook" || view === "settings-language" ? (
+      ) : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-weights" || view === "settings-basedata" || view === "settings-webhook" || view === "settings-language" ? (
         <SettingsView
-          tab={view === "settings-llm" ? "llm" : view === "settings-sam" ? "sam" : view === "settings-ftp" ? "ftp" : view === "settings-nodes" ? "nodes" : view === "settings-weights" ? "weights" : view === "settings-webhook" ? "webhook" : "language"}
+          tab={view === "settings-llm" ? "llm" : view === "settings-sam" ? "sam" : view === "settings-ftp" ? "ftp" : view === "settings-nodes" ? "nodes" : view === "settings-weights" ? "weights" : view === "settings-basedata" ? "basedata" : view === "settings-webhook" ? "webhook" : "language"}
           locale={locale}
           onLocaleChange={setLocale}
           onTabChange={(tab) =>
-            setView(tab === "llm" ? "settings-llm" : tab === "sam" ? "settings-sam" : tab === "ftp" ? "settings-ftp" : tab === "nodes" ? "settings-nodes" : tab === "weights" ? "settings-weights" : tab === "webhook" ? "settings-webhook" : "settings-language")
+            setView(tab === "llm" ? "settings-llm" : tab === "sam" ? "settings-sam" : tab === "ftp" ? "settings-ftp" : tab === "nodes" ? "settings-nodes" : tab === "weights" ? "settings-weights" : tab === "basedata" ? "settings-basedata" : tab === "webhook" ? "settings-webhook" : "settings-language")
           }
           onSamSettingsChange={() => {
             api.getSystemInfo().then((info) => setSamCapabilities(info.sam)).catch(() => undefined);
           }}
         />
-      ) : view === "classes" ? (
-        <ClassTemplatesView />
       ) : view === "ftp" ? (
         <FtpView />
       ) : view === "datasources" ? (

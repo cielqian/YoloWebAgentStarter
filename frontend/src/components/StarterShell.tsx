@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { AppLocale } from "../locale";
 import { localeText } from "../locale";
 
-export type StarterSection = "workspace" | "classes" | "training" | "models" | "agent" | "logs" | "ftp" | "datasources" | "settings";
+export type StarterSection = "workspace" | "training" | "models" | "agent" | "logs" | "ftp" | "datasources" | "settings";
 
 interface Props {
   active: StarterSection;
@@ -15,7 +15,6 @@ interface Props {
 const navigation: Array<{ id: StarterSection; label: string; icon: ReactNode }> = [
   { id: "datasources", label: "数据源", icon: <SourceIcon /> },
   { id: "workspace", label: "数据集", icon: <DatasetIcon /> },
-  { id: "classes", label: "基础数据", icon: <ClassIcon /> },
   { id: "training", label: "训练", icon: <TrainingIcon /> },
   { id: "models", label: "模型", icon: <ModelIcon /> },
   { id: "agent", label: "智能体", icon: <AgentIcon /> },
@@ -29,7 +28,6 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
   const text = localeText[locale];
   const labels: Record<StarterSection, string> = {
     workspace: text.datasets,
-    classes: text.classLibrary,
     training: text.training,
     models: text.models,
     agent: text.agent,
@@ -44,9 +42,9 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
         <aside className="starter-sidebar">
           <nav className="starter-menu" aria-label={text.mainNav}>
             <span className="starter-menu-group-label">{text.workspaceGroup}</span>
-            {navigation.slice(0, 8).map((item) => <NavigationButton key={item.id} item={item} active={active} labels={labels} onNavigate={onNavigate} />)}
+            {navigation.slice(0, 7).map((item) => <NavigationButton key={item.id} item={item} active={active} labels={labels} onNavigate={onNavigate} />)}
             <span className="starter-menu-group-label">{text.settingsGroup}</span>
-            {navigation.slice(8).map((item) => <NavigationButton key={item.id} item={item} active={active} labels={labels} onNavigate={onNavigate} />)}
+            {navigation.slice(7).map((item) => <NavigationButton key={item.id} item={item} active={active} labels={labels} onNavigate={onNavigate} />)}
           </nav>
         </aside>
         <div className="starter-main">{children}</div>
@@ -62,7 +60,6 @@ function NavigationButton({ item, active, labels, onNavigate }: { item: (typeof 
 }
 
 function DatasetIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Z" /><path d="m7.5 15 2.5-3 2 2.2 1.7-1.8 2.8 3.1" /><circle cx="9" cy="9" r="1.2" /></svg>; }
-function ClassIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4 2.1 4.6 5 .5-3.7 3.3 1 4.9L12 14.9l-4.4 2.4 1-4.9L4.9 9.1l5-.5L12 4Z" /><path d="M5 20.5h14" /></svg>; }
 function TrainingIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18V9m5 9V5m5 13v-7m4 7V8" /><path d="M3.5 20.5h17" /></svg>; }
 function ModelIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 4v10l-7 4-7-4V7l7-4Z" /><path d="m5 7 7 4 7-4M12 11v10" /></svg>; }
 function SettingsIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" /><path d="m19 13.5 1.2 1-.2 1.7-1.5 1-1.7-.6-1 1.1.1 1.8-1.5.8-1.4-1.1h-1.5L10 20.3l-1.6-.8.1-1.8-1-1.1-1.7.6-1.5-1 .2-1.7 1.2-1v-1.5l-1.2-1 .2-1.7 1.5-1 1.7.6 1-1.1-.1-1.8L10 5l1.4 1.1h1.5L14.3 5l1.6.8-.1 1.8 1 1.1 1.7-.6 1.5 1-.2 1.7-1.2 1Z" /></svg>; }
