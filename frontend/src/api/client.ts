@@ -150,6 +150,7 @@ export const api = {
         recursive: payload.recursive,
         ...(payload.filePaths?.length ? { file_paths: payload.filePaths } : {}),
         ...(payload.tagIds?.length ? { tag_ids: payload.tagIds } : {}),
+        ...(payload.tagValues && Object.keys(payload.tagValues).length ? { tag_values: payload.tagValues } : {}),
       }),
     );
     if (!response.ok || !response.body) {
