@@ -105,6 +105,10 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
   }, [image, imageElement]);
 
   useEffect(() => {
+    setHoverPoint(undefined);
+  }, [tool]);
+
+  useEffect(() => {
     setTool(taskTool(taskType));
     setPolygonPoints([]);
     setDragStart(undefined);
@@ -481,6 +485,9 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
                 setHoverPoint(pointer(event));
                 return;
               }
+              if (["bbox", "rect", "circle", "obb"].includes(tool)) {
+                setHoverPoint(pointer(event));
+              }
               if (tool === "sam_point" || !dragStart) return;
               const point = pointer(event);
               if (point) setDragEnd(point);
@@ -561,6 +568,12 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
                     strokeScaleEnabled={false}
                     closed
                   />
+                </>
+              )}
+              {["bbox", "rect", "circle", "obb"].includes(tool) && hoverPoint && !panning && (
+                <>
+                  <Line points={[0, hoverPoint[1], displaySize.width, hoverPoint[1]]} stroke="rgba(80,110,160,.45)" strokeWidth={0.5} strokeScaleEnabled={false} listening={false} dash={[3, 3]} />
+                  <Line points={[hoverPoint[0], 0, hoverPoint[0], displaySize.height]} stroke="rgba(80,110,160,.45)" strokeWidth={0.5} strokeScaleEnabled={false} listening={false} dash={[3, 3]} />
                 </>
               )}
               {(tool === "polygon" || tool === "rect" || tool === "circle") && polygonPoints.map((point, index) => {
