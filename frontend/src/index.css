@@ -724,3 +724,22 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .class-color-swatch { width: 22px; height: 22px; border: 2px solid #fff; border-radius: 6px; cursor: pointer; box-shadow: 0 0 0 1px #d5dbe7; transition: transform .1s ease; }
 .class-color-swatch:hover { transform: scale(1.15); }
 .class-color-swatch.selected { box-shadow: 0 0 0 2px #3157d5; transform: scale(1.15); }
+
+/* ---- 数据源浏览模式: 左列表右大图 ---- */
+.source-view-mode { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 12px; border-radius: 9px; background: #f1f5f9; }
+.source-view-mode button { min-height: 30px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: #475569; font-size: 13px; font-weight: 650; cursor: pointer; }
+.source-view-mode button.active { background: #fff; color: #3157d5; box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
+.source-browser { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 14px; min-height: 480px; }
+.source-browser-list { display: grid; gap: 6px; align-content: start; max-height: calc(100vh - 320px); overflow-y: auto; padding-right: 4px; }
+.source-browser-item { display: grid; grid-template-columns: 46px minmax(0, 1fr); align-items: center; gap: 10px; padding: 6px; border: 1px solid transparent; border-radius: 9px; background: transparent; text-align: left; cursor: pointer; font-family: inherit; }
+.source-browser-item:hover { background: #f5f7ff; }
+.source-browser-item.active { border-color: #9eb2ed; background: #eaf0ff; }
+.source-browser-item img { width: 46px; height: 38px; object-fit: cover; border-radius: 5px; background: #edf0f5; }
+.source-browser-item strong { display: block; color: #334058; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-browser-item small { color: #8994a8; font-size: 10px; }
+.source-browser-main { display: grid; align-content: start; gap: 10px; }
+.source-browser-main > img { width: 100%; max-height: calc(100vh - 420px); object-fit: contain; border-radius: 10px; background: #f2f4f8; }
+.source-browser-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; color: #334058; }
+.source-browser-bar > div { display: flex; gap: 6px; }
+.source-browser-empty { display: grid; place-items: center; gap: 8px; min-height: 320px; color: #8994a8; border: 1px dashed #dbe1ea; border-radius: 10px; }
+.source-browser-empty strong { color: #536077; }

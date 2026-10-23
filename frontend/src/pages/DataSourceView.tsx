@@ -232,6 +232,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const [queryInput, setQueryInput] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
   const [preview, setPreview] = useState<SourceImage>();
+  const [viewMode, setViewMode] = useState<"grid" | "browser">("grid");
   const [ftpOpen, setFtpOpen] = useState(false);
   const [ftpPath, setFtpPath] = useState("/");
   const [ftpEntries, setFtpEntries] = useState<FtpEntry[]>([]);
@@ -276,6 +277,28 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   useEffect(() => {
     void loadDetail();
   }, [dataset.id, tagFilter, tagMatch, query, pageIndex]);
+
+  const items = page?.items ?? [];
+  const previewIndex = preview ? items.findIndex((item) => item.id === preview.id) : -1;
+  const stepPreview = (delta: number) => {
+    if (previewIndex < 0 || !items.length) return;
+    const next = items[(previewIndex + delta + items.length) % items.length];
+    setPreview(next);
+  };
+
+  useEffect(() => {
+    if (!preview) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const lower = event.key.toLowerCase();
+      if (lower === "d" || event.key === "ArrowRight") { event.preventDefault(); stepPreview(1); }
+      else if (lower === "a" || event.key === "ArrowLeft") { event.preventDefault(); stepPreview(-1); }
+      else if (event.key === "Escape") setPreview(undefined);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const runAction = async (action: () => Promise<string>) => {
     setBusy(true);
@@ -448,7 +471,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     });
   };
 
-  const items = page?.items ?? [];
+
   const totalPages = page ? Math.max(1, Math.ceil(page.total / page.limit)) : 1;
 
   return (
@@ -536,6 +559,12 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
       {loading ? (
         <p className="muted">正在读取图片…</p>
       ) : items.length ? (
+        <>
+        <div className="source-view-mode" role="group" aria-label="展示方式">
+          <button type="button" className={viewMode === "grid" ? "active" : ""} onClick={() => setViewMode("grid")}>网格</button>
+          <button type="button" className={viewMode === "browser" ? "active" : ""} onClick={() => setViewMode("browser")}>浏览(左列表·右大图)</button>
+        </div>
+        {viewMode === "grid" ? (
         <section className="source-image-grid">
           {items.map((image) => {
             const isSelected = selectedIds.includes(image.id);
@@ -557,6 +586,45 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
             );
           })}
         </section>
+        ) : (
+        <section className="source-browser">
+          <aside className="source-browser-list" aria-label="图片列表">
+            {items.map((image) => (
+              <button key={image.id} className={`source-browser-item${preview?.id === image.id ? " active" : ""}`} onClick={() => setPreview(image)}>
+                <img src={apiUrl(image.thumbnail_url)} alt="" loading="lazy" />
+                <div>
+                  <strong title={image.file_name}>{image.file_name}</strong>
+                  <small>{formatSize(image.size_bytes)}{image.tags.length ? ` · ${image.tags.map((tag) => tag.name).join("、")}` : ""}</small>
+                </div>
+              </button>
+            ))}
+          </aside>
+          <div className="source-browser-main">
+            {preview ? (
+              <>
+                <img src={apiUrl(preview.file_url)} alt={preview.file_name} />
+                <div className="source-browser-bar">
+                  <span>{previewIndex >= 0 ? `${previewIndex + 1} / ${items.length}` : ""} · {preview.file_name}</span>
+                  <span className="muted">{preview.width}×{preview.height} · {formatSize(preview.size_bytes)}</span>
+                  <div>
+                    <button className="button" onClick={() => stepPreview(-1)} title="上一张（A）">← 上一张</button>
+                    <button className="button" onClick={() => stepPreview(1)} title="下一张（D）">下一张 →</button>
+                  </div>
+                </div>
+                <div className="source-preview-tags" role="group" aria-label="图片标签">
+                  {tags.length ? tags.map((tag) => {
+                    const enabled = preview.tags.some((item) => item.id === tag.id);
+                    return <button key={tag.id} className={`source-tag-chip${enabled ? " active" : ""}`} style={{ borderColor: tag.color }} disabled={busy} onClick={() => void toggleImageTag(preview, tag)}>{tag.name}</button>;
+                  }) : <span className="muted">还没有标签。</span>}
+                </div>
+              </>
+            ) : (
+              <div className="source-browser-empty"><strong>点击左侧图片预览</strong><span>支持 A / D 或 ← / → 切换，Esc 关闭网格预览弹窗</span></div>
+            )}
+          </div>
+        </section>
+        )}
+        </>
       ) : (
         <section className="dataset-empty-card">
           <span className="dataset-empty-icon">▦</span>
