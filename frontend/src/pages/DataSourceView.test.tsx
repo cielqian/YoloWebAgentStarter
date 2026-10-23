@@ -104,7 +104,7 @@ describe("DataSourceView batch tags and upload tags", () => {
     await openDetail();
 
     await clickButton("上传图片");
-    const chip = Array.from(container?.querySelectorAll<HTMLButtonElement>(".source-tag-button") ?? []).find((item) => item.textContent === "夜间");
+    const chip = Array.from(container?.querySelectorAll<HTMLButtonElement>(".source-tag-chip > button") ?? []).find((item) => item.textContent === "夜间");
     await act(async () => { chip?.click(); });
 
     const fileInput = container?.querySelector<HTMLInputElement>('input[type="file"]');
@@ -116,7 +116,7 @@ describe("DataSourceView batch tags and upload tags", () => {
     await act(async () => {});
 
     await clickButton("开始上传");
-    expect(api.uploadSourceImages).toHaveBeenCalledWith("sd-1", [expect.objectContaining({ name: "new.png" })], ["stag-b"]);
+    expect(api.uploadSourceImages).toHaveBeenCalledWith("sd-1", [expect.any(File)], ["stag-b"], {});
   });
 });
 
@@ -153,14 +153,14 @@ describe("DataSourceView FTP picker", () => {
 
     await clickButton("FTP 同步");
     await act(async () => {});
-    const tagChip = Array.from(container?.querySelectorAll<HTMLButtonElement>(".ftp-picker-tags .source-tag-button") ?? []).find((item) => item.textContent === "白天");
+    const tagChip = Array.from(container?.querySelectorAll<HTMLButtonElement>(".ftp-picker-tags .source-tag-chip > button") ?? []).find((item) => item.textContent === "白天");
     await act(async () => { tagChip?.click(); });
     const folder = Array.from(container?.querySelectorAll<HTMLButtonElement>(".ftp-name.dir") ?? []).find((item) => item.textContent?.includes("cam1"));
     await act(async () => { folder?.click(); });
     await act(async () => {});
 
     await clickButton("同步整个文件夹");
-    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/cam1", recursive: true, tagIds: ["stag-a"] }, expect.any(Function));
+    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/cam1", recursive: true, tagIds: ["stag-a"], tagValues: {} }, expect.any(Function));
   });
 
   it("imports multiple selected files across folders", async () => {
@@ -185,6 +185,6 @@ describe("DataSourceView FTP picker", () => {
     await act(async () => { checkboxFor("d.png")?.click(); });
 
     await clickButton(/导入所选 3 张/);
-    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/", recursive: false, filePaths: ["/a.png", "/b.jpg", "/cam1/d.png"], tagIds: [] }, expect.any(Function));
+    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/", recursive: false, filePaths: ["/a.png", "/b.jpg", "/cam1/d.png"], tagIds: [], tagValues: {} }, expect.any(Function));
   });
 });

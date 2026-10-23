@@ -51,8 +51,8 @@ class SourceTagOut(BaseModel):
 
 class SourceImageUpdate(BaseModel):
     file_name: str | None = Field(default=None, min_length=1, max_length=512)
-    tag_values: dict[str, str] | None = None
     tag_ids: list[str] | None = None
+    tag_values: dict[str, str] | None = None
 
 
 class SourceImageOut(BaseModel):
@@ -95,6 +95,7 @@ class SourceFtpSyncRequest(BaseModel):
     recursive: bool = True
     file_paths: list[str] | None = None
     tag_ids: list[str] | None = None
+    tag_values: dict[str, str] | None = None
 
 
 class SourceFtpSyncResult(BaseModel):

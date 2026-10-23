@@ -239,6 +239,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const [ftpLoading, setFtpLoading] = useState(false);
   const [ftpSelected, setFtpSelected] = useState<string[]>([]);
   const [ftpTagIds, setFtpTagIds] = useState<string[]>([]);
+  const [ftpTagValues, setFtpTagValues] = useState<Record<string, string>>({});
   const [ftpRecursive, setFtpRecursive] = useState(true);
   const [syncProgress, setSyncProgress] = useState<FtpSyncProgressEvent>();
   const [syncTotal, setSyncTotal] = useState(0);
@@ -249,6 +250,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const [batchValues, setBatchValues] = useState<Record<string, string>>({});
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTagIds, setUploadTagIds] = useState<string[]>([]);
+  const [uploadTagValues, setUploadTagValues] = useState<Record<string, string>>({});
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -329,7 +331,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     const tagIds = [...uploadTagIds];
     setUploadOpen(false);
     await runAction(async () => {
-      const result = await api.uploadSourceImages(dataset.id, files, tagIds);
+      const result = await api.uploadSourceImages(dataset.id, files, tagIds, uploadTagValues);
       const tagNote = tagIds.length ? `，已附加 ${tagIds.length} 个标签` : "";
       return result.imported
         ? `已导入 ${result.imported} 张图片${tagNote}${result.invalid ? `，跳过 ${result.invalid} 个无效文件` : ""}`
@@ -409,7 +411,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     const tagIds = [...ftpTagIds];
     setFtpOpen(false);
     await runAction(async () => {
-      const result = await api.syncSourceFromFtp(dataset.id, { path, recursive: ftpRecursive, tagIds }, handleSyncEvent);
+      const result = await api.syncSourceFromFtp(dataset.id, { path, recursive: ftpRecursive, tagIds, tagValues: ftpTagValues }, handleSyncEvent);
       const hint = result.truncated ? "；目录图片较多，已达单次同步上限，请分目录分批同步" : "";
       return `FTP 同步完成：新增 ${result.synced} 张${result.skipped ? `，跳过 ${result.skipped} 个` : ""}${hint}`;
     });
@@ -421,7 +423,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     const tagIds = [...ftpTagIds];
     setFtpOpen(false);
     await runAction(async () => {
-      const result = await api.syncSourceFromFtp(dataset.id, { path: "/", recursive: false, filePaths: files, tagIds }, handleSyncEvent);
+      const result = await api.syncSourceFromFtp(dataset.id, { path: "/", recursive: false, filePaths: files, tagIds, tagValues: ftpTagValues }, handleSyncEvent);
       return `FTP 导入完成：新增 ${result.synced} 张${result.skipped ? `，跳过 ${result.skipped} 个` : ""}`;
     });
   };
@@ -754,16 +756,16 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                 {tags.length ? tags.map((tag) => {
                   const enabled = ftpTagIds.includes(tag.id);
                   return (
-                    <button
-                      key={tag.id}
-                      className={`source-tag-button${enabled ? " active" : ""}`}
-                      style={{ borderColor: tag.color }}
-                      onClick={() => setFtpTagIds((ids) => (ids.includes(tag.id) ? ids.filter((item) => item !== tag.id) : [...ids, tag.id]))}
-                    >
-                      {tag.name}
-                    </button>
+                    <span key={tag.id} className={`source-tag-chip enum${enabled ? " active" : ""}`} style={{ borderColor: tag.color }}>
+                      <button type="button" onClick={() => setFtpTagIds((ids) => (ids.includes(tag.id) ? ids.filter((item) => item !== tag.id) : [...ids, tag.id]))}>{tag.name}</button>
+                      {enabled && tag.values && (
+                        <select aria-label={`${tag.name} 取值`} value={ftpTagValues[tag.id] ?? tag.values[0]} onChange={(event) => setFtpTagValues((prev) => ({ ...prev, [tag.id]: event.target.value }))}>
+                          {tag.values.map((value) => <option key={value} value={value}>{value}</option>)}
+                        </select>
+                      )}
+                    </span>
                   );
-                }) : <span className="muted">还没有标签，可先在上方“新建标签”，导入后再打标签。</span>}
+                }) : <span className="muted">还没有标签，请到「设置 → 基础数据 → 标签库」维护。</span>}
               </div>
               <footer className="ftp-picker-actions">
                 <label className="source-toggle"><input type="checkbox" checked={ftpRecursive} onChange={(event) => setFtpRecursive(event.target.checked)} />包含子目录</label>
@@ -785,15 +787,14 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                 {tags.length ? tags.map((tag) => {
                   const enabled = uploadTagIds.includes(tag.id);
                   return (
-                    <button
-                      type="button"
-                      key={tag.id}
-                      className={`source-tag-button${enabled ? " active" : ""}`}
-                      style={{ borderColor: tag.color }}
-                      onClick={() => setUploadTagIds((ids) => (ids.includes(tag.id) ? ids.filter((id) => id !== tag.id) : [...ids, tag.id]))}
-                    >
-                      {tag.name}
-                    </button>
+                    <span key={tag.id} className={`source-tag-chip enum${enabled ? " active" : ""}`} style={{ borderColor: tag.color }}>
+                      <button type="button" onClick={() => setUploadTagIds((ids) => (ids.includes(tag.id) ? ids.filter((id) => id !== tag.id) : [...ids, tag.id]))}>{tag.name}</button>
+                      {enabled && tag.values && (
+                        <select aria-label={`${tag.name} 取值`} value={uploadTagValues[tag.id] ?? tag.values[0]} onChange={(event) => setUploadTagValues((prev) => ({ ...prev, [tag.id]: event.target.value }))}>
+                          {tag.values.map((value) => <option key={value} value={value}>{value}</option>)}
+                        </select>
+                      )}
+                    </span>
                   );
                 }) : <span className="muted">还没有标签，可先在上方“新建标签”，或直接上传后再打标签。</span>}
               </div>

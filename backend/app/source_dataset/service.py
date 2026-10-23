@@ -119,10 +119,13 @@ def add_images(
     uploads: list[tuple[str, bytes]],
     source_type: str,
     tag_ids: list[str] | None = None,
+    tag_values: dict[str, str] | None = None,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> SourceUploadResult:
     get_source_dataset(session, source_dataset_id)
     tags = _owned_tags(session, source_dataset_id, tag_ids) if tag_ids else []
+    if tag_values:
+        _validate_enum_values(session, source_dataset_id, tag_values)
     staged: list[SourceImage] = []
     invalid = 0
     for file_name, content in uploads:
@@ -133,7 +136,10 @@ def add_images(
         if on_progress is not None:
             on_progress(len(staged), invalid)
     for image in staged:
-        image.tag_links = [SourceImageTag(image_id=image.id, tag_id=tag.id) for tag in tags]
+        image.tag_links = [
+            SourceImageTag(image_id=image.id, tag_id=tag.id, value=(tag_values or {}).get(tag.id) if tag.values else None)
+            for tag in tags
+        ]
     try:
         session.flush()
         _refresh_counts(session, source_dataset_id)
@@ -175,7 +181,7 @@ def sync_from_ftp(
             ),
         )
         result = add_images(
-            session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids,
+            session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids, tag_values=payload.tag_values,
             on_progress=lambda saved, invalid: emit({"type": "progress", "stage": "save", "synced": saved, "skipped": invalid}),
         )
         return SourceFtpSyncResult(synced=result.imported, skipped=result.invalid + skipped)
@@ -187,7 +193,7 @@ def sync_from_ftp(
         on_progress=lambda synced: emit({"type": "progress", "stage": "download", "synced": synced, "skipped": 0}),
     )
     result = add_images(
-        session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids,
+        session, storage, settings, source_dataset_id, files, "ftp", tag_ids=tag_ids, tag_values=payload.tag_values,
         on_progress=lambda saved, invalid: emit({"type": "progress", "stage": "save", "synced": saved, "skipped": invalid}),
     )
     return SourceFtpSyncResult(synced=result.imported, skipped=result.invalid, truncated=truncated)

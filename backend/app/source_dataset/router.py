@@ -103,12 +103,21 @@ async def upload_images(
     source_dataset_id: str,
     files: list[UploadFile] = File(...),
     tag_ids: list[str] = Form(default=[]),
+    tag_values: str = Form(default=""),
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
 ) -> SourceUploadResult:
     uploads = [(file.filename or "image", await _read_upload(file, settings.max_upload_bytes)) for file in files]
-    return service.add_images(session, storage, settings, source_dataset_id, uploads, "upload", tag_ids=tag_ids or None)
+    import json as _json
+
+    parsed_values: dict[str, str] = {}
+    if tag_values:
+        try:
+            parsed_values = {str(k): str(v) for k, v in _json.loads(tag_values).items()}
+        except ValueError:
+            parsed_values = {}
+    return service.add_images(session, storage, settings, source_dataset_id, uploads, "upload", tag_ids=tag_ids or None, tag_values=parsed_values or None)
 
 
 @router.post("/{source_dataset_id}/images/batch-tags", response_model=SourceBatchTagsResult)
