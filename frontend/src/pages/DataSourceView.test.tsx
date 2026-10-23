@@ -86,11 +86,13 @@ describe("DataSourceView batch tags and upload tags", () => {
     await clickButton("two.png");
     expect(container?.querySelector(".source-image-card.selected")?.textContent).toContain("one.png");
 
-    await clickButton(/＋ 白天/);
+    await clickButton("+ 白天");
+    await clickButton("关联 1 个标签");
     expect(api.batchUpdateSourceImageTags).toHaveBeenCalledWith("sd-1", ["simg-1", "simg-2"], ["stag-a"], false);
 
     await clickButton("取消关联");
-    await clickButton(/－ 白天/);
+    await clickButton("－ 白天");
+    await clickButton("取消 1 个标签");
     expect(api.batchUpdateSourceImageTags).toHaveBeenLastCalledWith("sd-1", ["simg-1", "simg-2"], ["stag-a"], true);
 
     await clickButton("退出选择");

@@ -764,3 +764,6 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .tag-values-cell { display: flex; flex-wrap: wrap; gap: 4px; }
 .tag-values-cell em, .tag-values-chips em { padding: 1px 8px; border-radius: 999px; background: #eef3ff; color: #3157d5; font-size: 11px; font-style: normal; font-weight: 650; }
 .tag-library-table .model-table-name button { color: #1f2937; font-weight: 650; cursor: default; }
+.source-tag-chip.batch { display: inline-flex; align-items: center; gap: 0; padding: 0; }
+.source-tag-chip.batch > button { padding: 5px 10px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.source-tag-chip.batch > select { max-width: 90px; padding: 4px 6px; border: 0; border-left: 1px solid rgba(0,0,0,.12); border-radius: 0 999px 999px 0; background: rgba(255,255,255,.85); color: #3157d5; font-size: 12px; font-weight: 650; cursor: pointer; }

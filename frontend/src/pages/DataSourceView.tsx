@@ -245,6 +245,8 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchMode, setBatchMode] = useState<"add" | "remove">("add");
+  const [batchPickedTagIds, setBatchPickedTagIds] = useState<string[]>([]);
+  const [batchValues, setBatchValues] = useState<Record<string, string>>({});
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTagIds, setUploadTagIds] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -343,20 +345,40 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     setSelectedIds((ids) => Array.from(new Set([...ids, ...items.map((item) => item.id)])));
   };
 
-  const applyBatchTag = async (tag: SourceTag) => {
-    if (!selectedIds.length) return;
+  const applyBatchTags = async () => {
+    if (!selectedIds.length || !batchPickedTagIds.length) return;
     const imageIds = [...selectedIds];
+    const tagIds = [...batchPickedTagIds];
+    const values = { ...batchValues };
     const remove = batchMode === "remove";
     await runAction(async () => {
-      const result = await api.batchUpdateSourceImageTags(dataset.id, imageIds, [tag.id], remove);
-      return remove ? `已为 ${result.updated} 张图片移除标签“${tag.name}”` : `已为 ${result.updated} 张图片添加标签“${tag.name}”`;
+      await api.batchUpdateSourceImageTags(dataset.id, imageIds, tagIds, remove);
+      if (!remove) {
+        // 枚举标签需要逐图带上取值(批量接口不传 value)
+        const picked = tags.filter((tag) => tagIds.includes(tag.id) && tag.values?.length && values[tag.id]);
+        for (const tag of picked) {
+          for (const imageId of imageIds) {
+            const image = items.find((item) => item.id === imageId);
+            if (!image) continue;
+            const current = image.tags.find((item) => item.id === tag.id);
+            if (!current) continue;
+            await api.updateSourceImage(dataset.id, imageId, { tag_values: { [tag.id]: values[tag.id] } });
+          }
+        }
+      }
+      const names = tags.filter((tag) => tagIds.includes(tag.id)).map((tag) => tag.name).join("、");
+      return remove ? `已为 ${imageIds.length} 张图片移除标签：${names}` : `已为 ${imageIds.length} 张图片关联标签：${names}`;
     });
+    setBatchPickedTagIds([]);
+    setBatchValues({});
   };
 
   const exitSelectMode = () => {
     setSelectMode(false);
     setSelectedIds([]);
     setBatchMode("add");
+    setBatchPickedTagIds([]);
+    setBatchValues({});
   };
 
   const loadFtp = async (path: string) => {
@@ -518,16 +540,29 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
             <button className="button" disabled={busy || !items.length} onClick={selectAllPage}>全选本页</button>
             <button className="button" disabled={busy || !selectedIds.length} onClick={() => setSelectedIds([])}>清空选择</button>
             <div className="source-batch-mode" role="group" aria-label="批量操作模式">
-              <button className={batchMode === "add" ? "active" : ""} onClick={() => setBatchMode("add")}>关联标签</button>
-              <button className={batchMode === "remove" ? "active" : ""} onClick={() => setBatchMode("remove")}>取消关联</button>
+              <button className={batchMode === "add" ? "active" : ""} onClick={() => { setBatchMode("add"); setBatchPickedTagIds([]); setBatchValues({}); }}>关联标签</button>
+              <button className={batchMode === "remove" ? "active" : ""} onClick={() => { setBatchMode("remove"); setBatchPickedTagIds([]); setBatchValues({}); }}>取消关联</button>
             </div>
-            <div className="source-batch-tags" role="group" aria-label="批量操作标签">
-              {tags.length ? tags.map((tag) => (
-                <button key={tag.id} className="source-tag-button" style={{ borderColor: tag.color }} disabled={busy || !selectedIds.length} onClick={() => void applyBatchTag(tag)}>
-                  {batchMode === "add" ? "＋" : "－"} {tag.name}
-                </button>
-              )) : <span className="muted">还没有标签，先在上方“新建标签”后再批量应用。</span>}
+            <div className="source-batch-tags" role="group" aria-label="选择要操作的标签">
+              {tags.length ? tags.map((tag) => {
+                const picked = batchPickedTagIds.includes(tag.id);
+                return (
+                  <span key={tag.id} className={`source-tag-chip batch${picked ? " active" : ""}`} style={{ borderColor: tag.color }}>
+                    <button type="button" disabled={busy} onClick={() => setBatchPickedTagIds((ids) => picked ? ids.filter((id) => id !== tag.id) : [...ids, tag.id])}>
+                      {batchMode === "add" ? "+" : "－"} {tag.name}
+                    </button>
+                    {picked && batchMode === "add" && tag.values && (
+                      <select aria-label={`${tag.name} 取值`} value={batchValues[tag.id] ?? tag.values[0]} disabled={busy} onChange={(event) => setBatchValues((prev) => ({ ...prev, [tag.id]: event.target.value }))}>
+                        {tag.values.map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select>
+                    )}
+                  </span>
+                );
+              }) : <span className="muted">还没有标签，请到「设置 → 基础数据 → 标签库」维护。</span>}
             </div>
+            <button className="button primary" disabled={busy || !selectedIds.length || !batchPickedTagIds.length} onClick={() => void applyBatchTags()}>
+              {batchMode === "add" ? `关联 ${batchPickedTagIds.length || ""} 个标签` : `取消 ${batchPickedTagIds.length || ""} 个标签`}
+            </button>
           </section>
         )}
       </div>
