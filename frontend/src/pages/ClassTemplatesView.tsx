@@ -211,6 +211,10 @@ function ClassLibraryPanel() {
 
 const TAG_COLORS = CLASS_COLORS;
 
+function formatTagTime(value: string): string {
+  return value ? value.slice(0, 19).replace("T", " ") : "—";
+}
+
 function TagLibraryPanel() {
   const [tags, setTags] = useState<TagTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -262,25 +266,11 @@ function TagLibraryPanel() {
     } finally { setBusy(false); setDeleteTarget(undefined); }
   };
 
-  const syncAll = async () => {
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const datasets = await api.listSourceDatasets();
-      for (const dataset of datasets) {
-        await api.syncTagTemplates(dataset.id);
-      }
-      setNotice(datasets.length ? `已同步到 ${datasets.length} 个数据源` : "还没有数据源,同步将在创建数据源后生效");
-    } catch (reason) {
-      setError(errorMessage(reason));
-    } finally { setBusy(false); }
-  };
-
   return (
     <>
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <Toast kind="success" message={notice} onClose={() => setNotice("")} />
       <div className="header-actions">
-        <button className="button" disabled={busy} onClick={() => void syncAll()} title="把标签库应用到全部数据源">同步到数据源</button>
         <button className="button primary" onClick={() => { setShowForm((value) => !value); setEditState(null); resetTagForm(tags.length); }}>{showForm && !editState ? "收起" : "+ 新增标签"}</button>
       </div>
 
@@ -306,27 +296,41 @@ function TagLibraryPanel() {
       ) : null}
 
       {loading ? <p className="muted">正在加载标签库…</p> : tags.length ? (
-        <div className="class-library-list">
-          {tags.map((tag) => (
-            <div key={tag.id} className="class-library-row">
-              <i style={{ background: tag.color }} />
-              <div>
-                <strong>{tag.name}{tag.values?.length ? <small className="tag-values-chips">{tag.values.map((value) => <em key={value}>{value}</em>)}</small> : null}</strong>
-                {tag.description ? <small>{tag.description}</small> : null}
-              </div>
-              <div className="header-actions">
-                <button className="button" disabled={busy} onClick={() => { setEditState({ id: tag.id, name: tag.name, color: tag.color, values: (tag.values ?? []).join(", "), description: tag.description ?? "" }); setShowForm(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>编辑</button>
-                <button className="button danger" disabled={busy} onClick={() => setDeleteTarget(tag)}>删除</button>
-              </div>
-            </div>
-          ))}
+        <div className="model-table-wrap">
+          <table className="model-table tag-library-table">
+            <thead>
+              <tr>
+                <th className="model-table-check"></th>
+                <th>标签</th>
+                <th>枚举取值</th>
+                <th>备注</th>
+                <th>更新时间</th>
+                <th className="model-table-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tags.map((tag) => (
+                <tr key={tag.id}>
+                  <td className="model-table-check"><i className="tag-color-dot" style={{ background: tag.color }} /></td>
+                  <td className="model-table-name"><button type="button" title={tag.name}>{tag.name}</button></td>
+                  <td className="tag-values-cell">{tag.values?.length ? tag.values.map((value) => <em key={value}>{value}</em>) : <span className="muted">—</span>}</td>
+                  <td title={tag.description ?? undefined}>{tag.description || <span className="muted">—</span>}</td>
+                  <td className="model-table-time">{formatTagTime(tag.updated_at)}</td>
+                  <td className="model-table-actions">
+                    <button className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => { setEditState({ id: tag.id, name: tag.name, color: tag.color, values: (tag.values ?? []).join(", "), description: tag.description ?? "" }); setShowForm(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>编辑</button>
+                    <button className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => setDeleteTarget(tag)}>删除</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ) : <p className="muted">标签库还是空的。新增标签(如“光线=强/弱”)后,在数据源页同步使用。</p>}
+      ) : <p className="muted">标签库还是空的。新增标签(如“光线=强/弱”)后,数据源打标界面会直接使用。</p>}
 
       {deleteTarget && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
           <section className="dataset-dialog" role="alertdialog" aria-modal="true">
-            <header><div><span className="eyebrow">DELETE TAG</span><h2>删除标签“{deleteTarget.name}”？</h2><p>只删除标签库模板;已同步到数据源的标签和图片上的标注不受影响。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
+            <header><div><span className="eyebrow">DELETE TAG</span><h2>删除标签“{deleteTarget.name}”？</h2><p>只删除标签库模板;数据源已使用的标签和图片标注不受影响。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
             <footer>
               <button className="button" onClick={() => setDeleteTarget(undefined)}>取消</button>
               <button className="button danger" disabled={busy} onClick={() => void remove(deleteTarget)}>确认删除</button>

@@ -124,7 +124,7 @@ describe("DataSourceView tag filter", () => {
     await openDetail();
 
     const chip = (name: string) =>
-      Array.from(container?.querySelectorAll<HTMLButtonElement>(".source-tag-chip > button") ?? [])
+      Array.from(container?.querySelectorAll<HTMLButtonElement>(".source-tag-chip") ?? [])
         .find((item) => item.textContent?.startsWith(name));
     await act(async () => { chip("白天")?.click(); });
     await act(async () => {});

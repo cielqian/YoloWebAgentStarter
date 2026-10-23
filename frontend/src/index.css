@@ -760,3 +760,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .settings-basedata .dataset-home-header h1 { font-size: 20px; }
 .settings-basedata .base-data-tabs { margin: 14px 0; }
 .settings-basedata .class-library-form { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; }
+.tag-color-dot { display: inline-block; width: 12px; height: 12px; border-radius: 4px; }
+.tag-values-cell { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag-values-cell em, .tag-values-chips em { padding: 1px 8px; border-radius: 999px; background: #eef3ff; color: #3157d5; font-size: 11px; font-style: normal; font-weight: 650; }
+.tag-library-table .model-table-name button { color: #1f2937; font-weight: 650; cursor: default; }

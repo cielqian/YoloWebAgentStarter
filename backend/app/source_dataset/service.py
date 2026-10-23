@@ -305,6 +305,25 @@ def delete_image(session: Session, storage: Storage, source_dataset_id: str, ima
 
 def list_tags(session: Session, source_dataset_id: str) -> list[tuple[SourceTag, int]]:
     get_source_dataset(session, source_dataset_id)
+    # 标签定义直接取全局标签库;同名落库到 source tag 以承载图片关联与计数
+    from app.core.models import TagTemplate
+
+    templates = list(session.scalars(select(TagTemplate).order_by(TagTemplate.name)))
+    if templates:
+        existing = {
+            tag.name: tag
+            for tag in session.scalars(select(SourceTag).where(SourceTag.source_dataset_id == source_dataset_id))
+        }
+        for template in templates:
+            found = existing.get(template.name)
+            if found is None:
+                found = SourceTag(id=new_id("stag"), source_dataset_id=source_dataset_id, name=template.name, color=template.color, values=template.values)
+                session.add(found)
+                existing[template.name] = found
+            else:
+                found.color = template.color
+                found.values = template.values
+        session.commit()
     tags = list(
         session.scalars(
             select(SourceTag).where(SourceTag.source_dataset_id == source_dataset_id).order_by(SourceTag.name)

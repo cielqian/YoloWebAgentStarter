@@ -242,10 +242,6 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const [ftpRecursive, setFtpRecursive] = useState(true);
   const [syncProgress, setSyncProgress] = useState<FtpSyncProgressEvent>();
   const [syncTotal, setSyncTotal] = useState(0);
-  const [tagDialog, setTagDialog] = useState<{ mode: "create" } | { mode: "edit"; tag: SourceTag }>();
-  const [tagName, setTagName] = useState("");
-  const [tagValuesInput, setTagValuesInput] = useState("");
-  const [tagColor, setTagColor] = useState("#3157d5");
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchMode, setBatchMode] = useState<"add" | "remove">("add");
@@ -257,7 +253,6 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const loadDetail = async (options: { quiet?: boolean } = {}) => {
     if (!options.quiet) setLoading(true);
     try {
-      api.syncTagTemplates(dataset.id).catch(() => undefined);
       const [nextTags, nextPage] = await Promise.all([
         api.listSourceTags(dataset.id),
         api.listSourceImages(dataset.id, { offset: pageIndex * PAGE_SIZE, limit: PAGE_SIZE, tagIds: tagFilter.length ? tagFilter : undefined, tagMatch, query: query || undefined }),
@@ -409,29 +404,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     });
   };
 
-  const submitTagDialog = async () => {
-    const name = tagName.trim();
-    if (!name) return;
-    const values = tagValuesInput.split(/[,，、\s]+/).map((item) => item.trim()).filter(Boolean);
-    const dialog = tagDialog;
-    setTagDialog(undefined);
-    await runAction(async () => {
-      if (dialog?.mode === "edit") {
-        await api.updateSourceTag(dataset.id, dialog.tag.id, { name, color: tagColor, values: values.length ? values : null });
-        return `标签已更新为“${name}”`;
-      }
-      await api.createSourceTag(dataset.id, name, tagColor, values.length ? values : null);
-      return `已新增标签“${name}”${values.length ? "(枚举)" : ""}`;
-    });
-  };
 
-  const deleteTag = async (tag: SourceTag) => {
-    await runAction(async () => {
-      await api.deleteSourceTag(dataset.id, tag.id);
-      if (tagFilter.includes(tag.id)) setTagFilter(tagFilter.filter((id) => id !== tag.id));
-      return `已删除标签“${tag.name}”`;
-    });
-  };
 
   const toggleImageTag = async (image: SourceImage, tag: SourceTag, value?: string) => {
     const enabled = image.tags.some((item) => item.id === tag.id);
@@ -526,11 +499,9 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
           <div className="source-tag-bar" role="group" aria-label="标签筛选">
             <button className={`source-tag-chip${tagFilter.length ? "" : " active"}`} onClick={() => setTagFilter([])}>全部</button>
             {tags.map((tag) => (
-              <span key={tag.id} className={`source-tag-chip${tagFilter.includes(tag.id) ? " active" : ""}`} style={{ borderColor: tag.color }}>
-                <button onClick={() => setTagFilter(tagFilter.includes(tag.id) ? tagFilter.filter((id) => id !== tag.id) : [...tagFilter, tag.id])}>{tag.name} · {tag.image_count}</button>
-                <button className="source-tag-edit" title="编辑标签" onClick={() => { setTagDialog({ mode: "edit", tag }); setTagName(tag.name); setTagColor(tag.color); setTagValuesInput((tag.values ?? []).join(", ")); }}>✎</button>
-                <button className="source-tag-edit" title="删除标签" disabled={busy} onClick={() => void deleteTag(tag)}>×</button>
-              </span>
+              <button key={tag.id} className={`source-tag-chip${tagFilter.includes(tag.id) ? " active" : ""}`} style={{ borderColor: tag.color }} onClick={() => setTagFilter(tagFilter.includes(tag.id) ? tagFilter.filter((id) => id !== tag.id) : [...tagFilter, tag.id])} title={tag.values?.length ? `枚举：${tag.values.join(" / ")}` : undefined}>
+                {tag.name} · {tag.image_count}
+              </button>
             ))}
             {tagFilter.length > 1 && (
               <span className="tag-match-switch" role="group" aria-label="标签匹配逻辑">
@@ -538,7 +509,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                 <button className={tagMatch === "any" ? "active" : ""} title="包含任一所选标签即可" onClick={() => setTagMatch("any")}>或</button>
               </span>
             )}
-            <button className="button" disabled={busy} onClick={() => { setTagDialog({ mode: "create" }); setTagName(""); setTagColor("#3157d5"); setTagValuesInput(""); }}>＋ 新建标签</button>
+
           </div>
         </section>
         {selectMode && (
@@ -798,23 +769,6 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
               <footer>
                 <button type="button" className="button" onClick={() => setUploadOpen(false)}>取消</button>
                 <button className="button primary" type="submit" disabled={busy || !pendingFiles.length}>开始上传</button>
-              </footer>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {tagDialog && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setTagDialog(undefined)}>
-          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="source-tag-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header className="data-exchange-header"><div><span className="eyebrow">TAG</span><h2 id="source-tag-title">{tagDialog.mode === "create" ? "新建标签" : `编辑标签“${tagDialog.tag.name}”`}</h2></div><button className="icon-button" onClick={() => setTagDialog(undefined)} aria-label="关闭">×</button></header>
-            <form className="ftp-dialog-form" onSubmit={(event) => { event.preventDefault(); void submitTagDialog(); }}>
-              <input autoFocus value={tagName} placeholder="标签名，例如：白天" onChange={(event) => setTagName(event.target.value)} />
-              <label className="source-color-row">颜色 <input type="color" value={tagColor} onChange={(event) => setTagColor(event.target.value)} /></label>
-              <label>枚举取值<small>选填。逗号/顿号分隔，例如：强, 弱。填写后图片打标时可选具体取值。</small><input value={tagValuesInput} placeholder="例如：强, 弱" onChange={(event) => setTagValuesInput(event.target.value)} /></label>
-              <footer>
-                <button type="button" className="button" onClick={() => setTagDialog(undefined)}>取消</button>
-                <button className="button primary" type="submit" disabled={!tagName.trim()}>保存</button>
               </footer>
             </form>
           </section>
