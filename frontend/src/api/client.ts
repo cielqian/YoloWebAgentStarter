@@ -136,8 +136,8 @@ export const api = {
     if (Object.keys(tagValues).length) form.append("tag_values", JSON.stringify(tagValues));
     return request<{ imported: number; invalid: number }>(`/api/source-datasets/${datasetId}/images/upload`, { method: "POST", body: form });
   },
-  batchUpdateSourceImageTags: (datasetId: string, imageIds: string[], tagIds: string[], remove = false) =>
-    request<{ updated: number }>(`/api/source-datasets/${datasetId}/images/batch-tags`, json({ image_ids: imageIds, tag_ids: tagIds, remove })),
+  batchUpdateSourceImageTags: (datasetId: string, imageIds: string[], tagIds: string[], remove = false, tagValues: Record<string, string> = {}) =>
+    request<{ updated: number }>(`/api/source-datasets/${datasetId}/images/batch-tags`, json({ image_ids: imageIds, tag_ids: tagIds, remove, ...(Object.keys(tagValues).length ? { tag_values: tagValues } : {}) })),
   syncSourceFromFtp: async (
     datasetId: string,
     payload: { path: string; recursive: boolean; filePaths?: string[]; tagIds?: string[]; tagValues?: Record<string, string> },

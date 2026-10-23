@@ -84,6 +84,7 @@ class SourceBatchTagsRequest(BaseModel):
     image_ids: list[str] = Field(min_length=1)
     tag_ids: list[str] = Field(min_length=1)
     remove: bool = False
+    tag_values: dict[str, str] | None = None
 
 
 class SourceBatchTagsResult(BaseModel):

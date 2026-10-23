@@ -133,7 +133,7 @@ def batch_add_tags(
     payload: SourceBatchTagsRequest,
     session: Session = Depends(get_session),
 ) -> SourceBatchTagsResult:
-    updated = service.apply_tags_to_images(session, source_dataset_id, payload.image_ids, payload.tag_ids, remove=payload.remove)
+    updated = service.apply_tags_to_images(session, source_dataset_id, payload.image_ids, payload.tag_ids, remove=payload.remove, tag_values=payload.tag_values)
     return SourceBatchTagsResult(updated=updated)
 
 

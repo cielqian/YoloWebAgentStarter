@@ -280,10 +280,11 @@ def update_image(session: Session, source_dataset_id: str, image_id: str, file_n
     return image
 
 
-def apply_tags_to_images(session: Session, source_dataset_id: str, image_ids: list[str], tag_ids: list[str], *, remove: bool) -> int:
-    """批量为多张图片关联或取消关联标签；关联时保留已有标签，重复关联自动跳过。"""
+def apply_tags_to_images(session: Session, source_dataset_id: str, image_ids: list[str], tag_ids: list[str], *, remove: bool, tag_values: dict[str, str] | None = None) -> int:
+    """批量为多张图片关联或取消关联标签；关联时保留已有标签，枚举标签记录所选取值(重复应用时更新取值)。"""
     get_source_dataset(session, source_dataset_id)
     tags = _owned_tags(session, source_dataset_id, tag_ids)
+    _validate_enum_values(session, source_dataset_id, tag_values or {})
     images = list(
         session.scalars(
             select(SourceImage).where(
@@ -295,14 +296,18 @@ def apply_tags_to_images(session: Session, source_dataset_id: str, image_ids: li
         raise NotFoundError("source_image_not_found", "图片不存在或不属于该数据源数据集。")
     from app.core.models import SourceImageTag
 
+    values_by_tag = tag_values or {}
     for image in images:
         if remove:
             image.tag_links = [link for link in image.tag_links if link.tag_id not in {tag.id for tag in tags}]
         else:
-            existing = {link.tag_id for link in image.tag_links}
+            existing = {link.tag_id: link for link in image.tag_links}
             for tag in tags:
-                if tag.id not in existing:
-                    image.tag_links.append(SourceImageTag(image_id=image.id, tag_id=tag.id))
+                link = existing.get(tag.id)
+                if link is None:
+                    image.tag_links.append(SourceImageTag(image_id=image.id, tag_id=tag.id, value=values_by_tag.get(tag.id) if tag.values else None))
+                elif tag.values and values_by_tag.get(tag.id):
+                    link.value = values_by_tag[tag.id]
     session.commit()
     return len(images)
 

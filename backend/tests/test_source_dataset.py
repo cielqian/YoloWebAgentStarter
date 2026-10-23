@@ -266,6 +266,63 @@ def test_batch_add_tags(client: TestClient) -> None:
     assert len(ids) == 3
 
 
+def test_batch_enum_tag_values_and_filter(client: TestClient) -> None:
+    dataset = create_dataset(client)
+    ids = [upload_image(client, dataset["id"], f"img{i}.png") for i in range(3)]
+    image_ids = [item["id"] for item in client.get(f"/api/source-datasets/{dataset['id']}/images").json()["items"]]
+    light = client.post(
+        f"/api/source-datasets/{dataset['id']}/tags",
+        json={"name": "光线", "color": "#f59e0b", "values": ["强", "弱"]},
+    ).json()
+
+    applied = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/batch-tags",
+        json={"image_ids": image_ids, "tag_ids": [light["id"]], "tag_values": {light["id"]: "强"}},
+    )
+    assert applied.status_code == 200
+    assert applied.json() == {"updated": 3}
+
+    page = client.get(f"/api/source-datasets/{dataset['id']}/images").json()
+    for item in page["items"]:
+        values_by_name = {tag["name"]: tag["value"] for tag in item["tags"]}
+        assert values_by_name["光线"] == "强"
+
+    strong = client.get(
+        f"/api/source-datasets/{dataset['id']}/images",
+        params={"tag_ids": light["id"], "tag_values": json.dumps({light["id"]: "强"})},
+    ).json()
+    assert {item["id"] for item in strong["items"]} == set(image_ids)
+    weak = client.get(
+        f"/api/source-datasets/{dataset['id']}/images",
+        params={"tag_ids": light["id"], "tag_values": json.dumps({light["id"]: "弱"})},
+    ).json()
+    assert weak["total"] == 0
+
+    # 重复应用不同取值时更新而非跳过
+    reapplied = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/batch-tags",
+        json={"image_ids": image_ids[:2], "tag_ids": [light["id"]], "tag_values": {light["id"]: "弱"}},
+    )
+    assert reapplied.status_code == 200
+    strong = client.get(
+        f"/api/source-datasets/{dataset['id']}/images",
+        params={"tag_ids": light["id"], "tag_values": json.dumps({light["id"]: "强"})},
+    ).json()
+    assert strong["total"] == 1
+    weak = client.get(
+        f"/api/source-datasets/{dataset['id']}/images",
+        params={"tag_ids": light["id"], "tag_values": json.dumps({light["id"]: "弱"})},
+    ).json()
+    assert {item["id"] for item in weak["items"]} == set(image_ids[:2])
+
+    bad = client.post(
+        f"/api/source-datasets/{dataset['id']}/images/batch-tags",
+        json={"image_ids": image_ids, "tag_ids": [light["id"]], "tag_values": {light["id"]: "中"}},
+    )
+    assert bad.status_code == 422
+    assert "tag_value_invalid" in bad.text
+
+
 def test_ftp_sync_with_selected_files(client: TestClient, monkeypatch) -> None:
     dataset = create_dataset(client)
     captured: dict = {}

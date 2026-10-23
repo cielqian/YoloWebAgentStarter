@@ -352,23 +352,12 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     if (!selectedIds.length || !batchPickedTagIds.length) return;
     const imageIds = [...selectedIds];
     const tagIds = [...batchPickedTagIds];
-    const values = { ...batchValues };
     const remove = batchMode === "remove";
+    const tagValues = remove ? {} : Object.fromEntries(
+      tags.filter((tag) => tagIds.includes(tag.id) && tag.values?.length && batchValues[tag.id]).map((tag) => [tag.id, batchValues[tag.id]]),
+    );
     await runAction(async () => {
-      await api.batchUpdateSourceImageTags(dataset.id, imageIds, tagIds, remove);
-      if (!remove) {
-        // 枚举标签需要逐图带上取值(批量接口不传 value)
-        const picked = tags.filter((tag) => tagIds.includes(tag.id) && tag.values?.length && values[tag.id]);
-        for (const tag of picked) {
-          for (const imageId of imageIds) {
-            const image = items.find((item) => item.id === imageId);
-            if (!image) continue;
-            const current = image.tags.find((item) => item.id === tag.id);
-            if (!current) continue;
-            await api.updateSourceImage(dataset.id, imageId, { tag_values: { [tag.id]: values[tag.id] } });
-          }
-        }
-      }
+      await api.batchUpdateSourceImageTags(dataset.id, imageIds, tagIds, remove, tagValues);
       const names = tags.filter((tag) => tagIds.includes(tag.id)).map((tag) => tag.name).join("、");
       return remove ? `已为 ${imageIds.length} 张图片移除标签：${names}` : `已为 ${imageIds.length} 张图片关联标签：${names}`;
     });
