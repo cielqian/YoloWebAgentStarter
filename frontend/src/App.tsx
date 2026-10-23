@@ -494,8 +494,8 @@ export default function App() {
             }
             setNotice(`已开始合并到「${dataset.name}」，进度见数据集列表。`);
           })}
-          onSourceSync={(dataset, sourceDatasetId, tagIds, tagMatch, split) => run(async () => {
-            const result = await api.syncDatasetFromSource(dataset.id, { sourceDatasetId, tagIds, tagMatch, split });
+          onSourceSync={(dataset, sourceDatasetId, tagIds, tagMatch, tagValues, split) => run(async () => {
+            const result = await api.syncDatasetFromSource(dataset.id, { sourceDatasetId, tagIds, tagMatch, tagValues, split });
             await refreshDatasets();
             if (selected?.id === dataset.id) {
               const nextImages = await api.listImages(dataset.id);
@@ -542,7 +542,7 @@ export function DatasetHome(props: {
   onVideoImportComplete?: (task: import("./types").VideoImportTask) => Promise<void> | void;
   onContinueAnnotation: (dataset: Dataset) => void;
   onUpload: (dataset: Dataset, files: File[], split: SplitName) => void;
-  onSourceSync: (dataset: Dataset, sourceDatasetId: string, tagIds: string[], tagMatch: "all" | "any", split: SplitName) => void;
+  onSourceSync: (dataset: Dataset, sourceDatasetId: string, tagIds: string[], tagMatch: "all" | "any", tagValues: Record<string, string>, split: SplitName) => void;
   onTrain: (dataset: Dataset) => void;
   onDuplicates: (dataset: Dataset) => Promise<DuplicateReport | undefined>;
   onDelete: (dataset: Dataset) => void;
@@ -586,6 +586,7 @@ export function DatasetHome(props: {
   const [sourceId, setSourceId] = useState("");
   const [sourceTags, setSourceTags] = useState<SourceTag[]>([]);
   const [sourceTagIds, setSourceTagIds] = useState<string[]>([]);
+  const [sourceTagValues, setSourceTagValues] = useState<Record<string, string>>({});
   const [sourceTagMatch, setSourceTagMatch] = useState<"all" | "any">("all");
   const [sourceTotal, setSourceTotal] = useState<number>();
   const [sourceLoading, setSourceLoading] = useState(false);
@@ -705,7 +706,7 @@ export function DatasetHome(props: {
   };
   const startSourceSync = () => {
     if (!uploadTarget || !sourceId) return;
-    props.onSourceSync(uploadTarget, sourceId, sourceTagIds, sourceTagMatch, uploadSplit);
+    props.onSourceSync(uploadTarget, sourceId, sourceTagIds, sourceTagMatch, sourceTagValues, uploadSplit);
     closeUpload();
   };
   const openExport = (dataset: Dataset) => {
@@ -750,12 +751,12 @@ export function DatasetHome(props: {
     if (uploadMode !== "source" || !sourceId) return;
     let cancelled = false;
     setSourceLoading(true);
-    api.listSourceImages(sourceId, { tagIds: sourceTagIds.length ? sourceTagIds : undefined, tagMatch: sourceTagMatch, limit: 1 })
+    api.listSourceImages(sourceId, { tagIds: sourceTagIds.length ? sourceTagIds : undefined, tagValues: sourceTagValues, tagMatch: sourceTagMatch, limit: 1 })
       .then((page) => { if (!cancelled) setSourceTotal(page.total); })
       .catch(() => { if (!cancelled) setSourceTotal(undefined); })
       .finally(() => { if (!cancelled) setSourceLoading(false); });
     return () => { cancelled = true; };
-  }, [uploadMode, sourceId, sourceTagIds, sourceTagMatch]);
+  }, [uploadMode, sourceId, sourceTagIds, sourceTagValues, sourceTagMatch]);
 
   return <main className="dataset-home-page">
     <header className="dataset-home-header">
@@ -871,12 +872,33 @@ export function DatasetHome(props: {
           {!sourceDatasets.length && <p className="muted">{sourceLoading ? "正在加载数据源…" : "还没有数据源，可先在“数据源”页创建并导入图片。"}</p>}
           {sourceDatasets.length > 0 && <>
             {sourceTags.length > 0 && <div className="source-tag-bar upload-tag-bar" role="group" aria-label="按标签筛选">
-              <button className={`source-tag-chip${sourceTagIds.length ? "" : " active"}`} onClick={() => setSourceTagIds([])}>全部</button>
-              {sourceTags.map((tag) => (
-                <span key={tag.id} className={`source-tag-chip${sourceTagIds.includes(tag.id) ? " active" : ""}`} style={{ borderColor: tag.color }}>
-                  <button onClick={() => setSourceTagIds(sourceTagIds.includes(tag.id) ? sourceTagIds.filter((id) => id !== tag.id) : [...sourceTagIds, tag.id])}>{tag.name} · {tag.image_count}</button>
-                </span>
-              ))}
+              <button className={`source-tag-chip${sourceTagIds.length ? "" : " active"}`} onClick={() => { setSourceTagIds([]); setSourceTagValues({}); }}>全部</button>
+              {sourceTags.map((tag) => {
+                const active = sourceTagIds.includes(tag.id);
+                return (
+                  <span key={tag.id} className={`source-tag-chip${active ? " active" : ""}`} style={{ borderColor: tag.color }}>
+                    <button onClick={() => {
+                      setSourceTagIds(active ? sourceTagIds.filter((id) => id !== tag.id) : [...sourceTagIds, tag.id]);
+                      if (active) setSourceTagValues((prev) => { const next = { ...prev }; delete next[tag.id]; return next; });
+                    }}>{tag.name} · {tag.image_count}</button>
+                    {active && tag.values && (
+                      <select
+                        aria-label={`按${tag.name}取值筛选`}
+                        value={sourceTagValues[tag.id] ?? ""}
+                        onChange={(event) => setSourceTagValues((prev) => {
+                          const next = { ...prev };
+                          if (event.target.value) next[tag.id] = event.target.value;
+                          else delete next[tag.id];
+                          return next;
+                        })}
+                      >
+                        <option value="">全部取值</option>
+                        {tag.values.map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select>
+                    )}
+                  </span>
+                );
+              })}
               {sourceTagIds.length > 1 && (
                 <span className="tag-match-switch" role="group" aria-label="标签匹配逻辑">
                   <button className={sourceTagMatch === "all" ? "active" : ""} title="需同时包含所有所选标签" onClick={() => setSourceTagMatch("all")}>并</button>

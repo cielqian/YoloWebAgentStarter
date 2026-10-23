@@ -666,6 +666,7 @@ def import_images_from_source(
         image_ids=payload.image_ids,
         tag_ids=payload.tag_ids,
         tag_match=payload.tag_match,
+        tag_values=payload.tag_values,
         split=payload.split,
     )
     return SourceImportResponse(imported=len(items), skipped=skipped)

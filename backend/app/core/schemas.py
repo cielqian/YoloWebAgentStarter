@@ -326,6 +326,7 @@ class SourceImportRequest(BaseModel):
     image_ids: list[str] | None = None
     tag_ids: list[str] | None = None
     tag_match: Literal["all", "any"] = "all"
+    tag_values: dict[str, str] | None = None
     split: SplitName = "train"
 
 

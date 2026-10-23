@@ -8,7 +8,7 @@ import type { Dataset } from "./types";
 
 vi.mock("./api/client", () => {
   const tags = [
-    { id: "stag-a", name: "白天", color: "#3157d5", image_count: 1 },
+    { id: "stag-a", name: "白天", color: "#3157d5", values: ["晴", "阴"], image_count: 1 },
     { id: "stag-b", name: "夜间", color: "#22c55e", image_count: 2 },
   ];
   return {
@@ -82,7 +82,16 @@ describe("DatasetHome source sync dialog", () => {
     expect(chip("白天")).toBeDefined();
     await act(async () => { chip("白天")?.click(); });
     await act(async () => {});
-    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { tagIds: ["stag-a"], tagMatch: "all", limit: 1 });
+    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { tagIds: ["stag-a"], tagValues: {}, tagMatch: "all", limit: 1 });
+
+    const valueSelect = container?.querySelector<HTMLSelectElement>('select[aria-label="按白天取值筛选"]');
+    expect(valueSelect).toBeDefined();
+    await act(async () => {
+      if (valueSelect) valueSelect.value = "晴";
+      valueSelect?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {});
+    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { tagIds: ["stag-a"], tagValues: { "stag-a": "晴" }, tagMatch: "all", limit: 1 });
 
     await act(async () => { chip("夜间")?.click(); });
     await act(async () => {});
@@ -90,10 +99,10 @@ describe("DatasetHome source sync dialog", () => {
     expect(anyButton).toBeDefined();
     await act(async () => { anyButton?.click(); });
     await act(async () => {});
-    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { tagIds: ["stag-a", "stag-b"], tagMatch: "any", limit: 1 });
+    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { tagIds: ["stag-a", "stag-b"], tagValues: { "stag-a": "晴" }, tagMatch: "any", limit: 1 });
 
     await clickButton(/同步 \d+ 张图片/);
-    expect(onSourceSync).toHaveBeenCalledWith(dataset, "sd-1", ["stag-a", "stag-b"], "any", "train");
+    expect(onSourceSync).toHaveBeenCalledWith(dataset, "sd-1", ["stag-a", "stag-b"], "any", { "stag-a": "晴" }, "train");
     expect(container?.querySelector(".dataset-dialog")).toBeNull();
   });
 });

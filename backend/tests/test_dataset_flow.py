@@ -637,6 +637,37 @@ def test_import_images_from_source_dataset(client):
     assert everything.json() == {"imported": 2, "skipped": 0}
 
 
+def test_import_images_from_source_with_tag_values(client):
+    source = client.post("/api/source-datasets", json={"name": "取值同步"}).json()
+    uploaded = client.post(
+        f"/api/source-datasets/{source['id']}/images/upload",
+        files=[
+            ("files", ("strong1.png", png_bytes("#eeeeee"), "image/png")),
+            ("files", ("weak1.png", png_bytes("#222222"), "image/png")),
+        ],
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    tag = client.post(f"/api/source-datasets/{source['id']}/tags", json={"name": "光线", "values": ["强", "弱"]}).json()
+    items = client.get(f"/api/source-datasets/{source['id']}/images").json()["items"]
+    for file_name, value in (("strong1.png", "强"), ("weak1.png", "弱")):
+        image = next(item for item in items if item["file_name"] == file_name)
+        patched = client.patch(
+            f"/api/source-datasets/{source['id']}/images/{image['id']}",
+            json={"tag_ids": [tag["id"]], "tag_values": {tag["id"]: value}},
+        )
+        assert patched.status_code == 200, patched.text
+
+    dataset_id = create_dataset(client)
+    strong = client.post(
+        f"/api/datasets/{dataset_id}/images/from-source",
+        json={"source_dataset_id": source["id"], "tag_ids": [tag["id"]], "tag_values": {tag["id"]: "强"}},
+    )
+    assert strong.status_code == 201, strong.text
+    assert strong.json() == {"imported": 1, "skipped": 0}
+    names = {item["file_name"] for item in client.get(f"/api/datasets/{dataset_id}/images").json()["items"]}
+    assert names == {"strong1.png"}
+
+
 def test_image_thumbnail_is_generated_and_cached(client):
     dataset_id = create_dataset(client)
     upload = client.post(

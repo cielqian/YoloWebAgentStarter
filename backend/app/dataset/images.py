@@ -88,9 +88,10 @@ def add_images_from_source(
     image_ids: list[str] | None = None,
     tag_ids: list[str] | None = None,
     tag_match: Literal["all", "any"] = "all",
+    tag_values: dict[str, str] | None = None,
     split: SplitName,
 ) -> tuple[list[ImageItem], int]:
-    _, source_images = list_source_images(session, source_dataset_id, limit=None, tag_ids=tag_ids, tag_match=tag_match)
+    _, source_images = list_source_images(session, source_dataset_id, limit=None, tag_ids=tag_ids, tag_match=tag_match, tag_values=tag_values)
     if image_ids:
         wanted = set(image_ids)
         source_images = [image for image in source_images if image.id in wanted]

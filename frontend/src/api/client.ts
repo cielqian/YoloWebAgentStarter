@@ -273,11 +273,12 @@ export const api = {
   },
   updateImageSplit: (datasetId: string, imageId: string, split: SplitName) =>
     request<ImageItem>(`/api/datasets/${datasetId}/images/${imageId}`, json({ split }, "PATCH")),
-  syncDatasetFromSource: (datasetId: string, payload: { sourceDatasetId: string; tagIds?: string[]; tagMatch?: "all" | "any"; imageIds?: string[]; split: SplitName }) =>
+  syncDatasetFromSource: (datasetId: string, payload: { sourceDatasetId: string; tagIds?: string[]; tagMatch?: "all" | "any"; tagValues?: Record<string, string>; imageIds?: string[]; split: SplitName }) =>
     request<{ imported: number; skipped: number }>(`/api/datasets/${datasetId}/images/from-source`, json({
       source_dataset_id: payload.sourceDatasetId,
       tag_ids: payload.tagIds?.length ? payload.tagIds : null,
       tag_match: payload.tagMatch ?? "all",
+      tag_values: payload.tagValues && Object.keys(payload.tagValues).length ? payload.tagValues : null,
       image_ids: payload.imageIds?.length ? payload.imageIds : null,
       split: payload.split,
     })),
