@@ -361,6 +361,12 @@ export const api = {
   createTrainingNode: (name: string, url: string, token: string, enabled = true) =>
     request<TrainingNode>("/api/training/nodes", json({ name, url, token, enabled })),
   deleteTrainingNode: (nodeId: string) => request<void>(`/api/training/nodes/${nodeId}`, { method: "DELETE" }),
+  listOmNodes: () => request<TrainingNode[]>("/api/om-convert/nodes"),
+  createOmNode: (name: string, url: string, token: string, enabled = true) =>
+    request<TrainingNode>("/api/om-convert/nodes", json({ name, url, token, enabled })),
+  deleteOmNode: (nodeId: string) => request<void>(`/api/om-convert/nodes/${nodeId}`, { method: "DELETE" }),
+  testOmNode: (url: string, token: string) =>
+    request<TrainingNodeTestResult>("/api/om-convert/nodes/test", json({ url, token })),
   testTrainingNode: (url: string, token: string) =>
     request<TrainingNodeTestResult>("/api/training/nodes/test", json({ url, token })),
   createTrainingTask: (payload: {

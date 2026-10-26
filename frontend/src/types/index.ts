@@ -321,6 +321,7 @@ export interface TrainingNodeTestResult {
   hostname: string | null;
   device_count: number;
   device_types: string[];
+  convert_supported: boolean | null;
 }
 
 export interface RuntimeLogResponse {

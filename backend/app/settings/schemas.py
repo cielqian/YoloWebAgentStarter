@@ -146,6 +146,8 @@ class TrainingNodeTestResult(BaseModel):
     hostname: str | None = None
     device_count: int = 0
     device_types: list[str] = Field(default_factory=list)
+    # OM 转换节点测试时附带：agent 所在环境是否有 atc 命令
+    convert_supported: bool | None = None
 
 
 # --- Webhook (training lifecycle notifications) ---

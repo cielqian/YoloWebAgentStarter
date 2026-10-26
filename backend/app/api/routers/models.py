@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import httpx
+
 from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -12,9 +14,47 @@ from app.models import om_convert
 from app.models.schemas import InferenceResult, ModelCompareRequest, ModelCompareResponse, ModelEvaluationLogResponse, ModelEvaluationRecordResponse, ModelEvaluationRequest, ModelTestRecordResponse, ModelVersionList, ModelVersionResponse, ModelVersionUpdate, OmConvertJobResponse, OmConvertRequest
 from app.models.evaluation import YoloEvaluationRunner
 from app.models.service import ModelService
+from app.settings.schemas import TrainingNodeCreate, TrainingNodeOut, TrainingNodeTestRequest, TrainingNodeTestResult
+from app.settings.service import SettingsService
+from app.training.runtime.remote_nodes import probe_node
 
 
 router = APIRouter(prefix="/models", tags=["models"])
+om_router = APIRouter(prefix="/om-convert", tags=["om-convert"])
+
+
+@om_router.get("/nodes", response_model=list[TrainingNodeOut])
+def list_om_nodes(settings: Settings = Depends(get_settings)) -> list[TrainingNodeOut]:
+    return [TrainingNodeOut(**item) for item in SettingsService(settings).list_om_nodes_out()]
+
+
+@om_router.post("/nodes", response_model=TrainingNodeOut, status_code=201)
+def create_om_node(payload: TrainingNodeCreate, settings: Settings = Depends(get_settings)) -> TrainingNodeOut:
+    return TrainingNodeOut(**SettingsService(settings).add_om_node(payload))
+
+
+@om_router.post("/nodes/test", response_model=TrainingNodeTestResult)
+def test_om_node(payload: TrainingNodeTestRequest, settings: Settings = Depends(get_settings)) -> TrainingNodeTestResult:
+    if not payload.url.lower().startswith(("http://", "https://")):
+        return TrainingNodeTestResult(ok=False, message="节点地址必须以 http:// 或 https:// 开头。")
+    result = dict(probe_node(payload.url, payload.token))
+    if not result.get("ok"):
+        return TrainingNodeTestResult(**result)
+    base = payload.url.strip().rstrip("/")
+    headers = {"X-Agent-Token": payload.token.strip()} if payload.token.strip() else {}
+    try:
+        health = httpx.get(f"{base}/health", headers=headers, timeout=10.0)
+        convert_supported = bool(health.status_code == 200 and health.json().get("convert_supported"))
+    except (httpx.HTTPError, ValueError):
+        convert_supported = False
+    result["convert_supported"] = convert_supported
+    result["message"] = f"{result.get('message') or '连接成功'} · {'ATC 可用' if convert_supported else '未检测到 atc（无法转换 OM）'}"
+    return TrainingNodeTestResult(**result)
+
+
+@om_router.delete("/nodes/{node_id}", status_code=204, response_class=Response, response_model=None)
+def delete_om_node(node_id: str, settings: Settings = Depends(get_settings)) -> None:
+    SettingsService(settings).delete_om_node(node_id)
 
 
 @router.post("/compare", response_model=ModelCompareResponse)

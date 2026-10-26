@@ -293,14 +293,26 @@ class SettingsService:
         self._write(data)
         return self.get_ftp_settings()
 
-    # --- Training nodes (remote compute agents) ---
+    # --- Agent nodes (remote compute agents: training / OM conversion) ---
 
     def list_training_nodes(self) -> list[dict]:
-        nodes = self._read().get("training_nodes")
-        return [item for item in nodes if isinstance(item, dict)] if isinstance(nodes, list) else []
+        return self._nodes("training_nodes")
 
     def list_training_nodes_out(self) -> list[dict]:
-        return [self._node_out(node) for node in self.list_training_nodes()]
+        return self._nodes_out("training_nodes")
+
+    def list_om_nodes(self) -> list[dict]:
+        return self._nodes("om_convert_nodes")
+
+    def list_om_nodes_out(self) -> list[dict]:
+        return self._nodes_out("om_convert_nodes")
+
+    def _nodes(self, key: str) -> list[dict]:
+        nodes = self._read().get(key)
+        return [item for item in nodes if isinstance(item, dict)] if isinstance(nodes, list) else []
+
+    def _nodes_out(self, key: str) -> list[dict]:
+        return [self._node_out(node) for node in self._nodes(key)]
 
     def _node_out(self, node: dict) -> dict:
         return {
@@ -312,12 +324,18 @@ class SettingsService:
         }
 
     def add_training_node(self, payload) -> dict:
+        return self._add_node("training_nodes", payload)
+
+    def add_om_node(self, payload) -> dict:
+        return self._add_node("om_convert_nodes", payload)
+
+    def _add_node(self, key: str, payload) -> dict:
         url = payload.url.strip().rstrip("/")
         if not url.lower().startswith(("http://", "https://")):
             raise ValidationError("invalid_training_node_url", "节点地址必须以 http:// 或 https:// 开头。")
         name = payload.name.strip()
         data = self._read()
-        nodes = [item for item in data.get("training_nodes", []) if isinstance(item, dict)]
+        nodes = [item for item in data.get(key, []) if isinstance(item, dict)]
         if any(item.get("url") == url for item in nodes):
             raise ConflictError("training_node_exists", "该节点地址已注册。")
         node = {
@@ -328,17 +346,23 @@ class SettingsService:
             "enabled": payload.enabled,
         }
         nodes.append(node)
-        data["training_nodes"] = nodes
+        data[key] = nodes
         self._write(data)
         return self._node_out(node)
 
     def delete_training_node(self, node_id: str) -> None:
+        self._delete_node("training_nodes", node_id)
+
+    def delete_om_node(self, node_id: str) -> None:
+        self._delete_node("om_convert_nodes", node_id)
+
+    def _delete_node(self, key: str, node_id: str) -> None:
         data = self._read()
-        nodes = [item for item in data.get("training_nodes", []) if isinstance(item, dict)]
+        nodes = [item for item in data.get(key, []) if isinstance(item, dict)]
         remaining = [item for item in nodes if item.get("id") != node_id]
         if len(remaining) == len(nodes):
-            raise NotFoundError("training_node_not_found", "训练节点不存在。")
-        data["training_nodes"] = remaining
+            raise NotFoundError("training_node_not_found", "节点不存在。")
+        data[key] = remaining
         self._write(data)
 
     # --- Webhook (training lifecycle notifications) ---

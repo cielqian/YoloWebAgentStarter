@@ -134,7 +134,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const openOmConvert = (model: ModelVersion) => {
     setOmTarget(model);
     if (nodes.length) return;
-    api.listTrainingNodes()
+    api.listOmNodes()
       .then((list) => {
         setNodes(list);
         setOmNodeId((current) => current || (list.find((item) => item.enabled)?.id ?? ""));

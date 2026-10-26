@@ -21,7 +21,8 @@ from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationError
 from app.core.models import ModelVersion
 from app.core.storage import Storage
-from app.training.runtime.remote_training import _base, _headers, _detail, find_node
+from app.settings.service import SettingsService
+from app.training.runtime.remote_training import _base, _detail, _headers
 
 DEFAULT_SOC_VERSION = "Ascend310P3"
 DEFAULT_INPUT_SHAPE = "images:1,3,640,640"
@@ -29,6 +30,13 @@ POLL_INTERVAL_SECONDS = 3.0
 CONVERT_TIMEOUT_SECONDS = 20 * 60
 _UPLOAD_TIMEOUT = httpx.Timeout(600.0)
 _POLL_TIMEOUT = httpx.Timeout(15.0)
+
+
+def _find_om_node(settings: Settings, node_id: str) -> dict[str, Any] | None:
+    for node in SettingsService(settings).list_om_nodes():
+        if node.get("id") == node_id:
+            return node
+    return None
 
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
@@ -79,9 +87,9 @@ def start_convert(
     soc_version: str,
     input_shape: str,
 ) -> dict[str, Any]:
-    node = find_node(settings, node_id)
+    node = _find_om_node(settings, node_id)
     if node is None:
-        raise NotFoundError("training_node_not_found", "所选节点不存在，请先在设置中配置训练节点。")
+        raise NotFoundError("training_node_not_found", "所选节点不存在，请先在设置 → Agent 配置 → OM 转换节点中添加。")
     if node.get("enabled") is False:
         raise ValidationError("training_node_disabled", "所选节点已被禁用。")
     try:

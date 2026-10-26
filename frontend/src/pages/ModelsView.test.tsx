@@ -17,7 +17,7 @@ vi.mock("../api/client", () => ({
     exportModelOnnx: vi.fn(),
     convertModelToOm: vi.fn(),
     listOmConvertJobs: vi.fn().mockResolvedValue([]),
-    listTrainingNodes: vi.fn().mockResolvedValue([]),
+    listOmNodes: vi.fn().mockResolvedValue([]),
     compareModels: vi.fn(),
     testModel: vi.fn(),
   },

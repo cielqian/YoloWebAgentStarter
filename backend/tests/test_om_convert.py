@@ -115,7 +115,7 @@ def _wait_for_terminal(client, job_id: str, timeout: float = 90.0) -> dict:
 
 
 def _register_node(client, url: str) -> dict:
-    response = client.post("/api/training/nodes", json={"name": "ascend-test", "url": url})
+    response = client.post("/api/om-convert/nodes", json={"name": "ascend-test", "url": url})
     assert response.status_code == 201, response.text
     return response.json()
 

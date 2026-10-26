@@ -99,8 +99,8 @@ const copy = {
     savedFtp: "FTP 设置已保存",
     ftpConfigured: "已配置",
     ftpNotConfigured: "未配置",
-    nodesNav: "训练节点",
-    nodesNavDescription: "远程算力服务器巡检",
+    nodesNav: "Agent 配置",
+    nodesNavDescription: "训练与 OM 转换节点",
     basedataNav: "基础数据",
     basedataNavDescription: "类别库与标签库 · 全局共享",
     weightsNav: "基础权重",
@@ -123,6 +123,11 @@ const copy = {
     nodeDelete: "删除",
     nodeConfirmDelete: "确认删除",
     nodesEmpty: "还没有注册训练节点。在算力服务器上启动 compute-agent 后，在这里添加。",
+    agentTrainingTab: "训练节点",
+    agentOmTab: "OM 转换节点",
+    omNodesTitle: "OM 转换节点",
+    omNodesSubtitle: "注册部署了 compute-agent 的华为昇腾服务器（需 CANN 环境，atc 命令可用）。模型库中 ONNX 模型的「转OM」从这里选择节点。",
+    omNodesEmpty: "还没有 OM 转换节点。在昇腾服务器的 CANN 环境下启动 compute-agent 后，在这里添加。",
     nodesRegistered: "{count} 个节点",
     nodeAdded: "节点已添加",
     nodeDeleted: "节点已删除",
@@ -251,8 +256,8 @@ const copy = {
     savedFtp: "FTP settings saved",
     ftpConfigured: "Configured",
     ftpNotConfigured: "Not configured",
-    nodesNav: "Training nodes",
-    nodesNavDescription: "Remote compute servers",
+    nodesNav: "Agents",
+    nodesNavDescription: "Training & ATC convert nodes",
     basedataNav: "Base data",
     basedataNavDescription: "Class & tag library",
     weightsNav: "Base weights",
@@ -275,6 +280,11 @@ const copy = {
     nodeDelete: "Delete",
     nodeConfirmDelete: "Confirm delete",
     nodesEmpty: "No training nodes yet. Start compute-agent on a server and add it here.",
+    agentTrainingTab: "Training nodes",
+    agentOmTab: "ATC convert nodes",
+    omNodesTitle: "ATC convert nodes",
+    omNodesSubtitle: "Ascend servers running compute-agent with CANN (atc available). Pick them when converting ONNX to OM in the model library.",
+    omNodesEmpty: "No ATC convert nodes yet. Start compute-agent inside CANN env on the Ascend server, then add it here.",
     nodesRegistered: "{count} nodes",
     nodeAdded: "Node added",
     nodeDeleted: "Node deleted",
@@ -463,7 +473,7 @@ export function SettingsView({
           ) : tab === "ftp" ? (
             <FtpSettingsPanel text={text} />
           ) : tab === "nodes" ? (
-            <TrainingNodesPanel text={text} />
+            <AgentNodesPanel text={text} />
           ) : tab === "weights" ? (
             <BaseWeightsPanel text={text} />
           ) : tab === "basedata" ? (
@@ -1106,7 +1116,20 @@ function formatWeightTime(value: string): string {
   return value ? value.slice(0, 19).replace("T", " ") : "—";
 }
 
-function TrainingNodesPanel({ text }: { text: SettingsText }) {
+function AgentNodesPanel({ text }: { text: SettingsText }) {
+  const [mode, setMode] = useState<"training" | "om">("training");
+  return (
+    <>
+      <div className="import-origin-toggle base-data-tabs" role="tablist" aria-label="Agent 配置">
+        <button type="button" role="tab" aria-selected={mode === "training"} className={mode === "training" ? "active" : ""} onClick={() => setMode("training")}>{text.agentTrainingTab}</button>
+        <button type="button" role="tab" aria-selected={mode === "om"} className={mode === "om" ? "active" : ""} onClick={() => setMode("om")}>{text.agentOmTab}</button>
+      </div>
+      <NodesPanel key={mode} kind={mode} text={text} />
+    </>
+  );
+}
+
+function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsText }) {
   const [form, setForm] = useState<NodeFormState>({ name: "", url: "", token: "" });
   const [nodes, setNodes] = useState<TrainingNode[]>([]);
   const [statuses, setStatuses] = useState<Record<string, TrainingNodeStatus>>({});
@@ -1119,9 +1142,14 @@ function TrainingNodesPanel({ text }: { text: SettingsText }) {
 
   const reload = async () => {
     try {
-      const [list, devices] = await Promise.all([api.listTrainingNodes(), api.listTrainingDevices()]);
-      setNodes(list);
-      setStatuses(Object.fromEntries((devices.nodes ?? []).map((node) => [node.id, node])));
+      if (kind === "training") {
+        const [list, devices] = await Promise.all([api.listTrainingNodes(), api.listTrainingDevices()]);
+        setNodes(list);
+        setStatuses(Object.fromEntries((devices.nodes ?? []).map((node) => [node.id, node])));
+      } else {
+        setNodes(await api.listOmNodes());
+        setStatuses({});
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : text.error);
     } finally {
@@ -1141,7 +1169,8 @@ function TrainingNodesPanel({ text }: { text: SettingsText }) {
     setError("");
     setMessage("");
     try {
-      await api.createTrainingNode(form.name.trim(), form.url.trim(), form.token.trim());
+      if (kind === "training") await api.createTrainingNode(form.name.trim(), form.url.trim(), form.token.trim());
+      else await api.createOmNode(form.name.trim(), form.url.trim(), form.token.trim());
       setForm({ name: "", url: "", token: "" });
       setMessage(text.nodeAdded);
       await reload();
@@ -1158,9 +1187,13 @@ function TrainingNodesPanel({ text }: { text: SettingsText }) {
     setError("");
     setMessage("");
     try {
-      const result = await api.testTrainingNode(form.url.trim(), form.token.trim());
+      const result = kind === "training"
+        ? await api.testTrainingNode(form.url.trim(), form.token.trim())
+        : await api.testOmNode(form.url.trim(), form.token.trim());
       if (result.ok) {
-        setMessage(text.nodeTestOk.replace("{hostname}", result.hostname ?? "-").replace("{count}", String(result.device_count)).replace("{types}", result.device_types.join(", ")));
+        setMessage(kind === "training"
+          ? text.nodeTestOk.replace("{hostname}", result.hostname ?? "-").replace("{count}", String(result.device_count)).replace("{types}", result.device_types.join(", "))
+          : result.message);
       } else {
         setError(`${text.nodeTestFail}：${result.message}`);
       }
@@ -1175,7 +1208,8 @@ function TrainingNodesPanel({ text }: { text: SettingsText }) {
     setError("");
     setMessage("");
     try {
-      await api.deleteTrainingNode(nodeId);
+      if (kind === "training") await api.deleteTrainingNode(nodeId);
+      else await api.deleteOmNode(nodeId);
       setConfirmDeleteId(undefined);
       setMessage(text.nodeDeleted);
       await reload();
@@ -1190,8 +1224,8 @@ function TrainingNodesPanel({ text }: { text: SettingsText }) {
       <header className="settings-card-head">
         <div className="settings-card-icon"><NodeIcon /></div>
         <div>
-          <h2>{text.nodesTitle}</h2>
-          <p>{text.nodesSubtitle}</p>
+          <h2>{kind === "training" ? text.nodesTitle : text.omNodesTitle}</h2>
+          <p>{kind === "training" ? text.nodesSubtitle : text.omNodesSubtitle}</p>
         </div>
         <span className={`settings-status ${nodes.length ? "ready" : "disabled"}`}>
           {nodes.length ? text.nodesRegistered.replace("{count}", String(nodes.length)) : text.ftpNotConfigured}
@@ -1225,7 +1259,7 @@ function TrainingNodesPanel({ text }: { text: SettingsText }) {
           })}
         </div>
       ) : (
-        <p className="muted">{text.nodesEmpty}</p>
+        <p className="muted">{kind === "training" ? text.nodesEmpty : text.omNodesEmpty}</p>
       )}
       <form className="training-node-form" onSubmit={(event) => void add(event)}>
         <label>
