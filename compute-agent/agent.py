@@ -20,6 +20,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -33,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.0"
+AGENT_VERSION = "0.4.1"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -639,8 +640,29 @@ _DEFAULT_SOC_VERSION = "Ascend310P3"
 _DEFAULT_INPUT_SHAPE = "images:1,3,640,640"
 
 
+def _cann_env_scripts() -> list[Path]:
+    """CANN 的 set_env.sh（atc 通常只在这些脚本 source 后才进 PATH，systemd 服务不会加载 bashrc）。"""
+    ascend = Path("/usr/local/Ascend")
+    if not ascend.is_dir():
+        return []
+    return sorted(path for path in ascend.glob("*/set_env.sh") if path.is_file())
+
+
+def atc_invocation(args: list[str]) -> list[str] | None:
+    """构造可直接执行的 atc 命令：PATH 有就用；否则用 bash source CANN set_env.sh 包装。"""
+    found = shutil.which("atc")
+    if found:
+        return [found, *args]
+    for script in _cann_env_scripts():
+        shell_line = " ".join(shlex.quote(part) for part in ("atc", *args))
+        return ["/bin/bash", "-c", f"source {shlex.quote(str(script))} && exec {shell_line}"]
+    return None
+
+
 def atc_available() -> bool:
-    return shutil.which("atc") is not None
+    if shutil.which("atc"):
+        return True
+    return bool(_cann_env_scripts())
 
 
 class ConvertManager:
@@ -779,8 +801,7 @@ class ConvertManager:
                 handle.write(text + "\n")
             record["log_line_count"] = int(record.get("log_line_count") or 0) + 1
 
-        atc = shutil.which("atc")
-        args = [
+        atc_args = [
             "--model=input.onnx",
             "--framework=5",
             "--output=model",
@@ -788,13 +809,14 @@ class ConvertManager:
             f"--soc_version={spec['soc_version']}",
         ]
         log(f"ATC convert started on {socket.gethostname()}.")
-        log("Command: atc " + " ".join(args))
+        log("Command: atc " + " ".join(atc_args))
         return_code = -1
         try:
-            if atc is None:
-                raise FileNotFoundError("atc not found in PATH; run the agent inside the CANN environment")
+            command = atc_invocation(atc_args)
+            if command is None:
+                raise FileNotFoundError("atc not found in PATH and no CANN set_env.sh under /usr/local/Ascend")
             process = subprocess.Popen(
-                [atc, *args],
+                command,
                 cwd=workspace,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
