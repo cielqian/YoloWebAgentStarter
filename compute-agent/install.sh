@@ -5,6 +5,7 @@
 #   sudo ./install.sh                          # 交互式询问 conda 环境名
 #   sudo ./install.sh -e yolo                  # 指定 conda 环境名
 #   sudo ./install.sh -e yolo -p 8010 -t 密钥  # 指定端口与共享密钥
+#   sudo ./install.sh -P /usr/bin/python3      # 直接指定解释器(OM/ATC 节点无需 conda)
 #   sudo ./install.sh --uninstall              # 停止并卸载服务
 #
 # 离线可用：只用 bash / systemd / curl，不访问网络。
@@ -21,13 +22,14 @@ HOST_BIND="${HOST_BIND:-0.0.0.0}"
 TOKEN="${YWA_AGENT_TOKEN:-}"
 
 usage() {
-  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-1}"
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     -e|--env) CONDA_ENV="$2"; shift 2 ;;
+    -P|--python) PYTHON_OVERRIDE="$2"; shift 2 ;;
     -p|--port) PORT="$2"; shift 2 ;;
     -t|--token) TOKEN="$2"; shift 2 ;;
     -H|--host) HOST_BIND="$2"; shift 2 ;;
@@ -83,28 +85,49 @@ if [ ! -f "${AGENT_DIR}/agent.py" ]; then
   exit 1
 fi
 
-if [ -z "${CONDA_ENV}" ]; then
-  read -r -p "请输入运行 agent 的 conda 环境名（如 yolo）: " CONDA_ENV
-fi
-if [ -z "${CONDA_ENV}" ]; then
-  echo "conda 环境名不能为空。" >&2
-  exit 1
+PYTHON_BIN=""
+if [ -n "${PYTHON_OVERRIDE:-}" ]; then
+  PYTHON_BIN="${PYTHON_OVERRIDE}"
+  if [ ! -x "${PYTHON_BIN}" ]; then
+    echo "指定的解释器不存在或不可执行：${PYTHON_BIN}" >&2
+    exit 1
+  fi
+  echo "==> 解释器:     ${PYTHON_BIN}（手动指定）"
+else
+  if [ -z "${CONDA_ENV}" ]; then
+    read -r -p "请输入运行 agent 的 conda 环境名（如 yolo，留空使用系统 python3）: " CONDA_ENV
+  fi
+  if [ -z "${CONDA_ENV}" ]; then
+    SYSTEM_PYTHON="$(command -v python3 || true)"
+    if [ -z "${SYSTEM_PYTHON}" ]; then
+      echo "未找到 conda 环境，也没有可用的系统 python3。" >&2
+      exit 1
+    fi
+    PYTHON_BIN="${SYSTEM_PYTHON}"
+    echo "==> 未指定 conda 环境，使用系统解释器: ${PYTHON_BIN}"
+  else
+    if ! CONDA_BASE_PATH="$(find_conda_base)"; then
+      echo "未找到 conda 安装目录。可用 -P 指定解释器，或用环境变量指定 conda：" >&2
+      echo "  sudo CONDA_BASE=/path/to/conda $0 -e ${CONDA_ENV}" >&2
+      echo "  sudo $0 -P /usr/bin/python3" >&2
+      exit 1
+    fi
+    PYTHON_BIN="${CONDA_BASE_PATH}/envs/${CONDA_ENV}/bin/python"
+    if [ ! -x "${PYTHON_BIN}" ]; then
+      echo "未找到解释器 ${PYTHON_BIN}。" >&2
+      echo "请确认环境名正确，或指定 conda 目录：sudo CONDA_BASE=/path/to/conda $0 -e ${CONDA_ENV}" >&2
+      exit 1
+    fi
+    echo "==> conda 目录: ${CONDA_BASE_PATH}"
+    echo "==> 解释器:     ${PYTHON_BIN}"
+  fi
 fi
 
-if ! CONDA_BASE_PATH="$(find_conda_base)"; then
-  echo "未找到 conda 安装目录。请用环境变量指定后重试：" >&2
-  echo "  sudo CONDA_BASE=/path/to/conda $0 -e ${CONDA_ENV}" >&2
+if ! "${PYTHON_BIN}" -c "pass" >/dev/null 2>&1; then
+  echo "==> 解释器无法执行（glibc/架构/权限问题？）：" >&2
+  "${PYTHON_BIN}" -V >&2 || true
   exit 1
 fi
-PYTHON_BIN="${CONDA_BASE_PATH}/envs/${CONDA_ENV}/bin/python"
-if [ ! -x "${PYTHON_BIN}" ]; then
-  echo "未找到解释器 ${PYTHON_BIN}。" >&2
-  echo "请确认环境名正确，或指定 conda 目录：sudo CONDA_BASE=/path/to/conda $0 -e ${CONDA_ENV}" >&2
-  exit 1
-fi
-
-echo "==> conda 目录: ${CONDA_BASE_PATH}"
-echo "==> 解释器:     ${PYTHON_BIN}"
 
 if "${PYTHON_BIN}" -c "import torch" >/dev/null 2>&1; then
   echo "==> torch 可用，将上报 CUDA / NPU 设备"
@@ -125,7 +148,7 @@ chmod 600 "${ENV_FILE}"
 
 cat > "${SERVICE_FILE}" <<EOF
 [Unit]
-Description=YWA Compute Agent (conda env: ${CONDA_ENV})
+Description=YWA Compute Agent${CONDA_ENV:+ (conda env: ${CONDA_ENV})}
 After=network-online.target
 Wants=network-online.target
 

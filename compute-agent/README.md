@@ -14,6 +14,7 @@ scp -r compute-agent/ user@服务器IP:~/compute-agent
 cd ~/compute-agent
 chmod +x install.sh
 sudo ./install.sh -e yolo              # -e 指定 conda 环境名；不带参数会交互式询问
+sudo ./install.sh -P /usr/bin/python3  # -P 直接指定解释器（OM/ATC 转换节点无需 conda，系统 python3 即可）
 # 可选：-p 端口（默认 8010）、-t 共享密钥（不填则自动生成并打印）
 # conda 装在非常规位置时：sudo CONDA_BASE=/path/to/conda ./install.sh -e yolo
 # 卸载：sudo ./install.sh --uninstall
