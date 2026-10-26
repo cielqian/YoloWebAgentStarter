@@ -19,6 +19,8 @@ npm --prefix frontend install
 
 打开 `http://127.0.0.1:5173`。两个开发服务默认仅绑定本机。也可以在仓库根目录执行 `./run-all.sh`（或 `sh run-all.sh`）同时启动两个进程；按 `Ctrl+C` 可同时停止它们。
 
+Windows 直接双击或执行仓库根目录的 `run-all.bat`：首次运行会自动用 Python 3.12 创建 `.venv`、按镜像源安装前后端依赖，然后在两个独立窗口启动后端（`YWA-Backend`）与前端（`YWA-Frontend`）并自动打开浏览器；关闭对应窗口即停止该服务。
+
 ## 2. 创建数据集并标注
 
 1. 创建 `detect`、`segment`、`obb` 或 `classify` 数据集。
