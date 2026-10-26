@@ -73,7 +73,7 @@ export function ModelDetailView({
     { id: "dataset", label: dataset?.name ?? "未关联数据集" },
     model.base_model ? { id: "base", label: model.base_model } : null,
     model.training_task_id ? { id: "train", label: "训练任务" } : null,
-    { id: "artifact", label: `${model.artifact_type}.${model.format}`, highlight: true },
+    { id: "artifact", label: model.artifact_type === model.format ? model.format : `${model.artifact_type}.${model.format}`, highlight: true },
     { id: "file", label: fileName(model.model_path), highlight: true },
   ].filter(Boolean) as Array<{ id: string; label: string; highlight?: boolean }>;
 
