@@ -35,12 +35,14 @@ def _free_port() -> int:
 
 
 class AgentProcess:
-    def __init__(self, tmp_path: Path, *, with_atc: bool) -> None:
+    def __init__(self, tmp_path: Path, *, with_atc: bool, cann_root: Path | None = None) -> None:
         self.port = _free_port()
         home = tmp_path / f"agent-{self.port}"
         home.mkdir(parents=True)
         shutil.copy2(AGENT_SOURCE, home / "agent.py")
         env = {**os.environ}
+        if cann_root is not None:
+            env["YWA_CANN_ROOT"] = str(cann_root)
         if with_atc:
             bin_dir = home / "bin"
             bin_dir.mkdir()
@@ -175,3 +177,32 @@ def test_om_convert_rejects_non_onnx_model(client, tmp_path):
     response = client.post(f"/api/models/{model_id}/convert-om", json={"node_id": "node_missing"})
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "training_node_not_found"
+
+
+def test_om_convert_runs_atc_inside_venv_via_cann_env(client, tmp_path):
+    """atc 不在 PATH 时：自动创建 venv + source CANN set_env.sh 后执行 atc。"""
+    cann_root = tmp_path / "Ascend"
+    toolkit = cann_root / "ascend-toolkit"
+    toolkit.mkdir(parents=True)
+    bin_dir = tmp_path / "fake-atc-bin"
+    bin_dir.mkdir()
+    atc = bin_dir / "atc"
+    atc.write_text('#!/bin/sh\necho "VIRTUAL_ENV=$VIRTUAL_ENV"\ncp input.onnx model.om\n')
+    atc.chmod(0o755)
+    (toolkit / "set_env.sh").write_text(f'export PATH="{bin_dir}:$PATH"\n')
+
+    model_id, payload = _make_onnx_model(client, "model_src4")
+    agent = AgentProcess(tmp_path, with_atc=False, cann_root=cann_root)
+    try:
+        health = agent.wait_healthy()
+        assert health["convert_supported"] is True
+        node = _register_node(client, agent.url)
+        submitted = client.post(f"/api/models/{model_id}/convert-om", json={"node_id": node["id"]})
+        assert submitted.status_code == 202, submitted.text
+        final = _wait_for_terminal(client, submitted.json()["job_id"])
+        assert final["status"] == "completed", final
+        assert "/convert-workspace/venv" in (final["logs"] or ""), final["logs"]
+        download = client.get(f"/api/models/{final['result_model_id']}/download")
+        assert download.content == payload
+    finally:
+        agent.stop()

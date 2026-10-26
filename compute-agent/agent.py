@@ -34,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.1"
+AGENT_VERSION = "0.4.2"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -642,21 +642,31 @@ _DEFAULT_INPUT_SHAPE = "images:1,3,640,640"
 
 def _cann_env_scripts() -> list[Path]:
     """CANN 的 set_env.sh（atc 通常只在这些脚本 source 后才进 PATH，systemd 服务不会加载 bashrc）。"""
-    ascend = Path("/usr/local/Ascend")
+    ascend = Path(os.environ.get("YWA_CANN_ROOT", "/usr/local/Ascend"))
     if not ascend.is_dir():
         return []
     return sorted(path for path in ascend.glob("*/set_env.sh") if path.is_file())
 
 
-def atc_invocation(args: list[str]) -> list[str] | None:
-    """构造可直接执行的 atc 命令：PATH 有就用；否则用 bash source CANN set_env.sh 包装。"""
+def atc_invocation(args: list[str], venv_activate: str | None = None) -> list[str] | None:
+    """构造可直接执行的 atc 命令。
+
+    atc 已在 PATH（agent 环境自带）时直接执行；否则用 bash 包装：
+    先激活 venv（CANN 要求 atc 在 python 虚拟环境中运行），再 source CANN set_env.sh。
+    """
     found = shutil.which("atc")
-    if found:
+    if found and venv_activate is None:
         return [found, *args]
-    for script in _cann_env_scripts():
-        shell_line = " ".join(shlex.quote(part) for part in ("atc", *args))
-        return ["/bin/bash", "-c", f"source {shlex.quote(str(script))} && exec {shell_line}"]
-    return None
+    sources: list[str] = []
+    if venv_activate:
+        sources.append(f"source {shlex.quote(venv_activate)}")
+    if not found:
+        scripts = _cann_env_scripts()
+        if not scripts:
+            return None
+        sources.append(f"source {shlex.quote(str(scripts[0]))}")
+    shell_line = " ".join(shlex.quote(part) for part in ("atc", *args))
+    return ["/bin/bash", "-c", " && ".join([*sources, f"exec {shell_line}"])]
 
 
 def atc_available() -> bool:
@@ -682,6 +692,25 @@ class ConvertManager:
         if candidate.parent != self.root.resolve():
             raise TaskError(400, "invalid job id")
         return candidate
+
+    def ensure_venv(self, log) -> str | None:
+        """CANN 要求 atc 在 python venv 中执行；惰性创建共享 venv，返回 activate 脚本路径。
+
+        创建失败（缺 venv 模块等）时返回 None，退回直接执行。
+        """
+        venv_activate = self.root / "venv" / "bin" / "activate"
+        if venv_activate.is_file():
+            return str(venv_activate)
+        log(f"Creating python venv for ATC: {self.root / 'venv'}")
+        created = subprocess.run(
+            [sys.executable, "-m", "venv", str(self.root / "venv")],
+            capture_output=True,
+            text=True,
+        )
+        if created.returncode != 0 or not venv_activate.is_file():
+            log(f"venv creation failed, fallback to direct atc: {(created.stderr or '').strip()[:400]}")
+            return None
+        return str(venv_activate)
 
     def _get(self, job_id: str) -> dict[str, Any]:
         with self.lock:
@@ -812,9 +841,9 @@ class ConvertManager:
         log("Command: atc " + " ".join(atc_args))
         return_code = -1
         try:
-            command = atc_invocation(atc_args)
+            command = atc_invocation(atc_args, venv_activate=self.ensure_venv(log))
             if command is None:
-                raise FileNotFoundError("atc not found in PATH and no CANN set_env.sh under /usr/local/Ascend")
+                raise FileNotFoundError("atc not found in PATH and no CANN set_env.sh under the CANN root")
             process = subprocess.Popen(
                 command,
                 cwd=workspace,
