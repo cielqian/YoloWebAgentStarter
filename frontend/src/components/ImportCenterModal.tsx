@@ -84,6 +84,11 @@ export function ImportCenterModal({
     const index = trimmed.lastIndexOf("/");
     return index <= 0 ? "/" : trimmed.slice(0, index);
   };
+  const childOf = (entryName: string) => `${ftpPath.replace(/\/+$/, "")}/${entryName}`;
+  const pickFtpDir = (path: string, entryName: string) => {
+    setFtpSelected(path);
+    applyDefaultName(entryName);
+  };
 
   return <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="dataset-dialog data-exchange-dialog import-center-dialog" role="dialog" aria-modal="true" aria-labelledby="import-center-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -114,19 +119,28 @@ export function ImportCenterModal({
                     <button type="button" className={ftpKind === "zip" ? "active" : ""} onClick={() => { setFtpKind("zip"); setFtpSelected(""); }}>ZIP 文件</button>
                     <button type="button" className={ftpKind === "dir" ? "active" : ""} onClick={() => { setFtpKind("dir"); setFtpSelected(""); }}>YOLO 目录</button>
                   </div>
+                  {ftpKind === "dir" && (
+                    <button type="button" className="button" disabled={ftpLoading || ftpPath === "/"} title="把当前浏览到的目录作为导入目标" onClick={() => pickFtpDir(ftpPath, ftpPath.replace(/\/+$/, "").split("/").pop() || "ftp-dataset")}>选当前目录</button>
+                  )}
                 </div>
                 <div className="import-ftp-list">
                   {ftpLoading && <p className="muted">正在读取目录…</p>}
                   {ftpError && <p className="annotation-form-error">{ftpError}（请先在「FTP 管理」页配置连接）</p>}
                   {!ftpLoading && !ftpError && ftpEntries?.map((entry) => entry.is_dir
-                    ? <button key={entry.name} type="button" className="import-ftp-row dir" onClick={() => browseFtp(`${ftpPath.replace(/\/+$/, "")}/${entry.name}`)}><span>📁</span><strong>{entry.name}</strong><small>目录</small></button>
-                    : <button key={entry.name} type="button" disabled={!entry.name.toLowerCase().endsWith(".zip")} className={`import-ftp-row file${ftpSelected === `${ftpPath.replace(/\/+$/, "")}/${entry.name}` ? " selected" : ""}`} onClick={() => { setFtpSelected(`${ftpPath.replace(/\/+$/, "")}/${entry.name}`); applyDefaultName(entry.name); }}><span>🗜</span><strong>{entry.name}</strong><small>{entry.size != null ? `${Math.ceil(entry.size / 1024)} KB` : ""}</small></button>)}
-                  {!ftpLoading && !ftpError && ftpEntries && !ftpEntries.some((entry) => !entry.is_dir && entry.name.toLowerCase().endsWith(".zip")) && <p className="muted">当前目录没有 .zip 文件。</p>}
+                    ? (ftpKind === "dir"
+                      ? <div key={entry.name} className={`import-ftp-row dir selectable${ftpSelected === childOf(entry.name) ? " selected" : ""}`}>
+                          <button type="button" className="import-ftp-pick" aria-pressed={ftpSelected === childOf(entry.name)} aria-label={`选择目录 ${entry.name}`} title="选择此目录作为导入目标" onClick={() => pickFtpDir(childOf(entry.name), entry.name)}>{ftpSelected === childOf(entry.name) ? "✓" : "＋"}</button>
+                          <button type="button" className="import-ftp-browse" onClick={() => browseFtp(childOf(entry.name))}><span>📁</span><strong>{entry.name}</strong><small>目录 · 点击进入</small></button>
+                        </div>
+                      : <button key={entry.name} type="button" className="import-ftp-row dir" onClick={() => browseFtp(childOf(entry.name))}><span>📁</span><strong>{entry.name}</strong><small>目录</small></button>)
+                    : <button key={entry.name} type="button" disabled={ftpKind === "dir" || !entry.name.toLowerCase().endsWith(".zip")} className={`import-ftp-row file${ftpSelected === childOf(entry.name) ? " selected" : ""}`} onClick={() => { setFtpSelected(childOf(entry.name)); applyDefaultName(entry.name); }}><span>🗜</span><strong>{entry.name}</strong><small>{entry.size != null ? `${Math.ceil(entry.size / 1024)} KB` : ""}</small></button>)}
+                  {!ftpLoading && !ftpError && ftpEntries && ftpKind === "zip" && !ftpEntries.some((entry) => !entry.is_dir && entry.name.toLowerCase().endsWith(".zip")) && <p className="muted">当前目录没有 .zip 文件。</p>}
+                  {!ftpLoading && !ftpError && ftpEntries && ftpKind === "dir" && !ftpEntries.some((entry) => entry.is_dir) && <p className="muted">当前目录没有子目录；可点上方「选当前目录」选择当前路径。</p>}
                 </div>
-                {ftpSelected && <p className="import-ftp-selected">已选择:{ftpSelected}</p>}
+                {ftpSelected && <p className="import-ftp-selected">已选择:{ftpSelected}{ftpKind === "dir" ? "（YOLO 目录，将递归采集）" : ""}</p>}
               </div>
             )}
-            <footer className="data-exchange-footer"><span>{origin === "ftp" ? "后端会从 FTP 下载所选 ZIP 并导入服务端受管目录。" : "文件仅导入到服务端受管数据目录。"}</span><div><button className="button" onClick={onClose}>取消</button><button className="button primary" disabled={busy || !canImport} onClick={importArchive}>开始导入</button></div></footer>
+            <footer className="data-exchange-footer"><span>{origin === "ftp" ? (ftpKind === "dir" ? "后端会递归采集所选 YOLO 目录（data.yaml、images、labels）并打包导入。" : "后端会从 FTP 下载所选 ZIP 并导入服务端受管目录。") : "文件仅导入到服务端受管数据目录。"}</span><div><button className="button" onClick={onClose}>取消</button><button className="button primary" disabled={busy || !canImport} onClick={importArchive}>开始导入</button></div></footer>
           </>}
         </section>
       </div>

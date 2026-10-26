@@ -707,6 +707,11 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .import-ftp-row:hover { border-color: #cbd8f4; background: #f5f7ff; }
 .import-ftp-row.file.selected { border-color: #9eb2ed; background: #eaf0ff; }
 .import-ftp-row.file:disabled { opacity: .45; cursor: not-allowed; }
+.import-ftp-row.dir.selectable { display: flex; align-items: center; gap: 6px; padding: 0; }
+.import-ftp-row.dir.selectable.selected { border-color: #9eb2ed; background: #eaf0ff; }
+.import-ftp-pick { flex: 0 0 26px; height: 26px; margin-left: 5px; border: 1px solid #cbd8f4; border-radius: 999px; background: #fff; color: #3157d5; font-size: 12px; line-height: 1; cursor: pointer; }
+.import-ftp-pick:hover { border-color: #3157d5; }
+.import-ftp-browse { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; flex: 1; padding: 7px 9px 7px 0; border: 0; background: transparent; text-align: left; cursor: pointer; font-family: inherit; }
 .import-ftp-selected { margin: 0; color: #3157d5; font-size: 12px; word-break: break-all; }
 .dataset-import-progress { display: grid; gap: 6px; margin: 10px 0 4px; }
 .dataset-import-progress-top { display: flex; justify-content: space-between; gap: 10px; color: #536077; font-size: 12px; }
