@@ -22,7 +22,8 @@ import type { Dataset, TaskType, TrainingDevice, TrainingLog, TrainingNodeStatus
 
 interface Props {
   datasets: Dataset[];
-  dataset: Dataset;
+  /** 新建训练的目标数据集；未选中时回退到列表第一个数据集，列表模式可无数据集浏览。 */
+  dataset?: Dataset;
   onDatasetChange: (dataset: Dataset) => void;
   onOpenModels?: () => void;
   onAskAgent?: (task: TrainingTask) => void;
@@ -47,12 +48,13 @@ export function TrainingView({
   autoCreateDatasetId,
   onAutoCreateConsumed,
 }: Props) {
+  const activeDataset = dataset ?? datasets[0];
   const [tasks, setTasks] = useState<TrainingTask[]>([]);
   const [mode, setMode] = useState<PageMode>("list");
   const [detailTaskId, setDetailTaskId] = useState<string>();
   const [logs, setLogs] = useState<TrainingLog>();
   const [summary, setSummary] = useState<TrainingSummary>();
-  const [form, setForm] = useState<TrainingFormState>(() => defaultForm(dataset.task_type));
+  const [form, setForm] = useState<TrainingFormState>(() => defaultForm(activeDataset?.task_type ?? "detect"));
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [devices, setDevices] = useState<TrainingDevice[]>([]);
   const devicesRef = useRef<TrainingDevice[]>([]);
@@ -113,15 +115,16 @@ export function TrainingView({
   }, []);
 
   useEffect(() => {
+    if (!activeDataset) return;
     setForm(() => {
-      const base = defaultForm(dataset.task_type);
+      const base = defaultForm(activeDataset.task_type);
       const selection = defaultRemoteSelection(devicesRef.current);
       return selection ? { ...base, ...selection } : base;
     });
     setError("");
     setNotice("");
     setSplitRecovery(false);
-  }, [dataset.id, dataset.task_type]);
+  }, [activeDataset?.id, activeDataset?.task_type]);
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -179,21 +182,21 @@ export function TrainingView({
       batch_size: next.batch_size,
       img_size: next.img_size,
       patience: String(next.patience),
-      model: prev.model || defaultModelFor(dataset.task_type),
+      model: prev.model || defaultModelFor(activeDataset?.task_type ?? "detect"),
     }));
   };
 
   const canSubmit = Boolean(form.node_id && form.node_device);
 
-  const riskText = dataset.image_count < 2
+  const riskText = !activeDataset || activeDataset.image_count < 2
     ? "图片不足 2 张时无法同时构成 train / val，创建任务可能失败。"
-    : `将使用已持久化的 split 训练 ${taskTypeLabel(dataset.task_type)} 模型；请确认 train 与 val 均非空。`;
+    : `将使用已持久化的 split 训练 ${taskTypeLabel(activeDataset.task_type)} 模型；请确认 train 与 val 均非空。`;
 
   const deviceSummaryText = form.node_id
     ? `${devices.find((item) => item.node_id === form.node_id)?.node_name ?? "节点"} · ${form.node_device ?? "auto"}`
     : "未选择节点";
 
-  const summaryBottomBar = `${form.model} · ${form.epochs} ep · batch ${form.batch_size} · ${form.img_size}px · ${deviceSummaryText} · 约 ${estimateMinutes(form.epochs, dataset.image_count, form.batch_size, Math.max(form.node_device?.split(",").filter(Boolean).length ?? 1, 1))} 分钟`;
+  const summaryBottomBar = `${form.model} · ${form.epochs} ep · batch ${form.batch_size} · ${form.img_size}px · ${deviceSummaryText} · 约 ${estimateMinutes(form.epochs, activeDataset?.image_count ?? 0, form.batch_size, Math.max(form.node_device?.split(",").filter(Boolean).length ?? 1, 1))} 分钟`;
 
   const start = async (event: FormEvent) => {
     event.preventDefault();
@@ -202,6 +205,10 @@ export function TrainingView({
     setNotice("");
     setSplitRecovery(false);
     try {
+      if (!activeDataset) {
+        setError("请先创建或导入一个数据集，再新建训练任务。");
+        return;
+      }
       if (!form.node_id) {
         setError("请先在右侧选择训练节点与设备。");
         return;
@@ -209,10 +216,10 @@ export function TrainingView({
       const patience = form.patience.trim() ? Number(form.patience) : undefined;
       const lr0 = form.lr0.trim() ? Number(form.lr0) : undefined;
       const task = await api.createTrainingTask({
-        dataset_id: dataset.id,
+        dataset_id: activeDataset.id,
         name: form.name.trim() || "local-training",
-        model: form.model.trim() || defaultModelFor(dataset.task_type),
-        task_type: dataset.task_type as TaskType,
+        model: form.model.trim() || defaultModelFor(activeDataset.task_type),
+        task_type: activeDataset.task_type as TaskType,
         epochs: form.epochs,
         img_size: form.img_size,
         batch_size: form.batch_size,
@@ -243,10 +250,11 @@ export function TrainingView({
   };
 
   const autoSplitForTraining = async () => {
+    if (!activeDataset) return;
     setBusy(true);
     setError("");
     try {
-      const result = await api.autoSplitImages(dataset.id, { train_ratio: 0.8, val_ratio: 0.2, test_ratio: 0, seed: 42 });
+      const result = await api.autoSplitImages(activeDataset.id, { train_ratio: 0.8, val_ratio: 0.2, test_ratio: 0, seed: 42 });
       setSplitRecovery(false);
       setNotice(`已按 80/20 分配 ${result.updated} 张图片：train ${result.split_counts.train}，val ${result.split_counts.val}。现在可以重新创建训练。`);
     } catch (reason) {
@@ -300,8 +308,9 @@ export function TrainingView({
   };
 
   const saveDraft = () => {
+    if (!activeDataset) return;
     try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ datasetId: dataset.id, form }));
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ datasetId: activeDataset.id, form }));
       setNotice("草稿配置已保存到本机浏览器。");
     } catch {
       setError("无法写入本地草稿。");
@@ -309,6 +318,9 @@ export function TrainingView({
   };
 
   const openCreateWithTask = (task: TrainingTask) => {
+    // 从任务记录复用配置时切到该任务的数据集，任务类型才能与提交的数据集匹配。
+    const taskDataset = datasets.find((item) => item.id === task.dataset_id);
+    if (taskDataset && taskDataset.id !== activeDataset?.id) onDatasetChange(taskDataset);
     setForm(applyTaskToForm(task));
     setAdvancedOpen(true);
     setMode("create");
@@ -325,7 +337,7 @@ export function TrainingView({
       <header className="training-page-header">
         <div className="training-page-header-main">
           <div>
-            <span className="eyebrow">TRAINING / {dataset.task_type.toUpperCase()}</span>
+            <span className="eyebrow">{mode === "create" && activeDataset ? `TRAINING / ${activeDataset.task_type.toUpperCase()}` : "TRAINING"}</span>
             <h1>训练工作区</h1>
             <p className="muted">
               {mode === "create"
@@ -334,12 +346,12 @@ export function TrainingView({
             </p>
           </div>
         </div>
-        {mode === "create" && (
+        {mode === "create" && activeDataset && (
         <div className="training-page-header-meta" aria-label="当前数据集摘要">
-          <span className="training-chip"><strong>{dataset.name}</strong></span>
-          <span className="training-chip">{dataset.image_count} 张图片</span>
-          <span className="training-chip">{dataset.class_count} 类</span>
-          <span className="training-chip training-chip--accent">{taskTypeLabel(dataset.task_type)}</span>
+          <span className="training-chip"><strong>{activeDataset.name}</strong></span>
+          <span className="training-chip">{activeDataset.image_count} 张图片</span>
+          <span className="training-chip">{activeDataset.class_count} 类</span>
+          <span className="training-chip training-chip--accent">{taskTypeLabel(activeDataset.task_type)}</span>
         </div>
         )}
       </header>
@@ -352,10 +364,10 @@ export function TrainingView({
           <span>{error}</span>
           <div className="training-split-recovery">
             <small>这会重新分配该数据集全部图片的持久化 split；请确认当前 split 不需要保留。</small>
-            <button className="button" disabled={busy || dataset.image_count < 2} onClick={() => void autoSplitForTraining()}>
+            <button className="button" disabled={busy || (activeDataset?.image_count ?? 0) < 2} onClick={() => void autoSplitForTraining()}>
               自动分配 train / val
             </button>
-            {dataset.image_count < 2 && <small>至少需要两张图片，才能同时创建 train 与 val split。</small>}
+            {(activeDataset?.image_count ?? 0) < 2 && <small>至少需要两张图片，才能同时创建 train 与 val split。</small>}
           </div>
         </div>
       )}
@@ -387,7 +399,15 @@ export function TrainingView({
             expFilter={expFilter}
             onSearchChange={setExpSearch}
             onFilterChange={setExpFilter}
-            onCreate={() => { setMode("create"); setNotice(""); }}
+            onCreate={() => {
+              if (!activeDataset) {
+                setNotice("");
+                setError("请先创建或导入一个数据集，再新建训练任务。");
+                return;
+              }
+              setMode("create");
+              setNotice("");
+            }}
             onOpenDetail={(task) => setDetailTaskId(task.id)}
             onApplyTask={openCreateWithTask}
             onStop={(task) => void stop(task.id)}
@@ -395,12 +415,12 @@ export function TrainingView({
             onOpenModels={onOpenModels}
           />
         </div>
-      ) : (
+      ) : activeDataset ? (
         <div className="training-dataset-grid">
           <div className="training-dataset-main training-workspace">
             <TrainingConfigPanel
               datasets={datasets}
-              dataset={dataset}
+              dataset={activeDataset}
               form={form}
               preset={preset}
               advancedOpen={advancedOpen}
@@ -415,7 +435,7 @@ export function TrainingView({
           </div>
 
           <TrainingComputeRail
-            dataset={dataset}
+            dataset={activeDataset}
             form={form}
             devices={devices}
             nodes={nodes}
@@ -426,7 +446,7 @@ export function TrainingView({
             onSaveDraft={saveDraft}
           />
         </div>
-      )}
+      ) : null}
     </main>
   );
 }

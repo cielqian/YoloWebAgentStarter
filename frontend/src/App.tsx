@@ -259,8 +259,9 @@ export default function App() {
       setNotice("");
       setError("");
       if (section === "agent") setAgentFocus({});
-      if ((section === "training" || section === "models") && !selected && datasets[0]) {
-        void loadDataset(datasets[0], section);
+      // 训练与模型是全局入口：直接进入跨数据集的任务/模型列表，无数据集也可浏览。
+      if (section === "training" || section === "models") {
+        setView(section);
         return;
       }
       const globalSection = section === "settings" || section === "logs" || section === "agent" || section === "ftp" || section === "datasources";
@@ -398,10 +399,10 @@ export default function App() {
           readOnly={!!displayedDataset && isHistoricalActive(displayedDataset)}
           samCapabilities={samCapabilities}
         />
-      ) : view === "training" && displayedDataset ? (
+      ) : view === "training" ? (
         <TrainingView
           datasets={datasets}
-          dataset={displayedDataset}
+          dataset={selected}
           onDatasetChange={(dataset) => void loadDataset(dataset, "training")}
           onOpenModels={() => setView("models")}
           onAskAgent={(task) => { setAgentFocus({ dataset: { id: task.dataset_id, name: datasets.find((d) => d.id === task.dataset_id)?.name ?? task.dataset_id }, trainingTask: { id: task.id, name: task.name } }); setView("agent"); }}
@@ -410,9 +411,9 @@ export default function App() {
           autoCreateDatasetId={trainingCreateDatasetId}
           onAutoCreateConsumed={() => setTrainingCreateDatasetId(undefined)}
         />
-      ) : view === "models" && displayedDataset ? (
+      ) : view === "models" ? (
         <ModelsView
-          dataset={displayedDataset}
+          datasets={datasets}
           focusModelId={focusModelId}
           onFocusModelConsumed={() => setFocusModelId(undefined)}
           onAskAgent={(model) => { setAgentFocus({ ...(model.dataset_id ? { dataset: { id: model.dataset_id, name: datasets.find((d) => d.id === model.dataset_id)?.name ?? model.dataset_id } } : {}), model: { id: model.id, name: model.name } }); setView("agent"); }}

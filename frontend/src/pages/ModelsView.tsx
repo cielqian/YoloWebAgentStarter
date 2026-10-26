@@ -11,13 +11,14 @@ import { formatRelativeTime, taskTypeLabel } from "../training/helpers";
 import { IconSearch } from "../components/training/icons";
 
 interface Props {
-  dataset: Dataset;
+  /** 模型库是全局入口：跨全部数据集列出受管模型，详情按 dataset_id 反查数据集。 */
+  datasets: Dataset[];
   focusModelId?: string;
   onFocusModelConsumed?: () => void;
   onAskAgent?: (model: ModelVersion) => void;
 }
 
-export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskAgent }: Props) {
+export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAskAgent }: Props) {
   const [models, setModels] = useState<ModelVersion[]>([]);
   const [detailId, setDetailId] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -34,12 +35,12 @@ export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskA
   const [listSort, setListSort] = useState<ModelListSort>("newest");
 
   const refresh = useCallback(async () => {
-    const result = await api.listModels(dataset.id, includeArchived);
+    const result = await api.listModels(undefined, includeArchived);
     const items = [...result.items].sort(newerFirst);
     setModels(items);
     setDetailId((current) => (current && items.some((item) => item.id === current) ? current : undefined));
     setSelectedIds((ids) => ids.filter((id) => items.some((item) => item.id === id)));
-  }, [dataset.id, includeArchived]);
+  }, [includeArchived]);
 
   useEffect(() => {
     refresh().catch((reason) => setError(errorMessage(reason)));
@@ -52,6 +53,14 @@ export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskA
   }, [focusModelId, onFocusModelConsumed]);
 
   const detailModel = useMemo(() => models.find((item) => item.id === detailId), [models, detailId]);
+  const datasetName = useCallback(
+    (datasetId: string | null) => (datasetId ? datasets.find((item) => item.id === datasetId)?.name ?? "未关联数据集" : "未关联数据集"),
+    [datasets],
+  );
+  const detailDataset = useMemo(
+    () => (detailModel?.dataset_id ? datasets.find((item) => item.id === detailModel.dataset_id) : undefined),
+    [datasets, detailModel?.dataset_id],
+  );
   const bestModel = useMemo(() => pickBestModel(models.filter((item) => item.status === "active")), [models]);
   const filteredModels = useMemo(
     () => sortModels(filterModels(models, listFilter, search), listSort),
@@ -162,7 +171,7 @@ export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskA
         {notice && <Toast kind="success" message={notice} onClose={() => setNotice("")} />}
         {onAskAgent ? <button type="button" className="button" onClick={() => onAskAgent(detailModel)}>询问智能体：此模型</button> : null}
         <ModelDetailView
-          dataset={dataset}
+          dataset={detailDataset}
           model={detailModel}
           models={models}
           evaluations={evaluations}
@@ -190,14 +199,13 @@ export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskA
       <header className="models-page-header">
         <div className="models-page-header-main">
           <div>
-            <span className="eyebrow">MODEL REGISTRY / {dataset.task_type.toUpperCase()}</span>
+            <span className="eyebrow">MODEL REGISTRY</span>
             <h1>模型库</h1>
             <p className="muted">管理受管训练产物，支持快速测试、split 评估与 FP32 ONNX 导出。</p>
           </div>
         </div>
         <div className="models-page-header-meta">
-          <span className="models-chip"><strong>{dataset.name}</strong></span>
-          <span className="models-chip">{taskTypeLabel(dataset.task_type)}</span>
+          <span className="models-chip"><strong>全部数据集</strong></span>
           <span className="models-chip models-chip--accent">{models.length} 个模型</span>
         </div>
       </header>
@@ -325,7 +333,7 @@ export function ModelsView({ dataset, focusModelId, onFocusModelConsumed, onAskA
                       </td>
                       <td className="model-table-name">
                         <button type="button" onClick={() => setDetailId(model.id)} title={model.name}>{model.name}</button>
-                        <small title={dataset.name}>{dataset.name || "未关联数据集"}</small>
+                        <small title={datasetName(model.dataset_id)}>{datasetName(model.dataset_id)}</small>
                       </td>
                       <td>{model.artifact_type.toUpperCase()}</td>
                       <td>{model.format.toUpperCase()}</td>

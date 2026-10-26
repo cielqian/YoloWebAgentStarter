@@ -163,4 +163,23 @@ describe("TrainingView list-first workspace", () => {
     await act(async () => { if (select) { select.value = segment.id; select.dispatchEvent(new Event("change", { bubbles: true })); } });
     expect(onDatasetChange).toHaveBeenCalledWith(segment);
   });
+
+  it("shows the task list without any dataset and blocks create with guidance", async () => {
+    const { api } = await import("../api/client");
+    (api.listTrainingTasks as ReturnType<typeof vi.fn>).mockResolvedValue({ items: [] });
+    await act(async () => { root?.render(<TrainingView datasets={[]} onDatasetChange={vi.fn()} />); });
+    expect(container?.querySelector("#experiment-history")).toBeTruthy();
+    expect(container?.textContent).toContain("还没有训练记录");
+    await clickCreate();
+    // 无数据集：停留在列表，提示先创建/导入数据集
+    expect(container?.querySelector("#training-config-anchor")).toBeFalsy();
+    expect(container?.textContent).toContain("请先创建或导入一个数据集");
+  });
+
+  it("falls back to the first dataset when none is selected", async () => {
+    await act(async () => { root?.render(<TrainingView datasets={[detect, segment]} onDatasetChange={vi.fn()} />); });
+    await clickCreate();
+    expect(container?.querySelector("#training-config-anchor")).toBeTruthy();
+    expect(container?.textContent).toContain("detect-set");
+  });
 });

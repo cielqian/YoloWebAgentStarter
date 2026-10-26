@@ -18,7 +18,8 @@ import {
 type DetailTab = "overview" | "evaluation" | "versions" | "metadata";
 
 interface Props {
-  dataset: Dataset;
+  /** 跨数据集模型库按 dataset_id 反查；数据集已被删除时可能为空。 */
+  dataset?: Dataset;
   model: ModelVersion;
   models: ModelVersion[];
   evaluations: ModelEvaluationRecord[];
@@ -69,7 +70,7 @@ export function ModelDetailView({
   };
 
   const lineage = [
-    { id: "dataset", label: dataset.name },
+    { id: "dataset", label: dataset?.name ?? "未关联数据集" },
     model.base_model ? { id: "base", label: model.base_model } : null,
     model.training_task_id ? { id: "train", label: "训练任务" } : null,
     { id: "artifact", label: `${model.artifact_type}.${model.format}`, highlight: true },
@@ -81,7 +82,7 @@ export function ModelDetailView({
       <div className="mdd-topbar">
         <button className="button" onClick={onBack}>← 返回模型库</button>
         <div className="mdd-topbar-meta">
-          <span className="models-chip">{dataset.name}</span>
+          <span className="models-chip">{dataset?.name ?? "未关联数据集"}</span>
           <span className="models-chip models-chip--accent">{modelTaskLabel(model)}</span>
         </div>
       </div>
