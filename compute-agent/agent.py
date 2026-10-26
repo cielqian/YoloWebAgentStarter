@@ -34,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.2"
+AGENT_VERSION = "0.4.3"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -544,6 +544,13 @@ class TaskManager:
 
         log(f"Training started on {socket.gethostname()}.")
         log("Command: " + " ".join(args))
+        process_env = dict(os.environ)
+        device_ids = [part for part in re.split(r"[,\s]+", device) if part.isdigit()]
+        if len(device_ids) > 1 and os.environ.get("YWA_KEEP_NCCL_P2P", "").strip() != "1":
+            # 部分 GPU 组合 P2P 不通时 NCCL 初始化会死锁(多卡卡在第一个 epoch 前)；禁用 P2P 走共享内存
+            if "NCCL_P2P_DISABLE" not in process_env:
+                process_env["NCCL_P2P_DISABLE"] = "1"
+                log("Multi-GPU detected: NCCL_P2P_DISABLE=1 (set YWA_KEEP_NCCL_P2P=1 to keep P2P).")
         return_code = -1
         try:
             process = subprocess.Popen(
@@ -556,6 +563,7 @@ class TaskManager:
                 bufsize=1,
                 shell=False,
                 start_new_session=os.name == "posix",
+                env=process_env,
             )
             with self.lock:
                 self.processes[task_id] = process

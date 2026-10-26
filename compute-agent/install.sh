@@ -158,8 +158,7 @@ WorkingDirectory=${AGENT_DIR}
 EnvironmentFile=${ENV_FILE}
 Environment=PYTHONUNBUFFERED=1
 Environment="HOME=/root"
-# 多卡训练挂起(NCCL P2P 不兼容)时取消下一行注释
-# Environment="NCCL_P2P_DISABLE=1"
+# 多卡训练已默认禁用 NCCL P2P(agent 内置)；确认显卡间 P2P 可用时设 YWA_KEEP_NCCL_P2P=1 恢复
 ExecStart=${PYTHON_BIN} ${AGENT_DIR}/agent.py --host ${HOST_BIND} --port ${PORT}
 Restart=always
 RestartSec=5
