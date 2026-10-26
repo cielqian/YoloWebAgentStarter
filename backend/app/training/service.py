@@ -136,6 +136,7 @@ class TrainingService:
         if node is None:
             payload.device = DeviceService().normalize_selector(payload.device)
         dataset = get_dataset(session, payload.dataset_id)
+        dataset_version_number = resolve_dataset_version(session, dataset.id, payload.dataset_version_number)
         task_type = payload.task_type or TaskType(dataset.task_type)
         if task_type.value != dataset.task_type:
             raise ValidationError("task_type_mismatch", "Training task type must match the dataset task type.")
@@ -161,7 +162,7 @@ class TrainingService:
         try:
             if resume_checkpoint is not None:
                 model_reference = str(resume_checkpoint)
-            export = export_dataset_directory(session, self.storage, dataset.id, export_root)
+            export = export_training_data(session, self.storage, dataset, dataset_version_number, export_root)
             self._validate_export_training_splits(export, dataset.task_type)
             data_yaml = str(export["data_yaml"])
             export_stats = {
@@ -201,6 +202,7 @@ class TrainingService:
             task = TrainingTask(
                 id=resolved_task_id,
                 dataset_id=dataset.id,
+                dataset_version_number=dataset_version_number,
                 name=payload.name.strip(),
                 status="pending",
                 task_type=task_type.value,
@@ -365,6 +367,7 @@ class TrainingService:
         task = TrainingTask(
             id=resolved_task_id,
             dataset_id=dataset.id,
+            dataset_version_number=resolve_dataset_version(session, dataset.id, payload.dataset_version_number),
             name=payload.name.strip(),
             status="dispatching",
             task_type=task_type.value,
@@ -467,10 +470,12 @@ class TrainingService:
         )
         return task_response(task)
 
-    def list_tasks(self, session: Session, dataset_id: str | None = None) -> TrainingTaskList:
+    def list_tasks(self, session: Session, dataset_id: str | None = None, dataset_version: int | None = None) -> TrainingTaskList:
         query = select(TrainingTask).order_by(TrainingTask.created_at.desc(), TrainingTask.id.desc())
         if dataset_id:
             query = query.where(TrainingTask.dataset_id == dataset_id)
+        if dataset_version is not None:
+            query = query.where(TrainingTask.dataset_version_number == dataset_version)
         tasks = list(session.scalars(query))
         telemetry = TrainingTelemetryService()
         for task in tasks:
@@ -659,6 +664,52 @@ class TrainingService:
                 "Training requires at least one valid annotation in both train and val splits.",
                 details={"missing_splits": missing},
             )
+
+
+def resolve_dataset_version(session: Session, dataset_id: str, requested: int | None) -> int | None:
+    """训练使用的数据集版本：未指定时默认最新版本；数据集尚无版本时为 None。"""
+    from app.core.models import DatasetVersion
+
+    latest = session.scalar(
+        select(func.max(DatasetVersion.version_number)).where(DatasetVersion.dataset_id == dataset_id)
+    )
+    if latest is None:
+        if requested is not None:
+            from app.core.errors import NotFoundError
+            from app.dataset.versions import get_version_by_number
+
+            get_version_by_number(session, dataset_id, requested)
+        return None
+    if requested is None:
+        return latest
+    from app.dataset.versions import get_version_by_number
+
+    get_version_by_number(session, dataset_id, requested)
+    return requested
+
+
+def export_training_data(
+    session: Session,
+    storage: Storage,
+    dataset: Dataset,
+    dataset_version_number: int | None,
+    export_root: Path,
+) -> dict[str, object]:
+    """训练数据导出：激活版本（或无版本）走当前工作区，历史版本走快照导出。"""
+    from app.dataset.exchange.yolo import export_dataset_directory, export_dataset_version_directory
+
+    if dataset_version_number is None:
+        return export_dataset_directory(session, storage, dataset.id, export_root)
+    from app.core.models import DatasetVersion
+
+    active = session.scalar(
+        select(DatasetVersion.version_number).where(
+            DatasetVersion.dataset_id == dataset.id, DatasetVersion.is_active.is_(True)
+        )
+    )
+    if active == dataset_version_number:
+        return export_dataset_directory(session, storage, dataset.id, export_root)
+    return export_dataset_version_directory(session, storage, dataset.id, dataset_version_number, export_root)
 
 
 def task_response(task: TrainingTask) -> TrainingTaskResponse:

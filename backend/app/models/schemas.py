@@ -20,6 +20,7 @@ class ModelVersionResponse(BaseModel):
     name: str
     version: str
     dataset_id: str | None
+    dataset_version_number: int | None = None
     training_task_id: str | None
     source_model_id: str | None
     source: ModelSource

@@ -18,7 +18,7 @@ import {
   type PresetId,
   type TrainingFormState,
 } from "../training/helpers";
-import type { Dataset, TaskType, TrainingDevice, TrainingLog, TrainingNodeStatus, TrainingSummary, TrainingTask } from "../types";
+import type { Dataset, DatasetVersion, TaskType, TrainingDevice, TrainingLog, TrainingNodeStatus, TrainingSummary, TrainingTask } from "../types";
 
 interface Props {
   datasets: Dataset[];
@@ -55,6 +55,10 @@ export function TrainingView({
   const [logs, setLogs] = useState<TrainingLog>();
   const [summary, setSummary] = useState<TrainingSummary>();
   const [form, setForm] = useState<TrainingFormState>(() => defaultForm(activeDataset?.task_type ?? "detect"));
+  const [datasetVersions, setDatasetVersions] = useState<DatasetVersion[]>([]);
+  const [historyDatasetId, setHistoryDatasetId] = useState("");
+  const [historyVersion, setHistoryVersion] = useState("");
+  const [historyVersions, setHistoryVersions] = useState<DatasetVersion[]>([]);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [devices, setDevices] = useState<TrainingDevice[]>([]);
   const devicesRef = useRef<TrainingDevice[]>([]);
@@ -116,15 +120,37 @@ export function TrainingView({
 
   useEffect(() => {
     if (!activeDataset) return;
-    setForm(() => {
-      const base = defaultForm(activeDataset.task_type);
+    let cancelled = false;
+    api.listDatasetVersions(activeDataset.id)
+      .then((versions) => {
+        if (cancelled) return;
+        setDatasetVersions(versions);
+        setForm((prev) => ({ ...prev, dataset_version_number: versions[0]?.version_number ?? null }));
+      })
+      .catch(() => { if (!cancelled) setDatasetVersions([]); });
+    const stamp = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const defaultName = `${activeDataset.name}_${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}_${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}`;
+    setForm((prev) => {
+      const base = { ...defaultForm(activeDataset.task_type), name: defaultName };
       const selection = defaultRemoteSelection(devicesRef.current);
       return selection ? { ...base, ...selection } : base;
     });
     setError("");
     setNotice("");
     setSplitRecovery(false);
-  }, [activeDataset?.id, activeDataset?.task_type]);
+    return () => { cancelled = true; };
+  }, [activeDataset?.id, activeDataset?.task_type, activeDataset?.name]);
+
+  useEffect(() => {
+    if (!historyDatasetId) { setHistoryVersions([]); setHistoryVersion(""); return; }
+    let cancelled = false;
+    api.listDatasetVersions(historyDatasetId)
+      .then((versions) => { if (!cancelled) setHistoryVersions(versions); })
+      .catch(() => { if (!cancelled) setHistoryVersions([]); });
+    setHistoryVersion("");
+    return () => { cancelled = true; };
+  }, [historyDatasetId]);
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -217,7 +243,8 @@ export function TrainingView({
       const lr0 = form.lr0.trim() ? Number(form.lr0) : undefined;
       const task = await api.createTrainingTask({
         dataset_id: activeDataset.id,
-        name: form.name.trim() || "local-training",
+        dataset_version_number: form.dataset_version_number,
+        name: form.name.trim() || `${activeDataset.name}_${Date.now()}`,
         model: form.model.trim() || defaultModelFor(activeDataset.task_type),
         task_type: activeDataset.task_type as TaskType,
         epochs: form.epochs,
@@ -399,6 +426,11 @@ export function TrainingView({
             expFilter={expFilter}
             onSearchChange={setExpSearch}
             onFilterChange={setExpFilter}
+            historyDatasetId={historyDatasetId}
+            historyVersion={historyVersion}
+            historyVersions={historyVersions}
+            onHistoryDatasetChange={setHistoryDatasetId}
+            onHistoryVersionChange={setHistoryVersion}
             onCreate={() => {
               if (!activeDataset) {
                 setNotice("");
@@ -426,6 +458,7 @@ export function TrainingView({
               advancedOpen={advancedOpen}
               summaryBottomBar={summaryBottomBar}
               onDatasetChange={onDatasetChange}
+              datasetVersions={datasetVersions}
               onFormChange={setForm}
               onPreset={applyPreset}
               onAdvancedOpenChange={setAdvancedOpen}

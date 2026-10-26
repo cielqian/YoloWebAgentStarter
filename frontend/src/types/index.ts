@@ -388,6 +388,7 @@ export type TrainingStatus = "pending" | "dispatching" | "running" | "completed"
 export interface TrainingTask {
   id: string;
   dataset_id: string;
+  dataset_version_number?: number | null;
   profile_id: string | null;
   name: string;
   status: TrainingStatus;
@@ -461,6 +462,7 @@ export interface ModelVersion {
   name: string;
   version: string;
   dataset_id: string | null;
+  dataset_version_number?: number | null;
   training_task_id: string | null;
   source_model_id: string | null;
   source: "training_task" | "exported";

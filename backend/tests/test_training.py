@@ -1162,3 +1162,40 @@ def test_weights_library_crud_and_push_on_dispatch(client):
     deleted = client.delete("/api/weights/yolov8n.pt")
     assert deleted.status_code == 204
     assert client.get("/api/weights/file/yolov8n.pt").status_code == 404
+
+
+def test_training_task_records_dataset_version(client, tmp_path, monkeypatch):
+    executable = tmp_path / "fake-yolo"
+    fake_yolo(executable)
+    monkeypatch.setenv("YWA_YOLO_EXECUTABLE", str(executable))
+    dataset_id, _ = prepared_dataset(client)
+    version = client.post(f"/api/datasets/{dataset_id}/versions", json={"note": "v1"}).json()
+    assert version["version_number"] == 1
+
+    response = client.post(
+        "/api/training/tasks",
+        json={"dataset_id": dataset_id, "name": "versioned", "model": "yolov8n.pt", "epochs": 1, "batch_size": 1},
+    )
+    assert response.status_code == 201, response.text
+    # 未指定版本时默认最新版本
+    assert response.json()["dataset_version_number"] == 1
+
+    task_id = response.json()["id"]
+    wait_for_terminal(client, task_id)
+
+    filtered = client.get("/api/training/tasks?dataset_version=1").json()["items"]
+    assert any(task["id"] == task_id for task in filtered)
+    other = client.get("/api/training/tasks?dataset_version=9").json()["items"]
+    assert not any(task["id"] == task_id for task in other)
+
+    models = client.get("/api/models?dataset_version=1").json()
+    assert models["total"] >= 1
+    assert all(model["dataset_version_number"] == 1 for model in models["items"])
+    none_models = client.get("/api/models?dataset_version=9").json()
+    assert none_models["total"] == 0
+
+    explicit = client.post(
+        "/api/training/tasks",
+        json={"dataset_id": dataset_id, "name": "bad-version", "model": "yolov8n.pt", "epochs": 1, "batch_size": 1, "dataset_version_number": 3},
+    )
+    assert explicit.status_code == 404

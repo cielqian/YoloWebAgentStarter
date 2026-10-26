@@ -90,10 +90,11 @@ def update_profile(
 @router.get("/tasks", response_model=TrainingTaskList)
 def list_tasks(
     dataset_id: str | None = None,
+    dataset_version: int | None = None,
     session: Session = Depends(get_session),
     service: TrainingService = Depends(get_training_service),
 ) -> TrainingTaskList:
-    return service.list_tasks(session, dataset_id)
+    return service.list_tasks(session, dataset_id, dataset_version)
 
 
 @router.post("/tasks", response_model=TrainingTaskResponse, status_code=201)

@@ -71,6 +71,24 @@ def ensure_editable(session: Session, dataset_id: str) -> None:
         )
 
 
+def get_version_by_number(session: Session, dataset_id: str, version_number: int) -> DatasetVersion:
+    version = session.scalar(
+        select(DatasetVersion).where(
+            DatasetVersion.dataset_id == dataset_id, DatasetVersion.version_number == version_number
+        )
+    )
+    if version is None:
+        raise NotFoundError("dataset_version_not_found", f"数据集版本 v{version_number} 不存在。")
+    return version
+
+
+def load_version_payload(storage: Storage, dataset_id: str, version: DatasetVersion) -> dict[str, Any]:
+    path = storage.version_snapshot_path(dataset_id, version.id)
+    if not path.is_file():
+        raise NotFoundError("dataset_version_snapshot_missing", "版本快照文件缺失，无法按该版本导出。")
+    return _read_snapshot(path)
+
+
 def get_version(session: Session, dataset_id: str, version_id: str) -> DatasetVersion:
     version = session.get(DatasetVersion, version_id)
     if version is None or version.dataset_id != dataset_id:

@@ -88,10 +88,11 @@ def convert_model_to_om(
 def list_models(
     dataset_id: str | None = Query(default=None),
     include_archived: bool = Query(default=False),
+    dataset_version: int | None = Query(default=None),
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
 ) -> ModelVersionList:
-    return ModelService(storage).list_models(session, dataset_id, include_archived)
+    return ModelService(storage).list_models(session, dataset_id, include_archived, dataset_version)
 
 
 @router.get("/{model_id}", response_model=ModelVersionResponse)

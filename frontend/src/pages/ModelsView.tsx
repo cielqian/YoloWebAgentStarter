@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
-import type { Dataset, ModelComparison, ModelEvaluationRecord, ModelVersion, OmConvertJob, SplitName, TrainingNode } from "../types";
+import type { Dataset, DatasetVersion, ModelComparison, ModelEvaluationRecord, ModelVersion, OmConvertJob, SplitName, TrainingNode } from "../types";
 import { ModelTestModal } from "../components/ModelTestModal";
 import { ModelComparisonBar } from "../components/model-list/ModelComparisonBar";
 import { ModelLibraryStats } from "../components/model-list/ModelLibraryStats";
@@ -38,6 +38,9 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const [omNodeId, setOmNodeId] = useState("");
   const [omSocVersion, setOmSocVersion] = useState("Ascend310P3");
   const [omInputShape, setOmInputShape] = useState("images:1,3,640,640");
+  const [filterDatasetId, setFilterDatasetId] = useState("");
+  const [filterVersion, setFilterVersion] = useState("");
+  const [filterVersions, setFilterVersions] = useState<DatasetVersion[]>([]);
 
   const refresh = useCallback(async () => {
     const result = await api.listModels(undefined, includeArchived);
@@ -50,6 +53,16 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   useEffect(() => {
     refresh().catch((reason) => setError(errorMessage(reason)));
   }, [refresh]);
+
+  useEffect(() => {
+    setFilterVersion("");
+    if (!filterDatasetId) { setFilterVersions([]); return; }
+    let cancelled = false;
+    api.listDatasetVersions(filterDatasetId)
+      .then((versions) => { if (!cancelled) setFilterVersions(versions); })
+      .catch(() => { if (!cancelled) setFilterVersions([]); });
+    return () => { cancelled = true; };
+  }, [filterDatasetId]);
 
   useEffect(() => {
     if (!focusModelId) return;
@@ -67,18 +80,24 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     [datasets, detailModel?.dataset_id],
   );
   const bestModel = useMemo(() => pickBestModel(models.filter((item) => item.status === "active")), [models]);
+  const visibleModels = useMemo(
+    () => models.filter((model) =>
+      (!filterDatasetId || model.dataset_id === filterDatasetId)
+      && (!filterVersion || (model.dataset_version_number ?? null) === Number(filterVersion))),
+    [models, filterDatasetId, filterVersion],
+  );
   const filteredModels = useMemo(
-    () => sortModels(filterModels(models, listFilter, search), listSort),
-    [models, listFilter, search, listSort],
+    () => sortModels(filterModels(visibleModels, listFilter, search), listSort),
+    [visibleModels, listFilter, search, listSort],
   );
   const filterCounts = useMemo(() => ({
-    all: models.length,
-    pt: models.filter((item) => item.format === "pt").length,
-    onnx: models.filter((item) => item.format === "onnx").length,
-    om: models.filter((item) => item.format === "om").length,
-    best: models.filter((item) => item.artifact_type === "best").length,
-    archived: models.filter((item) => item.status === "archived").length,
-  }), [models]);
+    all: visibleModels.length,
+    pt: visibleModels.filter((item) => item.format === "pt").length,
+    onnx: visibleModels.filter((item) => item.format === "onnx").length,
+    om: visibleModels.filter((item) => item.format === "om").length,
+    best: visibleModels.filter((item) => item.artifact_type === "best").length,
+    archived: visibleModels.filter((item) => item.status === "archived").length,
+  }), [visibleModels]);
 
   useEffect(() => {
     if (!models.some((model) => model.status === "converting")) return;
@@ -311,6 +330,14 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
                 placeholder="搜索名称 / 版本 / 格式"
               />
             </label>
+            <select aria-label="按数据集筛选" value={filterDatasetId} onChange={(event) => setFilterDatasetId(event.target.value)}>
+              <option value="">全部数据集</option>
+              {datasets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+            <select aria-label="按数据集版本筛选" value={filterVersion} disabled={!filterDatasetId} onChange={(event) => setFilterVersion(event.target.value)}>
+              <option value="">全部版本</option>
+              {filterVersions.map((version) => <option key={version.id} value={String(version.version_number)}>v{version.version_number}</option>)}
+            </select>
             <select className="models-sort-select" value={listSort} onChange={(event) => setListSort(event.target.value as ModelListSort)} aria-label="排序方式">
               <option value="newest">最新优先</option>
               <option value="map50">mAP50 优先</option>
@@ -386,7 +413,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
                       </td>
                       <td className="model-table-name">
                         <button type="button" onClick={() => setDetailId(model.id)} title={model.name}>{model.name}</button>
-                        <small title={datasetName(model.dataset_id)}>{datasetName(model.dataset_id)}</small>
+                        <small title={datasetName(model.dataset_id)}>{datasetName(model.dataset_id)}{model.dataset_version_number != null ? ` · v${model.dataset_version_number}` : ""}</small>
                       </td>
                       <td>{model.artifact_type.toUpperCase()}</td>
                       <td>{model.format.toUpperCase()}</td>

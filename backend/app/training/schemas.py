@@ -12,6 +12,7 @@ TrainingStatus = Literal["pending", "dispatching", "running", "completed", "fail
 
 class TrainingTaskCreate(BaseModel):
     dataset_id: str
+    dataset_version_number: int | None = Field(default=None, ge=1)
     name: str = Field(default="local-yolo-training", min_length=1, max_length=255)
     model: str = Field(default="yolo11n.pt", min_length=1, max_length=255)
     task_type: TaskType | None = None
@@ -39,6 +40,7 @@ class TrainingTaskResponse(BaseModel):
 
     id: str
     dataset_id: str
+    dataset_version_number: int | None = None
     profile_id: str | None
     name: str
     status: TrainingStatus

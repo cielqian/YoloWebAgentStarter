@@ -9,6 +9,7 @@ import type { Dataset, ModelVersion } from "../types";
 vi.mock("../api/client", () => ({
   api: {
     listModels: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+    listDatasetVersions: vi.fn().mockResolvedValue([]),
     listModelEvaluations: vi.fn().mockResolvedValue([]),
     updateModel: vi.fn(),
     archiveModel: vi.fn(),

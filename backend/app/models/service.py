@@ -84,21 +84,78 @@ class ModelService:
             session.refresh(model)
         return registered
 
-    def list_models(self, session: Session, dataset_id: str | None = None, include_archived: bool = False) -> ModelVersionList:
+    def list_models(
+        self,
+        session: Session,
+        dataset_id: str | None = None,
+        include_archived: bool = False,
+        dataset_version: int | None = None,
+    ) -> ModelVersionList:
+        versions = self._dataset_versions_by_model(session)
+        version_of = lambda item: versions.get(item.id)
+
+        def matches(item) -> bool:
+            if dataset_id and item.dataset_id != dataset_id:
+                return False
+            if dataset_version is not None and version_of(item) != dataset_version:
+                return False
+            return True
+
         query = select(ModelVersion)
         if dataset_id:
             query = query.where(ModelVersion.dataset_id == dataset_id)
         if not include_archived:
             query = query.where(ModelVersion.status == "active")
         query = query.order_by(ModelVersion.created_at.desc(), ModelVersion.id.desc())
-        items = list(session.scalars(query))
-        total_query = select(func.count()).select_from(ModelVersion)
+        items = [item for item in session.scalars(query) if matches(item)]
+        total = len(items) if dataset_version is not None else self._total_count(session, dataset_id, include_archived)
+        responses = []
+        for item in items:
+            response = model_response(item)
+            response.dataset_version_number = version_of(item)
+            responses.append(response)
+        return ModelVersionList(items=responses, total=total)
+
+    def _total_count(self, session: Session, dataset_id: str | None, include_archived: bool) -> int:
+        query = select(func.count()).select_from(ModelVersion)
         if dataset_id:
-            total_query = total_query.where(ModelVersion.dataset_id == dataset_id)
+            query = query.where(ModelVersion.dataset_id == dataset_id)
         if not include_archived:
-            total_query = total_query.where(ModelVersion.status == "active")
-        total = session.scalar(total_query) or 0
-        return ModelVersionList(items=[model_response(item) for item in items], total=total)
+            query = query.where(ModelVersion.status == "active")
+        return session.scalar(query) or 0
+
+    def _dataset_versions_by_model(self, session: Session) -> dict[str, int | None]:
+        """模型 → 训练所用数据集版本；ONNX/OM 等导出产物沿 source_model 链继承。"""
+        from app.core.models import TrainingTask
+
+        rows = list(session.scalars(select(ModelVersion)))
+        task_versions = dict(
+            session.execute(
+                select(TrainingTask.id, TrainingTask.dataset_version_number)
+            ).all()
+        )
+        direct = {
+            row.id: (task_versions.get(row.training_task_id) if row.training_task_id else None)
+            for row in rows
+        }
+        by_id = {row.id: row for row in rows}
+        resolved: dict[str, int | None] = {}
+
+        def resolve(model_id: str, seen: set[str]) -> int | None:
+            if model_id in resolved:
+                return resolved[model_id]
+            if model_id in seen:
+                return None
+            seen.add(model_id)
+            value = direct.get(model_id)
+            if value is None:
+                parent = by_id.get(model_id).source_model_id if model_id in by_id else None
+                if parent:
+                    value = resolve(parent, seen)
+            resolved[model_id] = value
+            return value
+
+        return {row.id: resolve(row.id, set()) for row in rows}
 
     def get_model(self, session: Session, model_id: str) -> ModelVersion:
         model = session.get(ModelVersion, model_id)

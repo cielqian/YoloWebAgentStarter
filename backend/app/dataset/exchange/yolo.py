@@ -752,6 +752,54 @@ def export_dataset_directory(
             select(Annotation).where(Annotation.dataset_id == dataset_id).order_by(Annotation.image_id, Annotation.id)
         )
     )
+    return _write_yolo_export(storage, dataset, classes, images, annotations, target_dir, include_unannotated=include_unannotated)
+
+
+def export_dataset_version_directory(
+    session: Session,
+    storage: Storage,
+    dataset_id: str,
+    version_number: int,
+    target_dir: Path,
+    *,
+    include_unannotated: bool = False,
+) -> dict[str, object]:
+    """按版本快照导出训练目录：不依赖当前工作区状态，训练历史版本数据时使用。"""
+    from app.dataset.versions import get_version_by_number, load_version_payload
+
+    dataset = get_dataset(session, dataset_id)
+    version = get_version_by_number(session, dataset_id, version_number)
+    payload = load_version_payload(storage, dataset_id, version)
+    classes = [ClassLabel(**item) for item in payload["classes"]]
+    images: list[ImageItem] = []
+    annotations: list[Annotation] = []
+    for item in payload["images"]:
+        image_fields = {key: item[key] for key in (
+            "id", "file_name", "storage_name", "width", "height", "split", "status",
+            "source_type", "source_file", "source_group_id", "source_video_task_id",
+            "source_checksum", "frame_index", "timestamp",
+        ) if key in item}
+        images.append(ImageItem(**image_fields))
+        for raw in item.get("annotations", []):
+            annotations.append(Annotation(**{key: raw[key] for key in (
+                "id", "class_id", "type", "x", "y", "width", "height",
+                "polygon", "obb", "keypoints", "source",
+            ) if key in raw}))
+    annotations.sort(key=lambda item: (item.image_id, item.id))
+    images.sort(key=lambda item: (item.split or "", item.id))
+    return _write_yolo_export(storage, dataset, classes, images, annotations, target_dir, include_unannotated=include_unannotated)
+
+
+def _write_yolo_export(
+    storage: Storage,
+    dataset: Dataset,
+    classes: list[ClassLabel],
+    images: list[ImageItem],
+    annotations: list[Annotation],
+    target_dir: Path,
+    *,
+    include_unannotated: bool = False,
+) -> dict[str, object]:
     target = Path(target_dir).expanduser().resolve()
     target.mkdir(parents=True, exist_ok=True)
     class_indexes = {item.id: item.class_index for item in classes}
@@ -769,7 +817,7 @@ def export_dataset_directory(
         if image.split not in counts:
             raise ValidationError("invalid_image_split", f"Unsupported image split: {image.split}.")
         total_image_counts[image.split] += 1
-        source = storage.image_path(dataset_id, image.storage_name)
+        source = storage.image_path(dataset.id, image.storage_name)
         if not source.is_file():
             raise ValidationError("image_file_missing", f"Managed image file is missing: {image.file_name}.")
         stem = f"{image.id}_{PurePosixPath(image.file_name).stem}"

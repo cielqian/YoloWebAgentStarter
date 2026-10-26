@@ -539,6 +539,7 @@ def _dispatch_flow(session_factory: sessionmaker[Session], storage: Storage, set
                 return
             node_id = task.node_id or ""
             dataset_id = task.dataset_id
+            dataset_version_number = task.dataset_version_number
             epochs = task.epochs
             export_root = storage.training_task_dir(task_id) / "dataset"
 
@@ -551,7 +552,9 @@ def _dispatch_flow(session_factory: sessionmaker[Session], storage: Storage, set
 
         with session_factory() as session:
             dataset = get_dataset(session, dataset_id)
-            export = export_dataset_directory(session, storage, dataset_id, export_root)
+            from app.training.service import export_training_data
+
+            export = export_training_data(session, storage, dataset, dataset_version_number, export_root)
         TrainingService._validate_export_training_splits(export, dataset.task_type)
         export_stats = {key: export.get(key) for key in ("counts", "annotated_image_counts", "total_image_counts", "skipped_image_counts", "label_count")}
         if not _dispatching_update(

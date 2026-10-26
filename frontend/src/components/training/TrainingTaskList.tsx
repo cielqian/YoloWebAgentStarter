@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Dataset, TrainingTask } from "../../types";
+import type { Dataset, DatasetVersion, TrainingTask } from "../../types";
 import {
   formatDuration,
   formatRelativeTime,
@@ -12,6 +12,11 @@ import { IconPlus, IconSearch, IconStop } from "./icons";
 interface Props {
   tasks: TrainingTask[];
   datasets: Dataset[];
+  historyDatasetId: string;
+  historyVersion: string;
+  historyVersions: DatasetVersion[];
+  onHistoryDatasetChange: (value: string) => void;
+  onHistoryVersionChange: (value: string) => void;
   selectedTaskId?: string;
   expSearch: string;
   expFilter: HistoryFilter;
@@ -28,6 +33,11 @@ interface Props {
 export function TrainingTaskList({
   tasks,
   datasets,
+  historyDatasetId,
+  historyVersion,
+  historyVersions,
+  onHistoryDatasetChange,
+  onHistoryVersionChange,
   selectedTaskId,
   expSearch,
   expFilter,
@@ -68,6 +78,8 @@ export function TrainingTaskList({
     const q = expSearch.trim().toLowerCase();
     return tasks
       .filter((task) => {
+        if (historyDatasetId && task.dataset_id !== historyDatasetId) return false;
+        if (historyVersion && String(task.dataset_version_number ?? "") !== historyVersion) return false;
         if (expFilter === "running" && !["pending", "dispatching", "running"].includes(task.status)) return false;
         if (expFilter === "completed" && task.status !== "completed") return false;
         if (expFilter === "failed" && task.status !== "failed") return false;
@@ -79,7 +91,7 @@ export function TrainingTaskList({
           || datasetName(task.dataset_id).toLowerCase().includes(q);
       })
       .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-  }, [tasks, expSearch, expFilter, datasetName]);
+  }, [tasks, expSearch, expFilter, datasetName, historyDatasetId, historyVersion]);
 
   const searchQuery = expSearch.trim();
   const emptyFilteredMessage = (() => {
@@ -127,6 +139,14 @@ export function TrainingTaskList({
               autoComplete="off"
             />
           </label>
+          <select aria-label="按数据集筛选" value={historyDatasetId} onChange={(event) => onHistoryDatasetChange(event.target.value)}>
+            <option value="">全部数据集</option>
+            {datasets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <select aria-label="按数据集版本筛选" value={historyVersion} disabled={!historyDatasetId} onChange={(event) => onHistoryVersionChange(event.target.value)}>
+            <option value="">全部版本</option>
+            {historyVersions.map((version) => <option key={version.id} value={String(version.version_number)}>v{version.version_number}</option>)}
+          </select>
         </div>
       </div>
 
@@ -209,7 +229,7 @@ function RecordRow({
       <div className="training-record-main">
         <div className="training-record-title">
           <strong title={task.name}>{task.name}</strong>
-          <span className="training-record-dataset" title={datasetLabel}>{datasetLabel}</span>
+          <span className="training-record-dataset" title={datasetLabel}>{datasetLabel}{task.dataset_version_number != null ? ` · v${task.dataset_version_number}` : ""}</span>
         </div>
         <div className="training-record-chips">
           <span>{task.model_name}</span>

@@ -9,6 +9,7 @@ import type { Dataset, TrainingTask } from "../types";
 vi.mock("../api/client", () => ({
   api: {
     listTrainingTasks: vi.fn().mockResolvedValue({ items: [] }),
+    listDatasetVersions: vi.fn().mockResolvedValue([]),
     listWeights: vi.fn().mockResolvedValue({ items: [] }),
     listTrainingDevices: vi.fn().mockResolvedValue({ items: [] }),
     createTrainingTask: vi.fn(),

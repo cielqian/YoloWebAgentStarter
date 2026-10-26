@@ -353,8 +353,13 @@ export const api = {
   exportCocoUrl: (datasetId: string) => apiUrl(`/api/datasets/${datasetId}/export/coco`),
   importCoco: async (file: File, name: string, taskType: TaskType, wait = true) => { const form = new FormData(); form.append("file", file); form.append("name", name); form.append("task_type", taskType); return request<DatasetImportResult>(`/api/datasets/import/coco${wait ? "" : "?wait=false"}`, { method: "POST", body: form }); },
   tileDataset: (datasetId: string, data: { name: string; description?: string; tile_size: number; overlap: number; keep_empty_tiles: boolean }) => request<{ dataset_id: string; source_dataset_id: string; generated_images: number; generated_annotations: number; skipped_empty_tiles: number }>(`/api/datasets/${datasetId}/tile`, json(data)),
-  listTrainingTasks: (datasetId?: string) =>
-    request<{ items: TrainingTask[] }>(`/api/training/tasks${datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : ""}`),
+  listTrainingTasks: (datasetId?: string, datasetVersion?: number) => {
+    const params = new URLSearchParams();
+    if (datasetId) params.set("dataset_id", datasetId);
+    if (datasetVersion) params.set("dataset_version", String(datasetVersion));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<{ items: TrainingTask[] }>(`/api/training/tasks${suffix}`);
+  },
   listTrainingDevices: () =>
     request<{ items: TrainingDevice[]; nodes: TrainingNodeStatus[] }>("/api/training/devices"),
   listTrainingNodes: () => request<TrainingNode[]>("/api/training/nodes"),
@@ -371,6 +376,7 @@ export const api = {
     request<TrainingNodeTestResult>("/api/training/nodes/test", json({ url, token })),
   createTrainingTask: (payload: {
     dataset_id: string;
+    dataset_version_number?: number | null;
     name: string;
     model: string;
     task_type: TaskType;
@@ -392,7 +398,13 @@ export const api = {
   getTrainingLogs: (taskId: string, tail = 200) => request<TrainingLog>(`/api/training/tasks/${taskId}/logs?tail=${tail}`),
   getTrainingSummary: (taskId: string) => request<import("../types").TrainingSummary>(`/api/training/tasks/${taskId}/summary`),
   downloadCheckpointUrl: (taskId: string, checkpoint: "best" | "last") => apiUrl(`/api/training/tasks/${taskId}/checkpoints/${checkpoint}`),
-  listModels: (datasetId?: string, includeArchived = true) => request<{ items: ModelVersion[]; total: number }>(`/api/models?${datasetId ? `dataset_id=${encodeURIComponent(datasetId)}&` : ""}include_archived=${includeArchived}`),
+  listModels: (datasetId?: string, includeArchived = true, datasetVersion?: number) => {
+    const params = new URLSearchParams();
+    if (datasetId) params.set("dataset_id", datasetId);
+    params.set("include_archived", String(includeArchived));
+    if (datasetVersion) params.set("dataset_version", String(datasetVersion));
+    return request<{ items: ModelVersion[]; total: number }>(`/api/models?${params.toString()}`);
+  },
   getModel: (modelId: string) => request<ModelVersion>(`/api/models/${modelId}`),
   updateModel: (modelId: string, payload: { name?: string; version?: string; notes?: string }) => request<ModelVersion>(`/api/models/${modelId}`, json(payload, "PATCH")),
   archiveModel: (modelId: string) => request<ModelVersion>(`/api/models/${modelId}/archive`, { method: "POST" }),

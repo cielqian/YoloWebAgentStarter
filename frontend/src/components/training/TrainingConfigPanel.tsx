@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../api/client";
-import type { BaseWeight, Dataset, TaskType } from "../../types";
+import type { BaseWeight, Dataset, DatasetVersion, TaskType } from "../../types";
 import {
   BATCH_OPTIONS,
   IMG_SIZE_OPTIONS,
@@ -15,6 +15,7 @@ import { IconBox, IconChevron, IconGrid, IconPose, IconScan, IconShapes, IconSpa
 interface Props {
   datasets: Dataset[];
   dataset: Dataset;
+  datasetVersions: DatasetVersion[];
   form: TrainingFormState;
   preset: PresetId | null;
   advancedOpen: boolean;
@@ -44,6 +45,7 @@ const TASK_META: Record<TaskType, { help: string; Icon: typeof IconBox }> = {
 export function TrainingConfigPanel({
   datasets,
   dataset,
+  datasetVersions,
   form,
   preset,
   advancedOpen,
@@ -175,8 +177,22 @@ export function TrainingConfigPanel({
           </div>
           <div className="training-ws-form-grid training-ws-form-grid--base">
             <label className="training-ws-field training-ws-field-wide">
-              <span>实验名称</span>
+              <span>任务名称</span>
               <input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} required />
+            </label>
+            <label className="training-ws-field training-ws-field-wide">
+              <span>数据集版本</span>
+              <select
+                value={form.dataset_version_number ?? ""}
+                onChange={(event) => setForm((prev) => ({ ...prev, dataset_version_number: event.target.value ? Number(event.target.value) : null }))}
+              >
+                <option value="">跟随数据集（不指定版本）</option>
+                {datasetVersions.map((version) => (
+                  <option key={version.id} value={version.version_number}>
+                    v{version.version_number}{version.is_active ? "（当前激活）" : ""} · {version.image_count} 张{version.note ? ` · ${version.note}` : ""}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="training-ws-field training-ws-field-wide">
               <span>基础权重</span>
