@@ -241,12 +241,13 @@ class ModelService:
         if existing is not None and Path(existing.model_path).is_file():
             return model_response(existing)
 
+        onnx_file_stem = Path(source_model.model_path).stem or Path(source_model.name).stem
         export_model = existing
         created = False
         if export_model is None:
             export_model = ModelVersion(
                 id=f"model_{source_model.id}_onnx",
-                name=f"{Path(source_model.name).stem}.onnx",
+                name=f"{onnx_file_stem}.onnx",
                 version=f"{source_model.version}-onnx",
                 dataset_id=source_model.dataset_id,
                 source_model_id=source_model.id,
@@ -264,7 +265,7 @@ class ModelService:
             session.add(export_model)
             session.flush()
             created = True
-        output_path = self.storage.model_version_dir(export_model.id) / "model.onnx"
+        output_path = self.storage.model_version_dir(export_model.id) / f"{onnx_file_stem}.onnx"
         try:
             exported_path = onnx.export_fp32_onnx(source_path, output_path)
             exported_path = self.storage.managed_model_path(exported_path)
