@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
-import type { Dataset, ModelComparison, ModelEvaluationRecord, ModelVersion, SplitName } from "../types";
+import type { Dataset, ModelComparison, ModelEvaluationRecord, ModelVersion, OmConvertJob, SplitName, TrainingNode } from "../types";
 import { ModelTestModal } from "../components/ModelTestModal";
 import { ModelComparisonBar } from "../components/model-list/ModelComparisonBar";
 import { ModelLibraryStats } from "../components/model-list/ModelLibraryStats";
@@ -33,6 +33,12 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const [search, setSearch] = useState("");
   const [listFilter, setListFilter] = useState<ModelListFilter>("all");
   const [listSort, setListSort] = useState<ModelListSort>("newest");
+  const [nodes, setNodes] = useState<TrainingNode[]>([]);
+  const [omTarget, setOmTarget] = useState<ModelVersion>();
+  const [omNodeId, setOmNodeId] = useState("");
+  const [omSocVersion, setOmSocVersion] = useState("Ascend310P3");
+  const [omInputShape, setOmInputShape] = useState("images:1,3,640,640");
+  const [omJobs, setOmJobs] = useState<OmConvertJob[]>([]);
 
   const refresh = useCallback(async () => {
     const result = await api.listModels(undefined, includeArchived);
@@ -70,9 +76,33 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     all: models.length,
     pt: models.filter((item) => item.format === "pt").length,
     onnx: models.filter((item) => item.format === "onnx").length,
+    om: models.filter((item) => item.format === "om").length,
     best: models.filter((item) => item.artifact_type === "best").length,
     archived: models.filter((item) => item.status === "archived").length,
   }), [models]);
+
+  useEffect(() => {
+    api.listOmConvertJobs().then(setOmJobs).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!omJobs.some((job) => job.status === "uploading" || job.status === "converting" || job.status === "downloading")) return;
+    const timer = window.setInterval(() => {
+      api.listOmConvertJobs().then((next) => {
+        for (const job of next) {
+          const previous = omJobs.find((item) => item.job_id === job.job_id);
+          if (previous && previous.status === job.status) continue;
+          if (job.status === "completed") {
+            setNotice(`OM 转换完成：${job.source_model_name} → ${job.soc_version}`);
+            void refresh();
+          }
+          if (job.status === "failed") setError(`OM 转换失败：${job.error ?? "未知原因"}`);
+        }
+        setOmJobs(next);
+      }).catch(() => {});
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [omJobs, refresh]);
 
   useEffect(() => {
     if (!detailModel || detailModel.format !== "pt") { setEvaluations([]); return; }
@@ -100,6 +130,33 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     setDetailId(exported.id);
     setNotice(`已导出 ONNX：${exported.name}`);
   });
+
+  const openOmConvert = (model: ModelVersion) => {
+    setOmTarget(model);
+    if (nodes.length) return;
+    api.listTrainingNodes()
+      .then((list) => {
+        setNodes(list);
+        setOmNodeId((current) => current || (list.find((item) => item.enabled)?.id ?? ""));
+      })
+      .catch((reason) => setError(errorMessage(reason)));
+  };
+
+  const submitOmConvert = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!omTarget || !omNodeId) return;
+    const target = omTarget;
+    void run(async () => {
+      const job = await api.convertModelToOm(target.id, {
+        node_id: omNodeId,
+        soc_version: omSocVersion.trim() || "Ascend310P3",
+        input_shape: omInputShape.trim() || "images:1,3,640,640",
+      });
+      setOmJobs((jobs) => [...jobs.filter((item) => item.job_id !== job.job_id), job]);
+      setOmTarget(undefined);
+      setNotice(`已提交 OM 转换：${target.name} → ${job.node_name}`);
+    });
+  };
 
   const toggleArchive = (model: ModelVersion) => run(async () => {
     const updated = model.status === "archived" ? await api.restoreModel(model.id) : await api.archiveModel(model.id);
@@ -278,6 +335,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
             ["all", "全部"],
             ["pt", "PT"],
             ["onnx", "ONNX"],
+            ["om", "OM"],
             ["best", "Best"],
             ["archived", "归档"],
           ] as const).map(([id, label]) => (
@@ -350,6 +408,9 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
                             <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => void exportOnnx(model)}>ONNX</button>
                           </>
                         ) : null}
+                        {model.format === "onnx" ? (
+                          <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openOmConvert(model)}>转OM</button>
+                        ) : null}
                         <button type="button" className="model-action-btn model-action-btn--ghost" onClick={() => setDetailId(model.id)}>详情</button>
                         <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => remove(model)}>删除</button>
                       </td>
@@ -361,6 +422,59 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
           </div>
         )}
       </section>
+
+      {omJobs.length > 0 && (
+        <section className="models-comparison-result" aria-label="OM 转换任务">
+          <div className="models-comparison-result-head">
+            <div>
+              <span className="eyebrow">ATC CONVERT</span>
+              <h3>OM 转换任务</h3>
+            </div>
+          </div>
+          {omJobs.map((job) => (
+            <p key={job.job_id} className="muted" title={job.logs || undefined}>
+              <strong>{job.source_model_name}</strong> → {job.soc_version}（{job.node_name}）：
+              {omStatusText[job.status]}
+              {job.error ? ` — ${job.error}` : ""}
+            </p>
+          ))}
+        </section>
+      )}
+
+      {omTarget && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setOmTarget(undefined)}>
+          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="om-convert-title" onMouseDown={(event) => event.stopPropagation()}>
+            <form onSubmit={submitOmConvert}>
+              <header>
+                <div>
+                  <span className="eyebrow">ATC CONVERT</span>
+                  <h2 id="om-convert-title">转换为华为 OM：{omTarget.name}</h2>
+                  <p className="muted">把该 ONNX 推到昇腾服务器的 agent 上执行 ATC 转换，完成后 .om 自动回传入库。</p>
+                </div>
+                <button type="button" className="icon-button" onClick={() => setOmTarget(undefined)} aria-label="关闭">×</button>
+              </header>
+              <label><span>转换节点</span>
+                <select value={omNodeId} onChange={(event) => setOmNodeId(event.target.value)} disabled={!nodes.length}>
+                  {!nodes.length && <option value="">暂无可用节点</option>}
+                  {nodes.map((node) => (
+                    <option key={node.id} value={node.id} disabled={!node.enabled}>{node.name}（{node.url}）{node.enabled ? "" : " · 已禁用"}</option>
+                  ))}
+                </select>
+              </label>
+              <label><span>SoC 版本（soc_version）</span>
+                <input value={omSocVersion} onChange={(event) => setOmSocVersion(event.target.value)} placeholder="Ascend310P3" />
+              </label>
+              <label><span>输入形状（input_shape）</span>
+                <input value={omInputShape} onChange={(event) => setOmInputShape(event.target.value)} placeholder="images:1,3,640,640" />
+              </label>
+              <footer>
+                <button type="button" className="button" onClick={() => setOmTarget(undefined)}>取消</button>
+                <button type="submit" className="button primary" disabled={busy || !omNodeId}>开始转换</button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
 
       <ModelComparisonBar
         selectedIds={selectedIds}
@@ -381,3 +495,11 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
 function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : "操作失败，请检查后端服务。";
 }
+
+const omStatusText: Record<OmConvertJob["status"], string> = {
+  uploading: "上传 ONNX 中…",
+  converting: "ATC 转换中…",
+  downloading: "回传 OM 中…",
+  completed: "已完成",
+  failed: "失败",
+};

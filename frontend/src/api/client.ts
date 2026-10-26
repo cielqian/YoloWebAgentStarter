@@ -14,6 +14,7 @@ import type {
   TrainingLog,
   TrainingTask,
   ModelVersion,
+  OmConvertJob,
   InferenceResult,
   ModelComparison,
   ModelEvaluationRecord,
@@ -392,6 +393,9 @@ export const api = {
   restoreModel: (modelId: string) => request<ModelVersion>(`/api/models/${modelId}/restore`, { method: "POST" }),
   deleteModel: (modelId: string) => request<void>(`/api/models/${modelId}`, { method: "DELETE" }),
   exportModelOnnx: (modelId: string) => request<ModelVersion>(`/api/models/${modelId}/export-onnx`, { method: "POST" }),
+  convertModelToOm: (modelId: string, payload: { node_id: string; soc_version: string; input_shape: string }) =>
+    request<OmConvertJob>(`/api/models/${modelId}/convert-om`, json(payload)),
+  listOmConvertJobs: () => request<OmConvertJob[]>("/api/models/convert-jobs"),
   testModel: async (modelId: string, file: File, confidence: number, iou: number) => { const form = new FormData(); form.append("file", file); return request<InferenceResult>(`/api/models/${modelId}/test?confidence=${confidence}&iou=${iou}`, { method: "POST", body: form }); },
   createAutoAnnotation: (datasetId: string, payload: { model_id: string; confidence: number; iou: number; clean_old_annotations: boolean; skip_annotated_images: boolean; class_mapping?: Record<string, string> }) => request<AutoAnnotationTask>(`/api/datasets/${datasetId}/auto-annotation`, json(payload)),
   listAutoAnnotations: (datasetId: string) => request<AutoAnnotationTask[]>(`/api/datasets/${datasetId}/auto-annotation`),

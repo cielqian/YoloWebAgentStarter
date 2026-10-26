@@ -155,8 +155,8 @@ class ModelService:
     def download_path(self, session: Session, model_id: str) -> Path:
         model = self.get_model(session, model_id)
         path = self.storage.managed_model_path(model.model_path)
-        if path.suffix.lower() not in {".pt", ".onnx"}:
-            raise ValidationError("unsupported_model_format", "Only PT and ONNX model files can be downloaded.")
+        if path.suffix.lower() not in {".pt", ".onnx", ".om"}:
+            raise ValidationError("unsupported_model_format", "Only PT, ONNX and OM model files can be downloaded.")
         if not path.is_file():
             raise NotFoundError("model_file_missing", "The managed model file is missing.")
         return path

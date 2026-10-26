@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -8,7 +8,8 @@ from app.api.dependencies import get_evaluation_runner, get_session, get_setting
 from app.core.config import Settings
 from app.core.errors import ValidationError
 from app.core.storage import Storage
-from app.models.schemas import InferenceResult, ModelCompareRequest, ModelCompareResponse, ModelEvaluationLogResponse, ModelEvaluationRecordResponse, ModelEvaluationRequest, ModelTestRecordResponse, ModelVersionList, ModelVersionResponse, ModelVersionUpdate
+from app.models import om_convert
+from app.models.schemas import InferenceResult, ModelCompareRequest, ModelCompareResponse, ModelEvaluationLogResponse, ModelEvaluationRecordResponse, ModelEvaluationRequest, ModelTestRecordResponse, ModelVersionList, ModelVersionResponse, ModelVersionUpdate, OmConvertJobResponse, OmConvertRequest
 from app.models.evaluation import YoloEvaluationRunner
 from app.models.service import ModelService
 
@@ -19,6 +20,33 @@ router = APIRouter(prefix="/models", tags=["models"])
 @router.post("/compare", response_model=ModelCompareResponse)
 def compare_models(payload: ModelCompareRequest, session: Session = Depends(get_session), storage: Storage = Depends(get_storage)) -> ModelCompareResponse:
     return ModelCompareResponse.model_validate(ModelService(storage).compare(session, payload.baseline_model_id, payload.candidate_model_id))
+
+
+@router.get("/convert-jobs", response_model=list[OmConvertJobResponse])
+def list_om_convert_jobs() -> list[OmConvertJobResponse]:
+    return [OmConvertJobResponse.model_validate(job) for job in om_convert.list_jobs()]
+
+
+@router.post("/{model_id}/convert-om", response_model=OmConvertJobResponse, status_code=202)
+def convert_model_to_om(
+    model_id: str,
+    payload: OmConvertRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
+) -> OmConvertJobResponse:
+    ModelService(storage).get_model_response(session, model_id)
+    job = om_convert.start_convert(
+        request.app.state.database.session_factory,
+        storage,
+        settings,
+        model_id,
+        payload.node_id,
+        payload.soc_version,
+        payload.input_shape,
+    )
+    return OmConvertJobResponse.model_validate(job)
 
 
 @router.get("", response_model=ModelVersionList)

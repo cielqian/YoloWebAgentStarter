@@ -9,8 +9,8 @@ from app.core.task_types import TaskType
 
 ModelSource = Literal["training_task", "exported"]
 ModelStatus = Literal["active", "archived"]
-ModelArtifactType = Literal["best", "last", "onnx"]
-ModelFormat = Literal["pt", "onnx"]
+ModelArtifactType = Literal["best", "last", "onnx", "om"]
+ModelFormat = Literal["pt", "onnx", "om"]
 
 
 class ModelVersionResponse(BaseModel):
@@ -123,3 +123,25 @@ class ModelCompareResponse(BaseModel):
     candidate: dict
     deltas: dict[str, float | None]
     suggestions: list[str]
+
+
+class OmConvertRequest(BaseModel):
+    node_id: str = Field(min_length=1)
+    soc_version: str = Field(default="Ascend310P3", min_length=1, max_length=64)
+    input_shape: str = Field(default="images:1,3,640,640", min_length=1, max_length=128)
+
+
+class OmConvertJobResponse(BaseModel):
+    job_id: str
+    source_model_id: str
+    source_model_name: str
+    node_id: str
+    node_name: str
+    soc_version: str
+    input_shape: str
+    status: str
+    error: str | None
+    logs: str
+    result_model_id: str | None
+    created_at: datetime
+    finished_at: datetime | None

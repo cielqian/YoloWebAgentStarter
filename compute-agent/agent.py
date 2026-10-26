@@ -33,7 +33,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.3.4"
+AGENT_VERSION = "0.4.0"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -630,6 +630,214 @@ class TaskManager:
 task_manager = TaskManager(WORKSPACE_ROOT)
 
 
+# ---------------------------------------------------------------- ATC 转换（华为昇腾 OM）
+
+_SOC_VERSION = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+# 形如 images:1,3,640,640 —— 输入名 + 冒号 + 逗号分隔的维度
+_INPUT_SHAPE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*:\d+(?:,\d+)*$")
+_DEFAULT_SOC_VERSION = "Ascend310P3"
+_DEFAULT_INPUT_SHAPE = "images:1,3,640,640"
+
+
+def atc_available() -> bool:
+    return shutil.which("atc") is not None
+
+
+class ConvertManager:
+    """华为昇腾 ATC 转换任务：ONNX → OM。内存态生命周期，产物为 model.om。"""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.lock = threading.RLock()
+        self.jobs: dict[str, dict[str, Any]] = {}
+        self.processes: dict[str, subprocess.Popen[str]] = {}
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def workspace(self, job_id: str) -> Path:
+        if not _TASK_ID.fullmatch(job_id):
+            raise TaskError(400, "invalid job id")
+        candidate = (self.root / job_id).resolve()
+        if candidate.parent != self.root.resolve():
+            raise TaskError(400, "invalid job id")
+        return candidate
+
+    def _get(self, job_id: str) -> dict[str, Any]:
+        with self.lock:
+            record = self.jobs.get(job_id)
+            if record is None:
+                raise TaskError(404, "convert job not found")
+            return record
+
+    def create(self, spec: dict[str, Any]) -> dict[str, Any]:
+        job_id = str(spec.get("job_id") or "")
+        if not _TASK_ID.fullmatch(job_id):
+            raise TaskError(400, "spec.job_id is required (1-64 chars of A-Za-z0-9_.:-)")
+        soc_version = str(spec.get("soc_version") or _DEFAULT_SOC_VERSION).strip()
+        if not _SOC_VERSION.fullmatch(soc_version):
+            raise TaskError(400, "spec.soc_version must look like Ascend310P3")
+        input_shape = str(spec.get("input_shape") or _DEFAULT_INPUT_SHAPE).strip()
+        if not _INPUT_SHAPE.fullmatch(input_shape):
+            raise TaskError(400, "spec.input_shape must look like images:1,3,640,640")
+        with self.lock:
+            if job_id in self.jobs:
+                raise TaskError(409, "convert job already exists")
+            self.workspace(job_id).mkdir(parents=True, exist_ok=True)
+            self.jobs[job_id] = {
+                "job_id": job_id,
+                "spec": {"soc_version": soc_version, "input_shape": input_shape},
+                "status": "pending",
+                "error": None,
+                "artifacts": {"om": False},
+                "log_line_count": 0,
+                "created_at": time.time(),
+                "started_at": None,
+                "finished_at": None,
+            }
+            return self.status(job_id)
+
+    def status(self, job_id: str) -> dict[str, Any]:
+        record = self._get(job_id)
+        return {
+            "job_id": job_id,
+            "status": record.get("status"),
+            "spec": record.get("spec") or {},
+            "artifacts": record.get("artifacts") or {},
+            "error": record.get("error"),
+            "log_line_count": int(record.get("log_line_count") or 0),
+            "created_at": record.get("created_at"),
+            "started_at": record.get("started_at"),
+            "finished_at": record.get("finished_at"),
+        }
+
+    def logs(self, job_id: str, after: int = 0, tail: int = 0) -> dict[str, Any]:
+        self._get(job_id)
+        path = self.root / job_id / "convert.log"
+        lines: list[str] = []
+        if path.is_file():
+            try:
+                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                lines = []
+        start = max(int(after), 0)
+        selected = lines[start:] if start else lines
+        if tail and tail > 0:
+            selected = selected[-tail:]
+        return {"job_id": job_id, "logs": "\n".join(selected), "line_count": len(lines)}
+
+    def receive_input(self, job_id: str) -> dict[str, Any]:
+        self._get(job_id)
+        with self.lock:
+            record = self.jobs[job_id]
+            if record.get("status") != "pending":
+                raise TaskError(409, "input can only be uploaded before the job starts")
+            temporary = self.workspace(job_id) / "input.onnx.part"
+            size = _safe(lambda: temporary.stat().st_size, 0)
+            if not temporary.is_file() or not size:
+                raise TaskError(400, "input body is empty")
+            temporary.replace(self.workspace(job_id) / "input.onnx")
+        return {"job_id": job_id, "input": "input.onnx", "size_bytes": size}
+
+    def start(self, job_id: str) -> dict[str, Any]:
+        with self.lock:
+            record = self._get(job_id)
+            if record.get("status") != "pending":
+                raise TaskError(409, f"job is {record.get('status')}, only pending jobs can start")
+            if not (self.workspace(job_id) / "input.onnx").is_file():
+                raise TaskError(409, "input.onnx has not been uploaded yet")
+            record["status"] = "running"
+            record["started_at"] = time.time()
+        threading.Thread(target=self._run, args=(job_id,), daemon=True).start()
+        return self.status(job_id)
+
+    def delete(self, job_id: str) -> None:
+        with self.lock:
+            record = self.jobs.get(job_id)
+            if record is None:
+                return
+            if record.get("status") == "running":
+                raise TaskError(409, "stop is not supported for convert jobs; wait for completion")
+            del self.jobs[job_id]
+            workspace = self.workspace(job_id)
+        if workspace.exists():
+            shutil.rmtree(workspace, ignore_errors=True)
+
+    def artifact_path(self, job_id: str) -> Path:
+        self._get(job_id)
+        path = self.workspace(job_id) / "model.om"
+        if not path.is_file():
+            raise TaskError(404, "model.om is not ready yet")
+        return path
+
+    def _run(self, job_id: str) -> None:
+        workspace = self.workspace(job_id)
+        record = self.jobs[job_id]
+        spec = record["spec"]
+        log_path = workspace / "convert.log"
+
+        def log(text: str) -> None:
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(text + "\n")
+            record["log_line_count"] = int(record.get("log_line_count") or 0) + 1
+
+        atc = shutil.which("atc")
+        args = [
+            "--model=input.onnx",
+            "--framework=5",
+            "--output=model",
+            f"--input_shape={spec['input_shape']}",
+            f"--soc_version={spec['soc_version']}",
+        ]
+        log(f"ATC convert started on {socket.gethostname()}.")
+        log("Command: atc " + " ".join(args))
+        return_code = -1
+        try:
+            if atc is None:
+                raise FileNotFoundError("atc not found in PATH; run the agent inside the CANN environment")
+            process = subprocess.Popen(
+                [atc, *args],
+                cwd=workspace,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                shell=False,
+                start_new_session=os.name == "posix",
+            )
+            with self.lock:
+                self.processes[job_id] = process
+            assert process.stdout is not None
+            for line in process.stdout:
+                log(line.rstrip("\n"))
+            return_code = process.wait()
+        except Exception as exc:  # noqa: BLE001
+            log(f"ATC process failed to start or read output: {exc}")
+        finally:
+            with self.lock:
+                self.processes.pop(job_id, None)
+
+        om = workspace / "model.om"
+        with self.lock:
+            record["artifacts"] = {"om": om.is_file()}
+            record["finished_at"] = time.time()
+            if return_code == 0 and om.is_file():
+                record["status"] = "completed"
+                record["error"] = None
+                log("ATC convert completed with model.om.")
+            else:
+                record["status"] = "failed"
+                record["error"] = (
+                    "ATC finished without producing model.om."
+                    if return_code == 0
+                    else f"atc exited with code {return_code}."
+                )
+                log(record["error"])
+
+
+convert_manager = ConvertManager(Path(__file__).resolve().parent / "convert-workspace")
+
+
 def _running_device_ids() -> set[str]:
     """当前运行中任务声明的设备；auto 无法拆分，单独返回哨兵值。"""
     with task_manager.lock:
@@ -750,6 +958,7 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                         "hostname": socket.gethostname(),
                         "auth_required": bool(token),
                         "training_supported": True,
+                        "convert_supported": atc_available(),
                         "timestamp": time.time(),
                     },
                 )
@@ -782,6 +991,19 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                     return
                 if len(segments) == 4 and segments[0] == "tasks" and segments[2] == "artifacts":
                     path = task_manager.artifact_path(segments[1], segments[3])
+                    self._send_bytes(200, path.read_bytes(), "application/octet-stream", path.name)
+                    return
+                if len(segments) == 2 and segments[0] == "convert":
+                    self._send(200, convert_manager.status(segments[1]))
+                    return
+                if len(segments) == 3 and segments[0] == "convert" and segments[2] == "logs":
+                    params = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                    after = int((params.get("after") or ["0"])[0] or 0)
+                    tail = int((params.get("tail") or ["0"])[0] or 0)
+                    self._send(200, convert_manager.logs(segments[1], after=after, tail=tail))
+                    return
+                if len(segments) == 4 and segments[0] == "convert" and segments[2] == "artifacts":
+                    path = convert_manager.artifact_path(segments[1])
                     self._send_bytes(200, path.read_bytes(), "application/octet-stream", path.name)
                     return
             except TaskError as exc:
@@ -818,6 +1040,21 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                         self._read_body()
                         self._send(200, task_manager.stop(segments[1]))
                     return
+                if segments == ["convert"]:
+                    try:
+                        spec = json.loads(self._read_body().decode("utf-8"))
+                    except (ValueError, UnicodeError) as exc:
+                        self._send(400, {"detail": f"request body must be a JSON convert spec: {exc}"})
+                        return
+                    if not isinstance(spec, dict):
+                        self._send(400, {"detail": "request body must be a JSON convert spec"})
+                        return
+                    self._send(201, convert_manager.create(spec))
+                    return
+                if len(segments) == 3 and segments[0] == "convert" and segments[2] == "start":
+                    self._read_body()
+                    self._send(200, convert_manager.start(segments[1]))
+                    return
             except TaskError as exc:
                 self._send(exc.status, {"detail": exc.message})
                 return
@@ -839,6 +1076,11 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                     body = self._read_body()
                     self._send(200, task_manager.receive_weights(segments[1], name, body))
                     return
+                if len(segments) == 3 and segments[0] == "convert" and segments[2] == "input":
+                    destination = convert_manager.workspace(segments[1]) / "input.onnx.part"
+                    self._read_body_to_file(destination)
+                    self._send(200, convert_manager.receive_input(segments[1]))
+                    return
             except TaskError as exc:
                 self._send(exc.status, {"detail": exc.message})
                 return
@@ -852,6 +1094,13 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                 if len(segments) == 2 and segments[0] == "tasks":
                     self._read_body()
                     task_manager.delete(segments[1])
+                    self.send_response(204)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                if len(segments) == 2 and segments[0] == "convert":
+                    self._read_body()
+                    convert_manager.delete(segments[1])
                     self.send_response(204)
                     self.send_header("Content-Length", "0")
                     self.end_headers()

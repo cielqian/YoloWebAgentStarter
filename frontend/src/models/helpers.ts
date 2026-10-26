@@ -1,7 +1,7 @@
 import type { ModelVersion } from "../types";
 import { taskTypeLabel } from "../training/helpers";
 
-export type ModelListFilter = "all" | "pt" | "onnx" | "best" | "archived";
+export type ModelListFilter = "all" | "pt" | "onnx" | "om" | "best" | "archived";
 export type ModelListSort = "newest" | "map50";
 
 export function newerFirst(a: ModelVersion, b: ModelVersion) {
@@ -65,6 +65,7 @@ export function filterModels(models: ModelVersion[], filter: ModelListFilter, se
   return models.filter((item) => {
     if (filter === "pt" && item.format !== "pt") return false;
     if (filter === "onnx" && item.format !== "onnx") return false;
+    if (filter === "om" && item.format !== "om") return false;
     if (filter === "best" && item.artifact_type !== "best") return false;
     if (filter === "archived" && item.status !== "archived") return false;
     if (!q) return true;

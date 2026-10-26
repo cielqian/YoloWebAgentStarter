@@ -452,8 +452,8 @@ export interface TrainingSummary {
 }
 
 export type ModelStatus = "active" | "archived";
-export type ModelFormat = "pt" | "onnx";
-export type ModelArtifactType = "best" | "last" | "onnx";
+export type ModelFormat = "pt" | "onnx" | "om";
+export type ModelArtifactType = "best" | "last" | "onnx" | "om";
 
 export interface ModelVersion {
   id: string;
@@ -479,6 +479,23 @@ export interface ModelVersion {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type OmConvertStatus = "uploading" | "converting" | "downloading" | "completed" | "failed";
+export interface OmConvertJob {
+  job_id: string;
+  source_model_id: string;
+  source_model_name: string;
+  node_id: string;
+  node_name: string;
+  soc_version: string;
+  input_shape: string;
+  status: OmConvertStatus;
+  error: string | null;
+  logs: string;
+  result_model_id: string | null;
+  created_at: string;
+  finished_at: string | null;
 }
 
 export interface InferenceDetection { class_index: number; class_name: string; confidence: number; x: number; y: number; width: number; height: number; polygon: number[][] | null; obb_points: number[][] | null; keypoints: number[][] | null; }
