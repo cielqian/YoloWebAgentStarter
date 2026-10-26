@@ -1671,3 +1671,16 @@
 .model-naming-list label span {
   font-size: 11px;
 }
+
+.ftp-save-name {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #68748a;
+  padding: 10px 0 0;
+}
+
+.ftp-save-name input {
+  font-weight: 500;
+}

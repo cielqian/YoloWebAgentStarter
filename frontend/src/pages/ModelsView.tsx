@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { api } from "../api/client";
+import { api, apiUrl } from "../api/client";
 import { Toast } from "../components/Toast";
-import type { Dataset, DatasetVersion, ModelComparison, ModelEvaluationRecord, ModelVersion, SplitName, TrainingNode } from "../types";
+import type { Dataset, DatasetVersion, FtpEntry, ModelComparison, ModelEvaluationRecord, ModelVersion, SplitName, TrainingNode } from "../types";
 import { ModelTestModal } from "../components/ModelTestModal";
 import { ModelComparisonBar } from "../components/model-list/ModelComparisonBar";
 import { ModelLibraryStats } from "../components/model-list/ModelLibraryStats";
@@ -48,6 +48,13 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const [omInputShape, setOmInputShape] = useState("images:1,3,640,640");
   const [versionLists, setVersionLists] = useState<Record<string, DatasetVersion[]>>({});
   const [drillDataset, setDrillDataset] = useState<string>();
+  const [ftpTarget, setFtpTarget] = useState<ModelVersion>();
+  const [ftpPath, setFtpPath] = useState("/");
+  const [ftpEntries, setFtpEntries] = useState<FtpEntry[]>([]);
+  const [ftpLoading, setFtpLoading] = useState(false);
+  const [ftpError, setFtpError] = useState("");
+  const [ftpFileName, setFtpFileName] = useState("");
+  const [ftpBusy, setFtpBusy] = useState(false);
   const [drillVersion, setDrillVersion] = useState<number | null>();
 
   const refresh = useCallback(async () => {
@@ -181,6 +188,50 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     setDetailId(exported.id);
     setNotice(`已导出 ONNX：${exported.name}`);
   });
+
+  const parentFtpPath = (path: string) => path.replace(/\/+$/, "").split("/").slice(0, -1).join("/") || "/";
+
+  const loadFtpDirs = async (path: string) => {
+    setFtpLoading(true);
+    setFtpError("");
+    try {
+      const result = await api.listFtp(path);
+      setFtpPath(result.path);
+      setFtpEntries((result.entries ?? []).filter((entry) => entry.is_dir));
+    } catch (reason) {
+      setFtpError(errorMessage(reason));
+    } finally {
+      setFtpLoading(false);
+    }
+  };
+
+  const openFtpSave = (model: ModelVersion) => {
+    setFtpTarget(model);
+    setFtpFileName(model.model_path.split("/").pop() || model.name);
+    setFtpEntries([]);
+    setFtpError("");
+    setFtpPath("/");
+    void loadFtpDirs("/");
+  };
+
+  const submitFtpSave = async () => {
+    if (!ftpTarget || !ftpFileName.trim()) return;
+    const name = ftpFileName.trim().replace(/[/\\]+/g, "_");
+    setFtpBusy(true);
+    setFtpError("");
+    try {
+      const response = await fetch(apiUrl(`/api/models/${ftpTarget.id}/download`));
+      if (!response.ok) throw new Error(`下载模型失败（HTTP ${response.status}）`);
+      const blob = await response.blob();
+      await api.uploadFtp(ftpPath, [new File([blob], name)]);
+      setNotice(`已转存到 FTP：${ftpPath === "/" ? "" : ftpPath}/${name}（同名文件已覆盖）`);
+      setFtpTarget(undefined);
+    } catch (reason) {
+      setFtpError(errorMessage(reason));
+    } finally {
+      setFtpBusy(false);
+    }
+  };
 
   const openOmConvert = (model: ModelVersion) => {
     setOmTarget(model);
@@ -544,12 +595,13 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
                                     {model.format === "pt" ? (
                                       <>
                                         <button type="button" className="model-action-btn model-action-btn--primary" disabled={busy} onClick={() => setTesting(model)}>测试</button>
-                                        <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => void exportOnnx(model)}>ONNX</button>
+                                        <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => void exportOnnx(model)}>转ONNX</button>
                                       </>
                                     ) : null}
                                     {model.format === "onnx" ? (
                                       <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openOmConvert(model)}>转OM</button>
                                     ) : null}
+                                    <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openFtpSave(model)}>转存FTP</button>
                                     <button type="button" className="model-action-btn model-action-btn--ghost" onClick={() => setDetailId(model.id)}>详情</button>
                                     <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => remove(model)}>删除</button>
                                   </>
@@ -568,6 +620,60 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
             );
           })}
         </section>
+      )}
+
+      {ftpTarget && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setFtpTarget(undefined)}>
+          <section className="dataset-dialog ftp-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="ftp-save-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="data-exchange-header"><div><span className="eyebrow">SAVE TO FTP</span><h2 id="ftp-save-title">转存模型到 FTP</h2><p className="muted">浏览并选择目标目录，可修改保存文件名；同名文件将被覆盖。</p></div><button className="icon-button" onClick={() => setFtpTarget(undefined)} aria-label="关闭">×</button></header>
+            <div className="ftp-picker">
+              <div className="ftp-toolbar">
+                <button className="button" disabled={ftpLoading || ftpPath === "/"} onClick={() => void loadFtpDirs(parentFtpPath(ftpPath))}>返回上级</button>
+                <nav className="ftp-breadcrumb" aria-label="FTP 路径">
+                  <button disabled={ftpLoading} onClick={() => void loadFtpDirs("/")}>/</button>
+                  {ftpPath !== "/" && ftpPath.slice(1).split("/").map((crumb, index, parts) => {
+                    const target = `/${parts.slice(0, index + 1).join("/")}`;
+                    return <span key={target}>/ <button disabled={ftpLoading} onClick={() => void loadFtpDirs(target)}>{crumb}</button></span>;
+                  })}
+                </nav>
+                <button className="button" disabled={ftpLoading} onClick={() => void loadFtpDirs(ftpPath)}>刷新</button>
+              </div>
+              <div className="ftp-picker-list">
+                {ftpError ? <p className="annotation-form-error">{ftpError}</p> : null}
+                {ftpLoading ? (
+                  <p className="muted">正在读取目录…</p>
+                ) : ftpEntries.length ? (
+                  <table className="ftp-table">
+                    <thead><tr><th>子目录</th></tr></thead>
+                    <tbody>
+                      {ftpEntries.map((entry) => (
+                        <tr key={entry.path}>
+                          <td>
+                            <button className="ftp-name dir" onClick={() => void loadFtpDirs(entry.path)} title="打开目录">
+                              <span aria-hidden="true">📁</span><span>{entry.name}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="muted">当前目录没有子目录，可直接保存到此处。</p>
+                )}
+              </div>
+              <label className="ftp-save-name"><span>保存文件名</span>
+                <input value={ftpFileName} onChange={(event) => setFtpFileName(event.target.value)} placeholder="例如：blade-detector_best.pt" />
+              </label>
+              <footer className="ftp-picker-actions">
+                <span className="muted">目标目录：{ftpPath}</span>
+                <div>
+                  <button type="button" className="button" disabled={ftpBusy} onClick={() => setFtpTarget(undefined)}>取消</button>
+                  <button type="button" className="button primary" disabled={ftpBusy || !ftpFileName.trim()} onClick={() => void submitFtpSave()}>{ftpBusy ? "转存中…" : "转存"}</button>
+                </div>
+              </footer>
+            </div>
+          </section>
+        </div>
       )}
 
       {omTarget && (

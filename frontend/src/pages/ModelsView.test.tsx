@@ -18,9 +18,15 @@ vi.mock("../api/client", () => ({
     exportModelOnnx: vi.fn(),
     convertModelToOm: vi.fn(),
     listOmNodes: vi.fn().mockResolvedValue([]),
+    listFtp: vi.fn().mockResolvedValue({ path: "/", entries: [
+      { name: "models", path: "/models", is_dir: true, size: null, modified: null },
+      { name: "readme.txt", path: "/readme.txt", is_dir: false, size: 10, modified: null },
+    ] }),
+    uploadFtp: vi.fn().mockResolvedValue({ uploaded: [] }),
     compareModels: vi.fn(),
     testModel: vi.fn(),
   },
+  apiUrl: (path: string) => path,
 }));
 
 const detectSet: Dataset = { id: "ds-1", name: "detect-set", description: null, task_type: "detect", image_count: 4, annotated_image_count: 4, class_count: 1, created_at: "", updated_at: "" };
@@ -142,5 +148,47 @@ describe("ModelsView grouped by dataset and version", () => {
     await act(async () => { root?.render(<ModelsView datasets={[]} />); });
     expect(container?.textContent).toContain("暂无模型");
     expect(container?.textContent).toContain("完成训练后");
+  });
+});
+
+
+describe("ModelsView save to FTP", () => {
+  it("uploads the model file to the chosen FTP directory with a new name", async () => {
+    const { api } = await import("../api/client");
+    (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [modelFixture({ id: "model-1", name: "run-a (best)", dataset_id: "ds-1", dataset_version_number: 1 })],
+      total: 1,
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(["model-bytes"]) });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await act(async () => { root?.render(<ModelsView datasets={[detectSet]} />); });
+      await act(async () => {});
+      await act(async () => { (Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-drill-row") ?? [])[0])?.click(); });
+      await act(async () => {});
+      await act(async () => { (Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-drill-row") ?? [])[0])?.click(); });
+      await act(async () => {});
+
+      const saveButton = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "转存FTP");
+      expect(saveButton).toBeDefined();
+      await act(async () => { saveButton?.click(); });
+      await act(async () => {});
+
+      expect(api.listFtp).toHaveBeenCalledWith("/");
+      const nameInput = container?.querySelector<HTMLInputElement>(".ftp-save-name input");
+      expect(nameInput?.value).toBe("best.pt");
+
+      const submit = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "转存");
+      await act(async () => { submit?.click(); });
+      await act(async () => {});
+
+      expect(fetchMock).toHaveBeenCalled();
+      expect(api.uploadFtp).toHaveBeenCalledWith("/", [expect.any(File)]);
+      const sent = (api.uploadFtp as ReturnType<typeof vi.fn>).mock.calls[0][1][0] as File;
+      expect(sent.name).toBe("best.pt");
+      expect(container?.querySelector(".ftp-picker-dialog")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
