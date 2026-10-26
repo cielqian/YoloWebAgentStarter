@@ -34,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.6"
+AGENT_VERSION = "0.4.7"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -543,10 +543,16 @@ class TaskManager:
             args.append(f"patience={spec['patience']}")
 
         log(f"Training started on {socket.gethostname()}.")
-        log("Command: " + " ".join(args))
         process_env = dict(os.environ)
         # 兼容 "0,2" 与 "cuda:0,cuda:2" 两种设备写法
         device_ids = [part for part in re.split(r"[,\s]+", device) if re.fullmatch(r"(?:cuda|npu):\d+|\d+", part)]
+        if len(device_ids) > 1 and os.environ.get("YWA_KEEP_DDP_WORKERS", "").strip() != "1":
+            # DDP + DataLoader 多进程在此环境会死锁(卡在第一个 batch 前)，多卡强制单进程加载
+            args = [item for item in args if not item.startswith("workers=")]
+            args.append("workers=0")
+            spec = {**spec, "workers": 0}
+            log("Multi-GPU detected: workers forced to 0 (DDP dataloader deadlock workaround; set YWA_KEEP_DDP_WORKERS=1 to keep).")
+        log("Command: " + " ".join(args))
         if len(device_ids) > 1 and os.environ.get("YWA_KEEP_NCCL_P2P", "").strip() != "1":
             # 部分 GPU 组合 P2P 不通时 NCCL 初始化会死锁(多卡卡在第一个 epoch 前)；禁用 P2P 走共享内存
             if "NCCL_P2P_DISABLE" not in process_env:
