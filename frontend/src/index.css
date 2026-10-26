@@ -533,6 +533,8 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 /* 标注页：类别行删除按钮 */
 .annotation-class-row { display: flex; align-items: stretch; gap: 4px; }
 .annotation-class-row .annotation-class-item { flex: 1; }
+.annotation-class-edit { display: grid; flex: 0 0 auto; width: 26px; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 7px; color: #a2acbd; background: transparent; cursor: pointer; }
+.annotation-class-edit:hover { color: #3157d5; }
 .annotation-class-delete { display: grid; flex: 0 0 auto; width: 26px; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 7px; color: #a2acbd; background: transparent; cursor: pointer; }
 .annotation-class-delete:hover:not(:disabled) { border-color: #f0c8c4; color: #b0473f; background: #fdf3f2; }
 .annotation-class-delete:disabled { opacity: .45; cursor: not-allowed; }
