@@ -1147,8 +1147,9 @@ function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsTex
         setNodes(list);
         setStatuses(Object.fromEntries((devices.nodes ?? []).map((node) => [node.id, node])));
       } else {
-        setNodes(await api.listOmNodes());
-        setStatuses({});
+        const [list, omStatuses] = await Promise.all([api.listOmNodes(), api.listOmNodeStatuses().catch(() => [])]);
+        setNodes(list);
+        setStatuses(Object.fromEntries(omStatuses.map((node) => [node.id, node])));
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : text.error);

@@ -16,7 +16,8 @@ from app.models.evaluation import YoloEvaluationRunner
 from app.models.service import ModelService
 from app.settings.schemas import TrainingNodeCreate, TrainingNodeOut, TrainingNodeTestRequest, TrainingNodeTestResult
 from app.settings.service import SettingsService
-from app.training.runtime.remote_nodes import probe_node
+from app.training.runtime.remote_nodes import RemoteNodeUnavailable, fetch_node_snapshot, probe_node
+from app.training.schemas import TrainingNodeStatus
 
 
 router = APIRouter(prefix="/models", tags=["models"])
@@ -50,6 +51,31 @@ def test_om_node(payload: TrainingNodeTestRequest, settings: Settings = Depends(
     result["convert_supported"] = convert_supported
     result["message"] = f"{result.get('message') or '连接成功'} · {'ATC 可用' if convert_supported else '未检测到 atc（无法转换 OM）'}"
     return TrainingNodeTestResult(**result)
+
+
+@om_router.get("/nodes/status", response_model=list[TrainingNodeStatus])
+def list_om_node_statuses(settings: Settings = Depends(get_settings)) -> list[TrainingNodeStatus]:
+    statuses: list[TrainingNodeStatus] = []
+    for node in SettingsService(settings).list_om_nodes():
+        if not node.get("enabled", True):
+            continue
+        url = str(node.get("url", ""))
+        try:
+            snapshot = fetch_node_snapshot(url, str(node.get("token", "")))
+        except RemoteNodeUnavailable as exc:
+            statuses.append(TrainingNodeStatus(id=str(node.get("id", "")), name=str(node.get("name", "")), url=url, enabled=True, status="offline", agent_version=None, device_count=0, error=str(exc)))
+            continue
+        payload = snapshot["payload"]
+        statuses.append(TrainingNodeStatus(
+            id=str(node.get("id", "")),
+            name=str(node.get("name", "")),
+            url=url,
+            enabled=True,
+            status="online",
+            agent_version=str(payload.get("version") or "") or None,
+            device_count=len(payload.get("devices", [])),
+        ))
+    return statuses
 
 
 @om_router.delete("/nodes/{node_id}", status_code=204, response_class=Response, response_model=None)

@@ -165,6 +165,9 @@ def test_om_convert_rejected_when_atc_missing(client, tmp_path):
         health = agent.wait_healthy()
         assert health["convert_supported"] is False
         node = _register_node(client, agent.url)
+        statuses = client.get("/api/om-convert/nodes/status").json()
+        assert statuses and statuses[0]["status"] == "online"
+        assert statuses[0]["agent_version"]
         response = client.post(f"/api/models/{model_id}/convert-om", json={"node_id": node["id"]})
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "atc_unavailable"
