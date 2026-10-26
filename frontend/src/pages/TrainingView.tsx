@@ -57,6 +57,7 @@ export function TrainingView({
   const [summary, setSummary] = useState<TrainingSummary>();
   const [form, setForm] = useState<TrainingFormState>(() => defaultForm(activeDataset?.task_type ?? "detect"));
   const [datasetVersions, setDatasetVersions] = useState<DatasetVersion[]>([]);
+  const [splitCounts, setSplitCounts] = useState<Record<string, number>>({});
   const [historyDatasetId, setHistoryDatasetId] = useState("");
   const [historyVersion, setHistoryVersion] = useState("");
   const [historyVersions, setHistoryVersions] = useState<DatasetVersion[]>([]);
@@ -125,6 +126,9 @@ export function TrainingView({
     api.listDatasetVersions(activeDataset.id)
       .then((versions) => { if (!cancelled) setDatasetVersions(versions); })
       .catch(() => { if (!cancelled) setDatasetVersions([]); });
+    api.getDatasetSplitCounts(activeDataset.id)
+      .then((counts) => { if (!cancelled) setSplitCounts(counts ?? {}); })
+      .catch(() => { if (!cancelled) setSplitCounts({}); });
     setForm((prev) => {
       const base = { ...defaultForm(activeDataset.task_type), name: defaultTaskName(activeDataset.name) };
       const selection = defaultRemoteSelection(devicesRef.current);
@@ -453,6 +457,7 @@ export function TrainingView({
               summaryBottomBar={summaryBottomBar}
               onDatasetChange={onDatasetChange}
               datasetVersions={datasetVersions}
+              splitCounts={splitCounts}
               onFormChange={setForm}
               onPreset={applyPreset}
               onAdvancedOpenChange={setAdvancedOpen}

@@ -16,6 +16,7 @@ interface Props {
   datasets: Dataset[];
   dataset: Dataset;
   datasetVersions: DatasetVersion[];
+  splitCounts: Record<string, number>;
   form: TrainingFormState;
   preset: PresetId | null;
   advancedOpen: boolean;
@@ -34,18 +35,19 @@ const PRESET_COPY: Record<PresetId, { title: string; body: string; meta: string 
   high: { title: "高精度", body: "更长收敛与更稳指标", meta: "100 ep · batch 8" },
 };
 
-const TASK_META: Record<TaskType, { help: string; Icon: typeof IconBox }> = {
-  detect: { help: "绝对像素 bbox → YOLO detect 标签", Icon: IconBox },
-  segment: { help: "polygon 标注；可选 SAM 建议后确认保存", Icon: IconShapes },
-  obb: { help: "中心 / 尺寸 / 角度 → YOLO OBB", Icon: IconScan },
-  classify: { help: "每图一类 → YOLO classify 目录布局", Icon: IconGrid },
-  pose: { help: "bbox + 关键点 → YOLO pose 标签（data.yaml 自动写入 kpt_shape）", Icon: IconPose },
+const TASK_META: Record<TaskType, { Icon: typeof IconBox }> = {
+  detect: { Icon: IconBox },
+  segment: { Icon: IconShapes },
+  obb: { Icon: IconScan },
+  classify: { Icon: IconGrid },
+  pose: { Icon: IconPose },
 };
 
 export function TrainingConfigPanel({
   datasets,
   dataset,
   datasetVersions,
+  splitCounts,
   form,
   preset,
   advancedOpen,
@@ -58,6 +60,11 @@ export function TrainingConfigPanel({
   onExit,
 }: Props) {
   const setForm = onFormChange;
+  const splitSummaryText = (() => {
+    const total = (splitCounts.train ?? 0) + (splitCounts.val ?? 0) + (splitCounts.test ?? 0);
+    const ratio = (count: number) => (total > 0 ? Math.round((count / total) * 100) : 0);
+    return `训练 ${(splitCounts.train ?? 0)}（${ratio(splitCounts.train ?? 0)}%）· 验证 ${(splitCounts.val ?? 0)}（${ratio(splitCounts.val ?? 0)}%）· 测试 ${(splitCounts.test ?? 0)}（${ratio(splitCounts.test ?? 0)}%）`;
+  })();
   const [baseWeights, setBaseWeights] = useState<BaseWeight[]>([]);
   useEffect(() => {
     if (typeof api.listWeights === "function") api.listWeights().then((result) => setBaseWeights(result.items)).catch(() => undefined);
@@ -120,7 +127,6 @@ export function TrainingConfigPanel({
               );
             })}
           </div>
-          <p className="tcc-task-type-detail" role="status">{taskMeta.help}</p>
         </section>
 
         <section className="training-config-block">
@@ -283,6 +289,7 @@ export function TrainingConfigPanel({
         <div className="training-ws-meta-row">
           <span>{dataset.name}</span>
           <span>{dataset.image_count} 张 · {dataset.class_count} 类</span>
+          <span>{splitSummaryText}</span>
           <span>{taskTypeLabel(dataset.task_type)}</span>
         </div>
 

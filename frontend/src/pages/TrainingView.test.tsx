@@ -10,6 +10,7 @@ vi.mock("../api/client", () => ({
   api: {
     listTrainingTasks: vi.fn().mockResolvedValue({ items: [] }),
     listDatasetVersions: vi.fn().mockResolvedValue([]),
+    getDatasetSplitCounts: vi.fn().mockResolvedValue({ train: 0, val: 0, test: 0 }),
     listWeights: vi.fn().mockResolvedValue({ items: [] }),
     listTrainingDevices: vi.fn().mockResolvedValue({ items: [] }),
     createTrainingTask: vi.fn(),

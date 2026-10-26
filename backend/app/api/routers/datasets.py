@@ -485,6 +485,14 @@ def remove_dataset(dataset_id: str, session: Session = Depends(get_session), sto
     delete_dataset(session, storage, dataset_id)
 
 
+@router.get("/{dataset_id}/split-counts", response_model=dict[str, int])
+def get_dataset_split_counts(dataset_id: str, session: Session = Depends(get_session)) -> dict[str, int]:
+    from app.dataset.images import split_counts
+
+    get_dataset(session, dataset_id)
+    return split_counts(session, dataset_id)
+
+
 @router.get("/{dataset_id}/versions", response_model=list[DatasetVersionResponse])
 def get_dataset_versions(dataset_id: str, session: Session = Depends(get_session)) -> list[DatasetVersionResponse]:
     versions = list_dataset_versions(session, dataset_id)
