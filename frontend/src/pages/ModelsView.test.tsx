@@ -156,7 +156,7 @@ describe("ModelsView save to FTP", () => {
   it("uploads the model file to the chosen FTP directory with a new name", async () => {
     const { api } = await import("../api/client");
     (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-      items: [modelFixture({ id: "model-1", name: "run-a (best)", dataset_id: "ds-1", dataset_version_number: 1 })],
+      items: [modelFixture({ id: "model-1", name: "run-a (best)", dataset_id: "ds-1", dataset_version_number: 1, model_path: "/managed/models/model-1/blade_best.pt" })],
       total: 1,
     });
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(["model-bytes"]) });
@@ -176,7 +176,7 @@ describe("ModelsView save to FTP", () => {
 
       expect(api.listFtp).toHaveBeenCalledWith("/");
       const nameInput = container?.querySelector<HTMLInputElement>(".ftp-save-name input");
-      expect(nameInput?.value).toBe("best.pt");
+      expect(nameInput?.value).toBe("blade.pt");
 
       const submit = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "转存");
       await act(async () => { submit?.click(); });
@@ -185,7 +185,7 @@ describe("ModelsView save to FTP", () => {
       expect(fetchMock).toHaveBeenCalled();
       expect(api.uploadFtp).toHaveBeenCalledWith("/", [expect.any(File)]);
       const sent = (api.uploadFtp as ReturnType<typeof vi.fn>).mock.calls[0][1][0] as File;
-      expect(sent.name).toBe("best.pt");
+      expect(sent.name).toBe("blade.pt");
       expect(container?.querySelector(".ftp-picker-dialog")).toBeNull();
     } finally {
       vi.unstubAllGlobals();

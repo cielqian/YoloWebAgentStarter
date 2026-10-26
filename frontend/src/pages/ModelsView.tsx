@@ -206,8 +206,9 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   };
 
   const openFtpSave = (model: ModelVersion) => {
+    const fileName = (model.model_path.split("/").pop() || model.name).replace(/_(best|last)(\.[^.]+)$/i, "$2");
     setFtpTarget(model);
-    setFtpFileName(model.model_path.split("/").pop() || model.name);
+    setFtpFileName(fileName);
     setFtpEntries([]);
     setFtpError("");
     setFtpPath("/");
