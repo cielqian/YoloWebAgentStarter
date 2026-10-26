@@ -129,6 +129,10 @@ def _target_model_id(source_model_id: str) -> str:
     return f"model_{source_model_id}_om"
 
 
+def _om_file_name(source_name: str) -> str:
+    return f"{Path(source_name).stem or 'model'}.om"
+
+
 def _ensure_converting_row(session: Session, storage: Storage, source: ModelVersion, soc_version: str) -> str:
     """提交即生成 OM 模型记录(status=converting)，模型列表直接展示转换进度。"""
     target_id = _target_model_id(source.id)
@@ -146,7 +150,7 @@ def _ensure_converting_row(session: Session, storage: Storage, source: ModelVers
                 format="om",
                 task_type=source.task_type,
                 engine_type="ascend-atc",
-                model_path=str(storage.model_version_dir(target_id) / "model.om"),
+                model_path=str(storage.model_version_dir(target_id) / _om_file_name(source.name)),
                 base_model=source.name,
                 status="converting",
                 metrics_json=dict(source.metrics_json or {}),
@@ -264,6 +268,7 @@ def _persist_om(session: Session, storage: Storage, job: dict[str, Any], om_byte
     managed = storage.managed_model_path(output_path)
     existing = session.get(ModelVersion, target_id)
     if existing is not None:
+        existing.name = _om_file_name(source.name)
         existing.model_path = str(managed)
         existing.status = "active"
         existing.notes = f"Converted from {source.name} via ATC ({job['soc_version']})."
