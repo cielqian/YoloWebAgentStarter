@@ -62,8 +62,8 @@ let container: HTMLDivElement | undefined;
 beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
 afterEach(() => { act(() => root?.unmount()); container?.remove(); });
 
-describe("ModelsView global registry", () => {
-  it("renders without a selected dataset and labels rows by each model's dataset", async () => {
+describe("ModelsView grouped by dataset and version", () => {
+  it("renders the dataset tree, defaults to the busiest dataset, and shows format sections", async () => {
     const { api } = await import("../api/client");
     (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue({
       items: [
@@ -74,13 +74,41 @@ describe("ModelsView global registry", () => {
       total: 3,
     });
     await act(async () => { root?.render(<ModelsView datasets={[detectSet, segmentSet]} />); });
+    await act(async () => {});
 
-    expect(container?.textContent).toContain("全部数据集");
     expect(container?.textContent).toContain("3 个模型");
-    expect(container?.textContent).toContain("run-a (best)");
     expect(container?.textContent).toContain("detect-set");
     expect(container?.textContent).toContain("segment-set");
     expect(container?.textContent).toContain("未关联数据集");
+    expect(container?.textContent).toContain("PT 模型");
+    expect(container?.textContent).toContain("ONNX 模型");
+    expect(container?.textContent).toContain("OM 模型（华为昇腾）");
+    expect(container?.textContent).toContain("run-a (best)");
+    expect(container?.textContent).toContain("该版本暂无 ONNX");
+  });
+
+  it("navigates versions within a dataset and filters models by version", async () => {
+    const { api } = await import("../api/client");
+    (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [
+        modelFixture({ id: "model-v2", name: "v2-best", dataset_id: "ds-1", dataset_version_number: 2 }),
+        modelFixture({ id: "model-v1", name: "v1-best", dataset_id: "ds-1", dataset_version_number: 1 }),
+      ],
+      total: 2,
+    });
+    await act(async () => { root?.render(<ModelsView datasets={[detectSet]} />); });
+    await act(async () => {});
+
+    // 默认选中最新版本 v2
+    expect(container?.textContent).toContain("v2-best");
+    expect(container?.querySelectorAll(".models-tree-version").length).toBeGreaterThanOrEqual(2);
+
+    const v1 = Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-tree-version") ?? []).find((button) => button.textContent?.startsWith("v1"));
+    expect(v1).toBeDefined();
+    await act(async () => { v1?.click(); });
+    await act(async () => {});
+    expect(container?.textContent).toContain("v1-best");
+    expect(container?.textContent).not.toContain("v2-best");
   });
 
   it("shows the empty state with no models and no datasets", async () => {

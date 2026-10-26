@@ -1,22 +1,32 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
-import type { Dataset, DatasetVersion, ModelComparison, ModelEvaluationRecord, ModelVersion, OmConvertJob, SplitName, TrainingNode } from "../types";
+import type { Dataset, DatasetVersion, ModelComparison, ModelEvaluationRecord, ModelVersion, SplitName, TrainingNode } from "../types";
 import { ModelTestModal } from "../components/ModelTestModal";
 import { ModelComparisonBar } from "../components/model-list/ModelComparisonBar";
 import { ModelLibraryStats } from "../components/model-list/ModelLibraryStats";
 import { ModelDetailView } from "../components/model-detail/ModelDetailView";
-import { formatDelta, filterModels, formatMetric, newerFirst, pickBestModel, sortModels, type ModelListFilter, type ModelListSort } from "../models/helpers";
-import { formatRelativeTime, taskTypeLabel } from "../training/helpers";
+import { formatDelta, formatMetric, pickBestModel } from "../models/helpers";
+import { formatRelativeTime } from "../training/helpers";
 import { IconSearch } from "../components/training/icons";
 
 interface Props {
-  /** 模型库是全局入口：跨全部数据集列出受管模型，详情按 dataset_id 反查数据集。 */
+  /** 模型库按 数据集 → 版本 → 格式(PT/ONNX/OM) 组织展示。 */
   datasets: Dataset[];
   focusModelId?: string;
   onFocusModelConsumed?: () => void;
   onAskAgent?: (model: ModelVersion) => void;
 }
+
+const UNLINKED = "__unlinked__";
+
+type VersionTree = Map<number | null, ModelVersion[]>;
+
+const FORMAT_SECTIONS = [
+  { format: "pt", title: "PT 模型", hint: "该版本暂无 PT 训练产物；完成一次训练后 best.pt / last.pt 会自动进入这里。" },
+  { format: "onnx", title: "ONNX 模型", hint: "该版本暂无 ONNX；在 PT 模型行点击「ONNX」导出 FP32 ONNX。" },
+  { format: "om", title: "OM 模型（华为昇腾）", hint: "该版本暂无 OM；在 ONNX 模型行点击「转OM」，经 ATC 转换生成昇腾 .om。" },
+] as const;
 
 export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAskAgent }: Props) {
   const [models, setModels] = useState<ModelVersion[]>([]);
@@ -29,82 +39,35 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [comparison, setComparison] = useState<ModelComparison>();
   const [evaluations, setEvaluations] = useState<ModelEvaluationRecord[]>([]);
-  const [includeArchived, setIncludeArchived] = useState(true);
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [search, setSearch] = useState("");
-  const [listFilter, setListFilter] = useState<ModelListFilter>("all");
-  const [listSort, setListSort] = useState<ModelListSort>("newest");
   const [nodes, setNodes] = useState<TrainingNode[]>([]);
   const [omTarget, setOmTarget] = useState<ModelVersion>();
   const [omNodeId, setOmNodeId] = useState("");
   const [omSocVersion, setOmSocVersion] = useState("Ascend310P3");
   const [omInputShape, setOmInputShape] = useState("images:1,3,640,640");
-  const [filterDatasetId, setFilterDatasetId] = useState("");
-  const [filterVersion, setFilterVersion] = useState("");
-  const [filterVersions, setFilterVersions] = useState<DatasetVersion[]>([]);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [versionLists, setVersionLists] = useState<Record<string, DatasetVersion[]>>({});
+  const [nav, setNav] = useState<{ datasetId: string; version: number | null }>();
 
   const refresh = useCallback(async () => {
-    const result = await api.listModels(undefined, includeArchived);
-    const items = [...result.items].sort(newerFirst);
+    const result = await api.listModels(undefined, true);
+    const items = [...result.items].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
     setModels(items);
     setDetailId((current) => (current && items.some((item) => item.id === current) ? current : undefined));
     setSelectedIds((ids) => ids.filter((id) => items.some((item) => item.id === id)));
-  }, [includeArchived]);
+  }, []);
 
   useEffect(() => {
     refresh().catch((reason) => setError(errorMessage(reason)));
   }, [refresh]);
 
   useEffect(() => {
-    setFilterVersion("");
-    if (!filterDatasetId) { setFilterVersions([]); return; }
-    let cancelled = false;
-    api.listDatasetVersions(filterDatasetId)
-      .then((versions) => { if (!cancelled) setFilterVersions(versions); })
-      .catch(() => { if (!cancelled) setFilterVersions([]); });
-    return () => { cancelled = true; };
-  }, [filterDatasetId]);
-
-  useEffect(() => {
-    if (!focusModelId) return;
-    setDetailId(focusModelId);
-    onFocusModelConsumed?.();
-  }, [focusModelId, onFocusModelConsumed]);
-
-  const detailModel = useMemo(() => models.find((item) => item.id === detailId), [models, detailId]);
-  const datasetName = useCallback(
-    (datasetId: string | null) => (datasetId ? datasets.find((item) => item.id === datasetId)?.name ?? "未关联数据集" : "未关联数据集"),
-    [datasets],
-  );
-  const detailDataset = useMemo(
-    () => (detailModel?.dataset_id ? datasets.find((item) => item.id === detailModel.dataset_id) : undefined),
-    [datasets, detailModel?.dataset_id],
-  );
-  const bestModel = useMemo(() => pickBestModel(models.filter((item) => item.status === "active")), [models]);
-  const visibleModels = useMemo(
-    () => models.filter((model) =>
-      (!filterDatasetId || model.dataset_id === filterDatasetId)
-      && (!filterVersion || (model.dataset_version_number ?? null) === Number(filterVersion))),
-    [models, filterDatasetId, filterVersion],
-  );
-  const filteredModels = useMemo(
-    () => sortModels(filterModels(visibleModels, listFilter, search), listSort),
-    [visibleModels, listFilter, search, listSort],
-  );
-  const filterCounts = useMemo(() => ({
-    all: visibleModels.length,
-    pt: visibleModels.filter((item) => item.format === "pt").length,
-    onnx: visibleModels.filter((item) => item.format === "onnx").length,
-    om: visibleModels.filter((item) => item.format === "om").length,
-    best: visibleModels.filter((item) => item.artifact_type === "best").length,
-    archived: visibleModels.filter((item) => item.status === "archived").length,
-  }), [visibleModels]);
-
-  useEffect(() => {
     if (!models.some((model) => model.status === "converting")) return;
     const timer = window.setInterval(() => {
-      api.listModels(undefined, includeArchived)
+      api.listModels(undefined, true)
         .then((result) => {
-          const items = [...result.items].sort(newerFirst);
+          const items = [...result.items].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
           for (const model of items) {
             const previous = models.find((item) => item.id === model.id);
             if (!previous || previous.status !== "converting") continue;
@@ -116,7 +79,21 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
         .catch(() => {});
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [models, includeArchived]);
+  }, [models]);
+
+  const detailModel = useMemo(() => models.find((item) => item.id === detailId), [models, detailId]);
+  const detailDataset = useMemo(
+    () => (detailModel?.dataset_id ? datasets.find((item) => item.id === detailModel.dataset_id) : undefined),
+    [datasets, detailModel?.dataset_id],
+  );
+  const datasetName = useCallback(
+    (datasetId: string) => (datasetId === UNLINKED ? "未关联数据集" : datasets.find((item) => item.id === datasetId)?.name ?? "未关联数据集"),
+    [datasets],
+  );
+  const datasetKey = useCallback(
+    (datasetId: string | null) => (datasetId && datasets.some((item) => item.id === datasetId) ? datasetId : UNLINKED),
+    [datasets],
+  );
 
   useEffect(() => {
     if (!detailModel || detailModel.format !== "pt") { setEvaluations([]); return; }
@@ -130,6 +107,92 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     }, 1500);
     return () => window.clearInterval(timer);
   }, [evaluations, detailModel?.id]);
+
+  const visibleModels = useMemo(
+    () => (includeArchived ? models : models.filter((model) => model.status !== "archived")),
+    [models, includeArchived],
+  );
+  const searchedModels = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return visibleModels;
+    return visibleModels.filter((model) =>
+      model.name.toLowerCase().includes(q)
+      || model.version.toLowerCase().includes(q)
+      || model.format.toLowerCase().includes(q));
+  }, [visibleModels, search]);
+
+  // 模型分组:数据集 → 版本
+  const tree = useMemo(() => {
+    const byDataset = new Map<string, VersionTree>();
+    for (const model of searchedModels) {
+      const key = datasetKey(model.dataset_id);
+      let versions = byDataset.get(key);
+      if (!versions) {
+        versions = new Map();
+        byDataset.set(key, versions);
+      }
+      const versionKey = model.dataset_version_number ?? null;
+      versions.set(versionKey, [...(versions.get(versionKey) ?? []), model]);
+    }
+    return byDataset;
+  }, [searchedModels, datasetKey]);
+
+  const bestModel = useMemo(
+    () => pickBestModel(models.filter((model) => model.status === "active" && model.format === "pt")),
+    [models],
+  );
+
+  // 默认选中:模型最多的数据集的最新版本
+  useEffect(() => {
+    if (nav || !tree.size) return;
+    let bestId = UNLINKED;
+    let bestCount = -1;
+    for (const [datasetId, versions] of tree) {
+      const count = [...versions.values()].reduce((sum, list) => sum + list.length, 0);
+      if (count > bestCount) {
+        bestCount = count;
+        bestId = datasetId;
+      }
+    }
+    const versions = tree.get(bestId) ?? new Map();
+    const numbers = [...versions.keys()].filter((key): key is number => key != null);
+    const version = numbers.length ? Math.max(...numbers) : null;
+    setNav({ datasetId: bestId, version });
+    setExpanded((prev) => ({ ...prev, [bestId]: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tree]);
+
+  // 展开或选中的数据集拉取版本列表
+  useEffect(() => {
+    const wanted = new Set<string>(Object.keys(expanded).filter((id) => expanded[id]));
+    if (nav?.datasetId && nav.datasetId !== UNLINKED) wanted.add(nav.datasetId);
+    const missing = [...wanted].filter((id) => id !== UNLINKED && !versionLists[id]);
+    if (!missing.length) return;
+    let cancelled = false;
+    for (const datasetId of missing) {
+      api.listDatasetVersions(datasetId)
+        .then((list) => { if (!cancelled) setVersionLists((prev) => ({ ...prev, [datasetId]: list })); })
+        .catch(() => { if (!cancelled) setVersionLists((prev) => ({ ...prev, [datasetId]: [] })); });
+    }
+    return () => { cancelled = true; };
+  }, [expanded, nav?.datasetId, versionLists]);
+
+  useEffect(() => {
+    if (!focusModelId) return;
+    const target = models.find((item) => item.id === focusModelId);
+    if (target) {
+      const key = datasetKey(target.dataset_id);
+      setNav({ datasetId: key, version: target.dataset_version_number ?? null });
+      setExpanded((prev) => ({ ...prev, [key]: true }));
+    }
+    setDetailId(focusModelId);
+    onFocusModelConsumed?.();
+  }, [focusModelId, onFocusModelConsumed, models, datasetKey]);
+
+  const selectedModels = useMemo(
+    () => (nav ? tree.get(nav.datasetId)?.get(nav.version) ?? [] : []),
+    [tree, nav],
+  );
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -265,6 +328,38 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     );
   }
 
+  if (!models.length && !datasets.length) {
+    return (
+      <main className="models-layout models-workspace-page">
+        {error && <Toast kind="error" message={error} onClose={() => setError("")} />}
+        <header className="models-page-header">
+          <div>
+            <span className="eyebrow">MODEL REGISTRY</span>
+            <h1>模型库</h1>
+          </div>
+        </header>
+        <div className="models-library-empty">
+          <strong>暂无模型</strong>
+          <p>完成训练后，best.pt 与 last.pt 会自动进入模型库，并可继续导出 ONNX / 转换 OM。</p>
+        </div>
+      </main>
+    );
+  }
+
+  const treeEntries: Array<[string, VersionTree]> = datasets
+    .map((dataset) => dataset.id)
+    .filter((id) => tree.has(id))
+    .map((id) => [id, tree.get(id)!] as [string, VersionTree]);
+  if (tree.has(UNLINKED)) treeEntries.push([UNLINKED, tree.get(UNLINKED)!]);
+
+  const versionKeysFor = (datasetId: string, versions: VersionTree): number[] => {
+    const numbers = new Set<number>([...versions.keys()].filter((key): key is number => key != null));
+    for (const version of versionLists[datasetId] ?? []) numbers.add(version.version_number);
+    return [...numbers].sort((a, b) => b - a);
+  };
+  const isActiveVersion = (datasetId: string, number: number) =>
+    (versionLists[datasetId] ?? []).some((version) => version.version_number === number && version.is_active);
+
   return (
     <main className="models-layout models-workspace-page">
       <header className="models-page-header">
@@ -272,11 +367,11 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
           <div>
             <span className="eyebrow">MODEL REGISTRY</span>
             <h1>模型库</h1>
-            <p className="muted">管理受管训练产物，支持快速测试、split 评估与 FP32 ONNX 导出。</p>
+            <p className="muted">按 数据集 → 版本 组织，每个版本下包含 PT / ONNX / OM 三类模型。</p>
           </div>
         </div>
         <div className="models-page-header-meta">
-          <span className="models-chip"><strong>全部数据集</strong></span>
+          <span className="models-chip"><strong>{tree.size} 个数据集</strong></span>
           <span className="models-chip models-chip--accent">{models.length} 个模型</span>
         </div>
       </header>
@@ -285,9 +380,9 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
       {notice && <Toast kind="success" message={notice} onClose={() => setNotice("")} />}
 
       <ModelLibraryStats
-        total={models.length}
-        ptCount={filterCounts.pt}
-        onnxCount={filterCounts.onnx}
+        total={visibleModels.length}
+        ptCount={visibleModels.filter((item) => item.format === "pt").length}
+        onnxCount={visibleModels.filter((item) => item.format === "onnx").length}
         bestMap50={formatMetric(bestModel?.map50)}
       />
 
@@ -314,136 +409,156 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
         </section>
       )}
 
-      <section className="models-library-section">
-        <div className="models-library-toolbar">
-          <div>
-            <h2>模型列表</h2>
-            <p className="models-library-sub">共 {models.length} 个 · 当前显示 {filteredModels.length} 个</p>
-          </div>
-          <div className="models-library-toolbar-actions">
-            <label className="models-library-search">
-              <IconSearch size={14} />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="搜索名称 / 版本 / 格式"
-              />
-            </label>
-            <select aria-label="按数据集筛选" value={filterDatasetId} onChange={(event) => setFilterDatasetId(event.target.value)}>
-              <option value="">全部数据集</option>
-              {datasets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-            <select aria-label="按数据集版本筛选" value={filterVersion} disabled={!filterDatasetId} onChange={(event) => setFilterVersion(event.target.value)}>
-              <option value="">全部版本</option>
-              {filterVersions.map((version) => <option key={version.id} value={String(version.version_number)}>v{version.version_number}</option>)}
-            </select>
-            <select className="models-sort-select" value={listSort} onChange={(event) => setListSort(event.target.value as ModelListSort)} aria-label="排序方式">
-              <option value="newest">最新优先</option>
-              <option value="map50">mAP50 优先</option>
-            </select>
-            <button
-              type="button"
-              className={`models-filter-toggle${includeArchived ? " active" : ""}`}
-              onClick={() => setIncludeArchived((value) => !value)}
-            >
-              {includeArchived ? "含归档" : "仅启用"}
-            </button>
-          </div>
-        </div>
+      <div className="models-workspace-split">
+        <aside className="models-tree" aria-label="数据集版本导航">
+          {treeEntries.map(([datasetId, versions]) => {
+            const total = [...versions.values()].reduce((sum, list) => sum + list.length, 0);
+            const open = expanded[datasetId] || nav?.datasetId === datasetId;
+            const versionNumbers = versionKeysFor(datasetId, versions);
+            return (
+              <div key={datasetId} className={`models-tree-dataset${nav?.datasetId === datasetId ? " current" : ""}`}>
+                <button
+                  type="button"
+                  className="models-tree-dataset-btn"
+                  onClick={() => {
+                    setExpanded((prev) => ({ ...prev, [datasetId]: true }));
+                    setNav({ datasetId, version: versionNumbers[0] ?? null });
+                  }}
+                >
+                  <strong>{datasetName(datasetId)}</strong>
+                  <em>{total}</em>
+                </button>
+                {open && (
+                  <div className="models-tree-versions">
+                    {versionNumbers.map((number) => (
+                      <button
+                        key={number}
+                        type="button"
+                        className={`models-tree-version${nav?.datasetId === datasetId && nav?.version === number ? " current" : ""}`}
+                        onClick={() => setNav({ datasetId, version: number })}
+                      >
+                        <span>v{number}{isActiveVersion(datasetId, number) ? " · 激活" : ""}</span>
+                        <em>{versions.get(number)?.length ?? 0}</em>
+                      </button>
+                    ))}
+                    {versions.has(null) && (
+                      <button
+                        type="button"
+                        className={`models-tree-version${nav?.datasetId === datasetId && nav?.version === null ? " current" : ""}`}
+                        onClick={() => setNav({ datasetId, version: null })}
+                      >
+                        <span>未指定版本</span>
+                        <em>{versions.get(null)?.length ?? 0}</em>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </aside>
 
-        <div className="models-library-filters" role="tablist" aria-label="模型筛选">
-          {([
-            ["all", "全部"],
-            ["pt", "PT"],
-            ["onnx", "ONNX"],
-            ["om", "OM"],
-            ["best", "Best"],
-            ["archived", "归档"],
-          ] as const).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={listFilter === id}
-              className={`models-library-filter${listFilter === id ? " active" : ""}`}
-              onClick={() => setListFilter(id)}
-            >
-              {label}
-              <em>{filterCounts[id]}</em>
-            </button>
-          ))}
-        </div>
-
-        {!filteredModels.length ? (
-          <div className="models-library-empty">
-            <strong>{models.length ? "没有匹配的模型" : "暂无模型"}</strong>
-            <p>{models.length ? "试试调整搜索、筛选或归档开关。" : "完成训练后，best.pt 与 last.pt 会自动进入模型库。"}</p>
-            {!!models.length && (
-              <button type="button" className="button" onClick={() => { setSearch(""); setListFilter("all"); }}>
-                清除筛选
+        <section className="models-library-section models-version-pane">
+          <div className="models-library-toolbar">
+            <div>
+              <h2>{nav ? datasetName(nav.datasetId) : "模型库"}</h2>
+              <p className="models-library-sub">
+                {nav ? `${nav.version != null ? `v${nav.version}` : "未指定版本"} · ${selectedModels.length} 个模型` : "在左侧选择数据集与版本"}
+              </p>
+            </div>
+            <div className="models-library-toolbar-actions">
+              <label className="models-library-search">
+                <IconSearch size={14} />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="搜索模型名称 / 版本"
+                />
+              </label>
+              <button
+                type="button"
+                className={`models-filter-toggle${includeArchived ? " active" : ""}`}
+                onClick={() => setIncludeArchived((value) => !value)}
+              >
+                {includeArchived ? "含归档" : "仅启用"}
               </button>
-            )}
+            </div>
           </div>
-        ) : (
-          <div className="model-table-wrap">
-            <table className="model-table">
-              <thead>
-                <tr>
-                  <th className="model-table-check"></th>
-                  <th>名称</th>
-                  <th>类型</th>
-                  <th>格式</th>
-                  <th>mAP50</th>
-                  <th>mAP50-95</th>
-                  <th>Precision</th>
-                  <th>Recall</th>
-                  <th>状态</th>
-                  <th>创建</th>
-                  <th className="model-table-actions">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredModels.map((model) => {
-                  const selected = selectedIds.includes(model.id);
-                  return (
-                    <tr key={model.id} className={`${selected ? "selected" : ""} ${model.status}`}>
-                      <td className="model-table-check">
-                        <input type="checkbox" checked={selected} aria-label={`选择 ${model.name}`} onChange={() => setSelectedIds((ids) => ids.includes(model.id) ? ids.filter((item) => item !== model.id) : [...ids, model.id])} />
-                      </td>
-                      <td className="model-table-name">
-                        <button type="button" onClick={() => setDetailId(model.id)} title={model.name}>{model.name}</button>
-                        <small title={datasetName(model.dataset_id)}>{datasetName(model.dataset_id)}{model.dataset_version_number != null ? ` · v${model.dataset_version_number}` : ""}</small>
-                      </td>
-                      <td>{model.artifact_type.toUpperCase()}</td>
-                      <td>{model.format.toUpperCase()}</td>
-                      <td className="model-table-metric">{formatMetric(model.map50)}</td>
-                      <td className="model-table-metric">{formatMetric(model.map50_95)}</td>
-                      <td className="model-table-metric">{formatMetric(model.precision)}</td>
-                      <td className="model-table-metric">{formatMetric(model.recall)}</td>
-                      <td><span className={`model-table-status ${model.status}`}>{modelStatusLabel(model.status)}</span></td>
-                      <td className="model-table-time" title={model.created_at}>{formatRelativeTime(model.created_at)}</td>
-                      <td className="model-table-actions">
-                        {model.format === "pt" ? (
-                          <>
-                            <button type="button" className="model-action-btn model-action-btn--primary" disabled={busy} onClick={() => setTesting(model)}>测试</button>
-                            <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => void exportOnnx(model)}>ONNX</button>
-                          </>
-                        ) : null}
-                        {model.format === "onnx" ? (
-                          <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openOmConvert(model)}>转OM</button>
-                        ) : null}
-                        <button type="button" className="model-action-btn model-action-btn--ghost" onClick={() => setDetailId(model.id)}>详情</button>
-                        <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy || model.status === "converting"} onClick={() => remove(model)}>删除</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+
+          {FORMAT_SECTIONS.map(({ format, title, hint }) => {
+            const list = selectedModels.filter((model) => model.format === format);
+            return (
+              <section key={format} className="models-format-section">
+                <header>
+                  <h3>{title}</h3>
+                  <span className="muted">{list.length} 个</span>
+                </header>
+                {list.length ? (
+                  <div className="model-table-wrap">
+                    <table className="model-table">
+                      <thead>
+                        <tr>
+                          {format === "pt" && <th className="model-table-check"></th>}
+                          <th>名称</th>
+                          <th>类型</th>
+                          <th>mAP50</th>
+                          <th>mAP50-95</th>
+                          <th>Precision</th>
+                          <th>Recall</th>
+                          <th>状态</th>
+                          <th>创建</th>
+                          <th className="model-table-actions">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {list.map((model) => {
+                          const selected = selectedIds.includes(model.id);
+                          return (
+                            <tr key={model.id} className={`${selected ? "selected" : ""} ${model.status}`}>
+                              {format === "pt" && (
+                                <td className="model-table-check">
+                                  <input type="checkbox" checked={selected} aria-label={`选择 ${model.name}`} onChange={() => setSelectedIds((ids) => ids.includes(model.id) ? ids.filter((item) => item !== model.id) : [...ids, model.id])} />
+                                </td>
+                              )}
+                              <td className="model-table-name">
+                                <button type="button" onClick={() => setDetailId(model.id)} title={model.name}>{model.name}</button>
+                                <small>{model.version}</small>
+                              </td>
+                              <td>{model.artifact_type.toUpperCase()}</td>
+                              <td className="model-table-metric">{formatMetric(model.map50)}</td>
+                              <td className="model-table-metric">{formatMetric(model.map50_95)}</td>
+                              <td className="model-table-metric">{formatMetric(model.precision)}</td>
+                              <td className="model-table-metric">{formatMetric(model.recall)}</td>
+                              <td><span className={`model-table-status ${model.status}`}>{modelStatusLabel(model.status)}</span></td>
+                              <td className="model-table-time" title={model.created_at}>{formatRelativeTime(model.created_at)}</td>
+                              <td className="model-table-actions">
+                                {model.format === "pt" ? (
+                                  <>
+                                    <button type="button" className="model-action-btn model-action-btn--primary" disabled={busy} onClick={() => setTesting(model)}>测试</button>
+                                    <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => void exportOnnx(model)}>ONNX</button>
+                                  </>
+                                ) : null}
+                                {model.format === "onnx" ? (
+                                  <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openOmConvert(model)}>转OM</button>
+                                ) : null}
+                                <button type="button" className="model-action-btn model-action-btn--ghost" onClick={() => setDetailId(model.id)}>详情</button>
+                                <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy || model.status === "converting"} onClick={() => remove(model)}>删除</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="muted models-format-empty">{hint}</p>
+                )}
+              </section>
+            );
+          })}
+        </section>
+      </div>
 
       {omTarget && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setOmTarget(undefined)}>
@@ -482,7 +597,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
 
       <ModelComparisonBar
         selectedIds={selectedIds}
-        models={models}
+        models={visibleModels}
         compareBusy={compareBusy}
         busy={busy}
         onCompareSelected={() => void compareSelected()}

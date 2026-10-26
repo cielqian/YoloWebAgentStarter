@@ -1547,3 +1547,137 @@
 .model-table-time { color: #8994a8; font-size: 12px; }
 .model-table-actions { text-align: right; }
 .model-table-actions .model-action-btn { margin-left: 6px; }
+
+/* ---- 模型库:数据集→版本 树形导航 + 版本面板 ---- */
+.models-workspace-split {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.models-tree {
+  background: #fff;
+  border: 1px solid #e6e9f0;
+  border-radius: 12px;
+  padding: 8px;
+  position: sticky;
+  top: 16px;
+}
+
+.models-tree-dataset {
+  border-radius: 8px;
+}
+
+.models-tree-dataset-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.models-tree-dataset-btn:hover {
+  background: #f4f6fb;
+}
+
+.models-tree-dataset.current > .models-tree-dataset-btn {
+  background: #eef3ff;
+  color: #1f3c88;
+}
+
+.models-tree-dataset-btn em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  background: #eef0f4;
+  color: #68748a;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.models-tree-versions {
+  padding: 2px 0 6px 10px;
+  display: grid;
+  gap: 2px;
+}
+
+.models-tree-version {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: #4a5568;
+  text-align: left;
+}
+
+.models-tree-version:hover {
+  background: #f4f6fb;
+}
+
+.models-tree-version.current {
+  background: #e8efff;
+  color: #1f3c88;
+  font-weight: 700;
+}
+
+.models-tree-version em {
+  font-style: normal;
+  font-size: 11px;
+  color: #8a94a6;
+}
+
+.models-version-pane {
+  display: grid;
+  gap: 14px;
+}
+
+.models-format-section {
+  background: #fff;
+  border: 1px solid #e6e9f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.models-format-section > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.models-format-section > header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.models-format-empty {
+  margin: 0;
+  font-size: 12px;
+  padding: 10px 12px;
+  background: #f8f9fc;
+  border-radius: 8px;
+}
+
+@media (max-width: 1100px) {
+  .models-workspace-split {
+    grid-template-columns: 1fr;
+  }
+
+  .models-tree {
+    position: static;
+  }
+}
