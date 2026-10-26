@@ -34,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.3"
+AGENT_VERSION = "0.4.4"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -551,6 +551,9 @@ class TaskManager:
             if "NCCL_P2P_DISABLE" not in process_env:
                 process_env["NCCL_P2P_DISABLE"] = "1"
                 log("Multi-GPU detected: NCCL_P2P_DISABLE=1 (set YWA_KEEP_NCCL_P2P=1 to keep P2P).")
+            process_env.setdefault("NCCL_IB_DISABLE", "1")
+            process_env.setdefault("NCCL_DEBUG", os.environ.get("NCCL_DEBUG", "INFO"))
+            log("NCCL env: P2P=disabled IB=disabled debug=INFO")
         return_code = -1
         try:
             process = subprocess.Popen(
