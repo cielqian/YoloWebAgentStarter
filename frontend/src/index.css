@@ -489,7 +489,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .class-library-form { display: grid; gap: 13px; margin-bottom: 22px; padding: 18px; }
 .class-library-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 12px; }
 .class-library-form label, .class-library-edit-form label { display: grid; gap: 6px; color: #4d5b72; font-size: 11px; font-weight: 650; }
-.class-library-form input:not([type="color"]), .class-library-edit-form input:not([type="color"]) { width: 100%; padding: 8px 9px; border: 1px solid #d5dcea; border-radius: 7px; font-size: 12px; }
+.class-library-form input:not([type="color"]), .class-library-edit-form input:not([type="color"]) { width: 100%; padding: 9px 10px; border: 1px solid #d5dcea; border-radius: 7px; font-size: 12px; }
 .class-library-form input[type="color"], .class-library-edit-form input[type="color"] { width: 100%; height: 34px; padding: 2px; border: 1px solid #d5dcea; border-radius: 7px; cursor: pointer; }
 .class-library-prompt-row .class-library-prompt-controls, .class-prompt-controls { display: flex; gap: 6px; }
 .class-library-prompt-controls input { flex: 1; }
@@ -508,7 +508,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .class-library-card > footer .button { min-height: 28px; padding-inline: 10px; font-size: 11px; }
 .class-library-delete { color: #b0473f; }
 .class-library-edit-form { display: grid; gap: 10px; }
-.class-library-edit-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.class-library-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* 类别库：标注页选择弹窗 */
 .class-library-picker-list { display: grid; max-height: 330px; overflow: auto; gap: 6px; }
@@ -570,7 +570,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .ftp-actions-head { width: 1%; }
 .ftp-empty { padding: 24px 10px !important; text-align: center; }
 .ftp-dialog-form { display: grid; gap: 14px; padding: 18px; }
-.ftp-dialog-form input { width: 100%; padding: 8px 10px; border: 1px solid #d7deec; border-radius: 7px; font-size: 12px; }
+.ftp-dialog-form input { width: 100%; padding: 9px 10px; border: 1px solid #d7deec; border-radius: 7px; font-size: 12px; }
 .ftp-dialog-form footer { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* 数据源 */
@@ -640,6 +640,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .ftp-picker-list .ftp-check-col input { display: block; margin: 0; }
 .ftp-picker-list .ftp-table thead th { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #e2e6ee; }
 .ftp-picker-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.ftp-picker-actions > div { display: flex; gap: 8px; }
 .ftp-picker-actions .source-toggle { margin-right: auto; }
 .source-image-card img { width: 100%; height: 140px; border-radius: 10px 10px 0 0; object-fit: cover; background: #f0f2f7; }
 .source-image-name { overflow: hidden; padding: 0 10px; color: #3b4860; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
@@ -665,7 +666,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .dataset-version-dialog { display: grid; width: min(100%, 560px); max-height: min(86vh, 720px); overflow: auto; border: 1px solid #e1e6ef; border-radius: 12px; background: #fff; box-shadow: 0 18px 60px rgba(20, 31, 55, .22); }
 .dataset-version-create { display: flex; gap: 10px; align-items: end; padding: 16px 28px 6px; }
 .dataset-version-create label { display: grid; flex: 1; gap: 6px; color: #536077; font-size: 12px; font-weight: 600; }
-.dataset-version-create input { padding: 9px 11px; border: 1px solid #d7deec; border-radius: 7px; font-size: 13px; }
+.dataset-version-create input { padding: 9px 10px; border: 1px solid #d7deec; border-radius: 7px; font-size: 13px; }
 .dataset-version-notice { margin: 10px 28px 0; padding: 10px 12px; border: 1px solid #bee2c5; border-radius: 8px; color: #23733a; background: #eef9f0; font-size: 12px; }
 .dataset-version-switch { display: grid; gap: 10px; margin: 10px 28px 0; padding: 12px; border: 1px solid #f0d9a8; border-radius: 8px; background: #fff8e8; color: #7a5200; font-size: 12px; }
 .dataset-version-switch-actions { display: flex; gap: 8px; }
@@ -690,7 +691,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .training-node-meta small { color: #8994a8; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .training-node-form { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed #e1e6ef; }
 .training-node-form label { display: grid; gap: 4px; font-size: 12px; color: #536077; font-weight: 600; }
-.training-node-form input { padding: 9px 11px; border: 1px solid #d7deec; border-radius: 7px; font-size: 13px; }
+.training-node-form input { padding: 9px 10px; border: 1px solid #d7deec; border-radius: 7px; font-size: 13px; }
 .training-node-form small { color: #8994a8; font-weight: 500; }
 .training-node-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .settings-textarea { min-height: 0; height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
