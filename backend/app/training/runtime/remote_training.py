@@ -555,7 +555,7 @@ def _dispatch_flow(session_factory: sessionmaker[Session], storage: Storage, set
             from app.training.service import export_training_data
 
             export = export_training_data(session, storage, dataset, dataset_version_number, export_root)
-        TrainingService._validate_export_training_splits(export, dataset.task_type)
+        TrainingService._validate_export_training_splits(export, dataset.task_type, task.device)
         export_stats = {key: export.get(key) for key in ("counts", "annotated_image_counts", "total_image_counts", "skipped_image_counts", "label_count")}
         if not _dispatching_update(
             session_factory, task_id,

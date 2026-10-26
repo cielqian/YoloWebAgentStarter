@@ -163,7 +163,7 @@ class TrainingService:
             if resume_checkpoint is not None:
                 model_reference = str(resume_checkpoint)
             export = export_training_data(session, self.storage, dataset, dataset_version_number, export_root)
-            self._validate_export_training_splits(export, dataset.task_type)
+            self._validate_export_training_splits(export, dataset.task_type, payload.device)
             data_yaml = str(export["data_yaml"])
             export_stats = {
                 key: export.get(key)
@@ -649,8 +649,19 @@ class TrainingService:
             raise ValidationError("training_classes_missing", "Training requires at least one class label.")
 
     @staticmethod
-    def _validate_export_training_splits(export: dict[str, object], task_type: str) -> None:
+    def _validate_export_training_splits(export: dict[str, object], task_type: str, device: str | None = None) -> None:
         annotated_image_counts = dict(export.get("annotated_image_counts") or {})
+        if device:
+            from app.training.runtime.remote_training import parse_remote_device_set
+
+            world = len(parse_remote_device_set(device) or set())
+            val_annotated = int(annotated_image_counts.get("val") or 0)
+            if world > 1 and val_annotated < 2 * world:
+                raise ValidationError(
+                    "multi_gpu_val_too_small",
+                    f"{world} 卡 DDP 训练要求验证集已标注图片数至少为卡数的 2 倍（当前 {val_annotated} 张）。"
+                    "数据太少会触发 ultralytics 上游崩溃，请先标注更多图片后重试。",
+                )
         missing = [split for split in ("train", "val") if not annotated_image_counts.get(split)]
         if missing:
             if task_type == TaskType.CLASSIFY:
