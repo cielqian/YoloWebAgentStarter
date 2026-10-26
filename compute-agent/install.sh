@@ -170,6 +170,24 @@ EOF
 
 # ---------------- 启动与检查 ----------------
 
+open_firewall_port() {
+  local port="$1"
+  if systemctl is-active --quiet firewalld 2>/dev/null; then
+    if firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1 && firewall-cmd --reload >/dev/null 2>&1; then
+      echo "==> 已在 firewalld 放行 ${port}/tcp"
+      return 0
+    fi
+  fi
+  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi "^Status: active"; then
+    if ufw allow "${port}/tcp" >/dev/null 2>&1; then
+      echo "==> 已在 ufw 放行 ${port}/tcp"
+      return 0
+    fi
+  fi
+  echo "==> 提示：未自动配置防火墙。若管理端无法访问 ${port}，请手动放行："
+  echo "    firewall-cmd --permanent --add-port=${port}/tcp && firewall-cmd --reload"
+}
+
 systemctl daemon-reload
 systemctl enable --now "${SERVICE_NAME}"
 
@@ -183,6 +201,7 @@ for _ in 1 2 3 4 5; do
     echo "  实时日志: journalctl -u ${SERVICE_NAME} -f"
     echo "  设备巡检: curl http://127.0.0.1:${PORT}/devices"
     echo "  共享密钥（注册训练节点时填入）: ${TOKEN}"
+    open_firewall_port "${PORT}"
     exit 0
   fi
   sleep 1
