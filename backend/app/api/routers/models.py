@@ -62,11 +62,6 @@ def compare_models(payload: ModelCompareRequest, session: Session = Depends(get_
     return ModelCompareResponse.model_validate(ModelService(storage).compare(session, payload.baseline_model_id, payload.candidate_model_id))
 
 
-@router.get("/convert-jobs", response_model=list[OmConvertJobResponse])
-def list_om_convert_jobs() -> list[OmConvertJobResponse]:
-    return [OmConvertJobResponse.model_validate(job) for job in om_convert.list_jobs()]
-
-
 @router.post("/{model_id}/convert-om", response_model=OmConvertJobResponse, status_code=202)
 def convert_model_to_om(
     model_id: str,

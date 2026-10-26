@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.task_types import TaskType
 
 ModelSource = Literal["training_task", "exported"]
-ModelStatus = Literal["active", "archived"]
+ModelStatus = Literal["active", "archived", "converting", "failed"]
 ModelArtifactType = Literal["best", "last", "onnx", "om"]
 ModelFormat = Literal["pt", "onnx", "om"]
 

@@ -102,6 +102,7 @@ def start_convert(
 
     with session_factory() as session:
         source = _load_source_model(session, model_id)
+        target_id = _ensure_converting_row(session, storage, source, soc_version)
         job_id = _new_job_id()
         job = {
             "job_id": job_id,
@@ -114,7 +115,7 @@ def start_convert(
             "status": "uploading",
             "error": None,
             "logs": "",
-            "result_model_id": None,
+            "result_model_id": target_id,
             "created_at": time.time(),
             "finished_at": None,
         }
@@ -122,6 +123,41 @@ def start_convert(
             _jobs[job_id] = job
     threading.Thread(target=_run, args=(session_factory, storage, dict(job), node), daemon=True).start()
     return dict(job)
+
+
+def _target_model_id(source_model_id: str) -> str:
+    return f"model_{source_model_id}_om"
+
+
+def _ensure_converting_row(session: Session, storage: Storage, source: ModelVersion, soc_version: str) -> str:
+    """提交即生成 OM 模型记录(status=converting)，模型列表直接展示转换进度。"""
+    target_id = _target_model_id(source.id)
+    existing = session.get(ModelVersion, target_id)
+    if existing is None:
+        session.add(
+            ModelVersion(
+                id=target_id,
+                name=f"{Path(source.name).stem}.om",
+                version=f"{source.version}-om",
+                dataset_id=source.dataset_id,
+                source_model_id=source.id,
+                source="exported",
+                artifact_type="om",
+                format="om",
+                task_type=source.task_type,
+                engine_type="ascend-atc",
+                model_path=str(storage.model_version_dir(target_id) / "model.om"),
+                base_model=source.name,
+                status="converting",
+                metrics_json=dict(source.metrics_json or {}),
+                notes=f"Converting from {source.name} via ATC ({soc_version}) ...",
+            )
+        )
+    else:
+        existing.status = "converting"
+        existing.notes = f"Converting from {source.name} via ATC ({soc_version}) ..."
+    session.commit()
+    return target_id
 
 
 def _load_source_model(session: Session, model_id: str) -> ModelVersion:
@@ -198,6 +234,19 @@ def _run(session_factory: sessionmaker, storage: Storage, job: dict[str, Any], n
         if snapshot is not None:
             _attach_logs(snapshot, node, agent_job)
         _update(job_id, status="failed", error=failure, finished_at=time.time())
+        _mark_row_failed(session_factory, job, failure)
+
+
+def _mark_row_failed(session_factory: sessionmaker, job: dict[str, Any], failure: str) -> None:
+    try:
+        with session_factory() as session:
+            row = session.get(ModelVersion, _target_model_id(job["source_model_id"]))
+            if row is not None and row.status == "converting":
+                row.status = "failed"
+                row.notes = f"ATC 转换失败：{failure[:500]}"
+                session.commit()
+    except Exception:  # noqa: BLE001 - 失败标记自身不能抛出
+        pass
 
 
 def _peek(job_id: str) -> dict[str, Any] | None:

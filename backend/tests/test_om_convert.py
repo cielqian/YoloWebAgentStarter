@@ -105,15 +105,16 @@ def _make_onnx_model(client, model_id: str = "model_src1") -> tuple[str, bytes]:
     return model_id, payload
 
 
-def _wait_for_terminal(client, job_id: str, timeout: float = 90.0) -> dict:
+def _wait_for_model_row(client, model_id: str, timeout: float = 90.0) -> dict:
+    """轮询模型列表中 OM 记录行的状态，模拟前端展示进度的行为。"""
+    target = f"model_{model_id}_om"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        jobs = client.get("/api/models/convert-jobs").json()
-        job = next((item for item in jobs if item["job_id"] == job_id), None)
-        if job and job["status"] in ("completed", "failed"):
-            return job
+        row = client.get(f"/api/models/{target}")
+        if row.status_code == 200 and row.json()["status"] in ("active", "archived", "failed"):
+            return row.json()
         time.sleep(1)
-    raise AssertionError("om convert job did not finish in time")
+    raise AssertionError("om model row did not reach terminal status in time")
 
 
 def _register_node(client, url: str) -> dict:
@@ -136,17 +137,17 @@ def test_om_convert_end_to_end(client, tmp_path):
         )
         assert submitted.status_code == 202, submitted.text
         job = submitted.json()
-        assert job["status"] in ("uploading", "converting")
+        assert job["result_model_id"]
+        row = client.get(f"/api/models/{job['result_model_id']}")
+        assert row.status_code == 200
+        assert row.json()["status"] == "converting"  # 提交即建行，列表可见进度
 
-        final = _wait_for_terminal(client, job["job_id"])
-        assert final["status"] == "completed", final
-        assert final["result_model_id"]
-
-        result = client.get(f"/api/models/{final['result_model_id']}").json()
+        result = _wait_for_model_row(client, model_id)
+        assert result["status"] == "active", result
         assert result["format"] == "om"
         assert result["artifact_type"] == "om"
         assert result["name"].endswith(".om")
-        download = client.get(f"/api/models/{final['result_model_id']}/download")
+        download = client.get(f"/api/models/{result['id']}/download")
         assert download.status_code == 200
         assert download.content == payload
 
@@ -167,7 +168,7 @@ def test_om_convert_rejected_when_atc_missing(client, tmp_path):
         response = client.post(f"/api/models/{model_id}/convert-om", json={"node_id": node["id"]})
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "atc_unavailable"
-        assert client.get("/api/models/convert-jobs").json() == []
+        assert client.get(f"/api/models/model_{model_id}_om").status_code == 404
     finally:
         agent.stop()
 
@@ -187,7 +188,7 @@ def test_om_convert_runs_atc_inside_venv_via_cann_env(client, tmp_path):
     bin_dir = tmp_path / "fake-atc-bin"
     bin_dir.mkdir()
     atc = bin_dir / "atc"
-    atc.write_text('#!/bin/sh\necho "VIRTUAL_ENV=$VIRTUAL_ENV"\ncp input.onnx model.om\n')
+    atc.write_text('#!/bin/sh\nprintf "VIRTUAL_ENV=%s\\n" "$VIRTUAL_ENV" > model.om\ncat input.onnx >> model.om\n')
     atc.chmod(0o755)
     (toolkit / "set_env.sh").write_text(f'export PATH="{bin_dir}:$PATH"\n')
 
@@ -199,10 +200,11 @@ def test_om_convert_runs_atc_inside_venv_via_cann_env(client, tmp_path):
         node = _register_node(client, agent.url)
         submitted = client.post(f"/api/models/{model_id}/convert-om", json={"node_id": node["id"]})
         assert submitted.status_code == 202, submitted.text
-        final = _wait_for_terminal(client, submitted.json()["job_id"])
-        assert final["status"] == "completed", final
-        assert "/convert-workspace/venv" in (final["logs"] or ""), final["logs"]
-        download = client.get(f"/api/models/{final['result_model_id']}/download")
-        assert download.content == payload
+        result = _wait_for_model_row(client, model_id)
+        assert result["status"] == "active", result
+        download = client.get(f"/api/models/{result['id']}/download")
+        body = download.content.decode("utf-8", "replace")
+        assert "/convert-workspace/venv" in body, body[:200]
+        assert download.content.endswith(payload)
     finally:
         agent.stop()

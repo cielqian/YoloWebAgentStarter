@@ -38,7 +38,6 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const [omNodeId, setOmNodeId] = useState("");
   const [omSocVersion, setOmSocVersion] = useState("Ascend310P3");
   const [omInputShape, setOmInputShape] = useState("images:1,3,640,640");
-  const [omJobs, setOmJobs] = useState<OmConvertJob[]>([]);
 
   const refresh = useCallback(async () => {
     const result = await api.listModels(undefined, includeArchived);
@@ -82,27 +81,23 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   }), [models]);
 
   useEffect(() => {
-    api.listOmConvertJobs().then(setOmJobs).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!omJobs.some((job) => job.status === "uploading" || job.status === "converting" || job.status === "downloading")) return;
+    if (!models.some((model) => model.status === "converting")) return;
     const timer = window.setInterval(() => {
-      api.listOmConvertJobs().then((next) => {
-        for (const job of next) {
-          const previous = omJobs.find((item) => item.job_id === job.job_id);
-          if (previous && previous.status === job.status) continue;
-          if (job.status === "completed") {
-            setNotice(`OM 转换完成：${job.source_model_name} → ${job.soc_version}`);
-            void refresh();
+      api.listModels(undefined, includeArchived)
+        .then((result) => {
+          const items = [...result.items].sort(newerFirst);
+          for (const model of items) {
+            const previous = models.find((item) => item.id === model.id);
+            if (!previous || previous.status !== "converting") continue;
+            if (model.status === "active") setNotice(`OM 转换完成：${model.name}`);
+            if (model.status === "failed") setError(`OM 转换失败：${model.notes || "未知原因"}`);
           }
-          if (job.status === "failed") setError(`OM 转换失败：${job.error ?? "未知原因"}`);
-        }
-        setOmJobs(next);
-      }).catch(() => {});
-    }, 2500);
+          setModels(items);
+        })
+        .catch(() => {});
+    }, 3000);
     return () => window.clearInterval(timer);
-  }, [omJobs, refresh]);
+  }, [models, includeArchived]);
 
   useEffect(() => {
     if (!detailModel || detailModel.format !== "pt") { setEvaluations([]); return; }
@@ -152,9 +147,9 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
         soc_version: omSocVersion.trim() || "Ascend310P3",
         input_shape: omInputShape.trim() || "images:1,3,640,640",
       });
-      setOmJobs((jobs) => [...jobs.filter((item) => item.job_id !== job.job_id), job]);
       setOmTarget(undefined);
-      setNotice(`已提交 OM 转换：${target.name} → ${job.node_name}`);
+      await refresh();
+      setNotice(`已提交 OM 转换：${target.name} → ${job.node_name}，新模型行展示转换进度`);
     });
   };
 
@@ -399,7 +394,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
                       <td className="model-table-metric">{formatMetric(model.map50_95)}</td>
                       <td className="model-table-metric">{formatMetric(model.precision)}</td>
                       <td className="model-table-metric">{formatMetric(model.recall)}</td>
-                      <td><span className={`model-table-status ${model.status}`}>{model.status === "active" ? "启用" : "已归档"}</span></td>
+                      <td><span className={`model-table-status ${model.status}`}>{modelStatusLabel(model.status)}</span></td>
                       <td className="model-table-time" title={model.created_at}>{formatRelativeTime(model.created_at)}</td>
                       <td className="model-table-actions">
                         {model.format === "pt" ? (
@@ -412,7 +407,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
                           <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openOmConvert(model)}>转OM</button>
                         ) : null}
                         <button type="button" className="model-action-btn model-action-btn--ghost" onClick={() => setDetailId(model.id)}>详情</button>
-                        <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => remove(model)}>删除</button>
+                        <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy || model.status === "converting"} onClick={() => remove(model)}>删除</button>
                       </td>
                     </tr>
                   );
@@ -422,24 +417,6 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
           </div>
         )}
       </section>
-
-      {omJobs.length > 0 && (
-        <section className="models-comparison-result" aria-label="OM 转换任务">
-          <div className="models-comparison-result-head">
-            <div>
-              <span className="eyebrow">ATC CONVERT</span>
-              <h3>OM 转换任务</h3>
-            </div>
-          </div>
-          {omJobs.map((job) => (
-            <p key={job.job_id} className="muted" title={job.logs || undefined}>
-              <strong>{job.source_model_name}</strong> → {job.soc_version}（{job.node_name}）：
-              {omStatusText[job.status]}
-              {job.error ? ` — ${job.error}` : ""}
-            </p>
-          ))}
-        </section>
-      )}
 
       {omTarget && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setOmTarget(undefined)}>
@@ -496,10 +473,9 @@ function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : "操作失败，请检查后端服务。";
 }
 
-const omStatusText: Record<OmConvertJob["status"], string> = {
-  uploading: "上传 ONNX 中…",
-  converting: "ATC 转换中…",
-  downloading: "回传 OM 中…",
-  completed: "已完成",
-  failed: "失败",
-};
+function modelStatusLabel(status: ModelVersion["status"]): string {
+  if (status === "active") return "启用";
+  if (status === "archived") return "已归档";
+  if (status === "converting") return "OM 转换中";
+  return "转换失败";
+}

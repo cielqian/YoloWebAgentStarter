@@ -452,7 +452,7 @@ export interface TrainingSummary {
   next_steps: string[];
 }
 
-export type ModelStatus = "active" | "archived";
+export type ModelStatus = "active" | "archived" | "converting" | "failed";
 export type ModelFormat = "pt" | "onnx" | "om";
 export type ModelArtifactType = "best" | "last" | "onnx" | "om";
 

@@ -136,6 +136,8 @@ class ModelService:
 
     def delete_model(self, session: Session, model_id: str) -> None:
         model = self.get_model(session, model_id)
+        if model.status == "converting":
+            raise ConflictError("model_converting", "该模型正在转换中，请等待转换结束后再删除。")
         auto_annotation_task = session.scalar(
             select(AutoAnnotationTask.id)
             .where(AutoAnnotationTask.model_id == model.id)

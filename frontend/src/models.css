@@ -1542,6 +1542,8 @@
 .model-table-status { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
 .model-table-status.active { background: #f0fdf4; color: #166534; }
 .model-table-status.archived { background: #eef0f4; color: #68748a; }
+.model-table-status.converting { background: #eff6ff; color: #1d4ed8; }
+.model-table-status.failed { background: #fef2f2; color: #b91c1c; }
 .model-table-time { color: #8994a8; font-size: 12px; }
 .model-table-actions { text-align: right; }
 .model-table-actions .model-action-btn { margin-left: 6px; }
