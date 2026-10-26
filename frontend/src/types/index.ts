@@ -297,6 +297,7 @@ export interface TrainingNodeStatus {
   url: string;
   enabled: boolean;
   status: "online" | "offline";
+  agent_version: string | null;
   device_count: number;
   error: string | null;
 }

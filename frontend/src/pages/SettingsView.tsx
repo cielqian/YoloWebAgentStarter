@@ -1243,7 +1243,7 @@ function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsTex
                   <strong>{node.name}</strong>
                   <small>{node.url}{node.token_configured ? " · 🔑" : ""}</small>
                   {status ? (
-                    <small>{status.status === "online" ? `在线 · ${status.device_count} 个设备` : `不可达：${status.error ?? ""}`}</small>
+                    <small>{status.status === "online" ? `在线 · agent v${status.agent_version ?? "?"} · ${status.device_count} 个设备` : `不可达：${status.error ?? ""}`}</small>
                   ) : null}
                 </div>
                 <span className={`status ${status?.status === "online" ? "ready" : "disabled"}`}>

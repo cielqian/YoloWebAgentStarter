@@ -106,6 +106,7 @@ class TrainingNodeStatus(BaseModel):
     url: str
     enabled: bool = True
     status: Literal["online", "offline"]
+    agent_version: str | None = None
     device_count: int = 0
     error: str | None = None
 

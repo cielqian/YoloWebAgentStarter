@@ -123,6 +123,7 @@ def merged_devices(settings: Any) -> tuple[list[dict[str, Any]], list[dict[str, 
                 "url": url,
                 "enabled": True,
                 "status": "online",
+                "agent_version": str(snapshot["payload"].get("version") or "") or None,
                 "device_count": len(devices),
                 "error": None,
             }
