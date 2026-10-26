@@ -220,6 +220,8 @@ export const api = {
     request<Dataset>("/api/datasets", json({ name, task_type: taskType, description: description || null, ...(poseConfig ? { pose_config: poseConfig } : {}) })),
   deleteDataset: (datasetId: string) => request<void>(`/api/datasets/${datasetId}`, { method: "DELETE" }),
   listDatasetVersions: (datasetId: string) => request<DatasetVersion[]>(`/api/datasets/${datasetId}/versions`),
+  updateDataset: (datasetId: string, payload: { name?: string; description?: string | null }) =>
+    request<Dataset>(`/api/datasets/${datasetId}`, json(payload, "PATCH")),
   getDatasetSplitCounts: (datasetId: string) => request<Record<string, number>>(`/api/datasets/${datasetId}/split-counts`),
   createDatasetVersion: (datasetId: string, note?: string) =>
     request<DatasetVersion>(`/api/datasets/${datasetId}/versions`, json({ note: note?.trim() || null })),

@@ -42,7 +42,7 @@ describe("DatasetHome delete flow", () => {
         onFtpImport={vi.fn()}
         onCancelImport={vi.fn()}
         onMergeYolo={vi.fn()}
-        onMergeYoloFromFtp={vi.fn()} onValidate={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={onDelete} />);
+        onMergeYoloFromFtp={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={onDelete} />);
     });
 
     const button = (label: string) => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === label);

@@ -1651,3 +1651,23 @@
   background: #f8f9fc;
   border-radius: 8px;
 }
+
+.model-naming-list {
+  display: grid;
+  gap: 10px;
+  max-height: 46vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.model-naming-list label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #68748a;
+}
+
+.model-naming-list label span {
+  font-size: 11px;
+}

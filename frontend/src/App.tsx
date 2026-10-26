@@ -17,7 +17,7 @@ import { ImportCenterModal } from "./components/ImportCenterModal";
 import { DatasetVersionDialog } from "./components/DatasetVersionDialog";
 import { Toast } from "./components/Toast";
 import { readLocale, saveLocale, type AppLocale } from "./locale";
-import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
+import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, ModelVersion, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
 
 type View = "workspace" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources";
 type CardReportKind = "validation" | "quality" | "duplicates";
@@ -457,7 +457,6 @@ export default function App() {
           onImport={(file, name, taskType, format) => run(async () => { const result = format === "coco" ? await api.importCoco(file, name, taskType, false) : await api.importYolo(file, name, taskType, false); await refreshDatasets(); setNotice(`已开始导入「${result.dataset.name}」，进度见数据集列表。`); })}
           onFtpImport={(path, name, taskType, format, source) => run(async () => { const result = await api.importDatasetFromFtp({ path, name, task_type: taskType, format, source }, false); await refreshDatasets(); setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}导入「${result.dataset.name}」，进度见数据集列表。`); })}
           onCancelImport={(dataset) => run(async () => { await api.cancelDatasetImport(dataset.id); await refreshDatasets(); setNotice(`已请求停止「${dataset.name}」的导入。`); })}
-          onValidate={(dataset) => runResult(() => api.validateDataset(dataset.id))}
           onQuality={(dataset) => runResult(() => api.qualityReport(dataset.id))}
           onAskAgent={(dataset) => { setAgentFocus({ dataset: { id: dataset.id, name: dataset.name } }); setView("agent"); }}
           agentLabel={locale === "zh" ? "询问助手" : "Ask assistant"}
@@ -535,7 +534,6 @@ export function DatasetHome(props: {
   onMergeYolo: (dataset: Dataset, file: File) => void;
   onMergeYoloFromFtp: (dataset: Dataset, path: string, source: "zip" | "dir") => void;
   onCancelImport: (dataset: Dataset) => void;
-  onValidate: (dataset: Dataset) => Promise<ValidationReport | undefined>;
   onQuality: (dataset: Dataset) => Promise<DatasetQualityReport | undefined>;
   onAskAgent?: (dataset: Dataset) => void;
   agentLabel?: string;
@@ -600,7 +598,6 @@ export function DatasetHome(props: {
   const [cloneVersions, setCloneVersions] = useState<DatasetVersion[] | null>(null);
   const [cloneVersionId, setCloneVersionId] = useState("");
   const [cloneLoading, setCloneLoading] = useState(false);
-  const [validationReports, setValidationReports] = useState<Record<string, ValidationReport>>({});
   const [qualityReports, setQualityReports] = useState<Record<string, DatasetQualityReport>>({});
   const [duplicateReports, setDuplicateReports] = useState<Record<string, DuplicateReport>>({});
   const [expandedReports, setExpandedReports] = useState<Record<string, CardReportKind | undefined>>({});
@@ -608,6 +605,81 @@ export function DatasetHome(props: {
   const [draggingImages, setDraggingImages] = useState(false);
   const [autoAnnotationTarget, setAutoAnnotationTarget] = useState<Dataset>();
   const [versionTarget, setVersionTarget] = useState<Dataset>();
+  const [renameTarget, setRenameTarget] = useState<Dataset>();
+  const [renameName, setRenameName] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [modelNamingTarget, setModelNamingTarget] = useState<Dataset>();
+  const [namingModels, setNamingModels] = useState<ModelVersion[]>([]);
+  const [namingEdits, setNamingEdits] = useState<Record<string, string>>({});
+  const [namingLoading, setNamingLoading] = useState(false);
+  const [namingBusy, setNamingBusy] = useState(false);
+  const [dialogError, setDialogError] = useState("");
+  const toggleQuality = async (dataset: Dataset) => {
+    if (isReportOpen(dataset.id, "quality")) return closeReport(dataset.id);
+    if (qualityReports[dataset.id]) return openReport(dataset.id, "quality");
+    const report = await props.onQuality(dataset);
+    if (report) { setQualityReports((items) => ({ ...items, [dataset.id]: report })); openReport(dataset.id, "quality"); }
+  };
+  const toggleDuplicates = async (dataset: Dataset) => {
+    if (isReportOpen(dataset.id, "duplicates")) return closeReport(dataset.id);
+    if (duplicateReports[dataset.id]) return openReport(dataset.id, "duplicates");
+    const report = await props.onDuplicates(dataset);
+    if (report) { setDuplicateReports((items) => ({ ...items, [dataset.id]: report })); openReport(dataset.id, "duplicates"); }
+  };
+
+  const openRename = (dataset: Dataset) => {
+    setRenameTarget(dataset);
+    setRenameName(dataset.name);
+    setDialogError("");
+  };
+
+  const submitRename = async () => {
+    if (!renameTarget || !renameName.trim()) return;
+    setRenameBusy(true);
+    setDialogError("");
+    try {
+      await api.updateDataset(renameTarget.id, { name: renameName.trim() });
+      setRenameTarget(undefined);
+      props.onVersionsChange?.();
+    } catch (reason) {
+      setDialogError(reason instanceof Error ? reason.message : "重命名失败");
+    } finally {
+      setRenameBusy(false);
+    }
+  };
+
+  const openModelNaming = async (dataset: Dataset) => {
+    setModelNamingTarget(dataset);
+    setNamingModels([]);
+    setNamingEdits({});
+    setDialogError("");
+    setNamingLoading(true);
+    try {
+      const result = await api.listModels(dataset.id, true);
+      setNamingModels(result.items);
+    } catch (reason) {
+      setDialogError(reason instanceof Error ? reason.message : "模型列表加载失败");
+    } finally {
+      setNamingLoading(false);
+    }
+  };
+
+  const saveModelNaming = async () => {
+    setNamingBusy(true);
+    setDialogError("");
+    try {
+      for (const model of namingModels) {
+        const next = (namingEdits[model.id] ?? model.name).trim();
+        if (next && next !== model.name) await api.updateModel(model.id, { name: next });
+      }
+      setModelNamingTarget(undefined);
+    } catch (reason) {
+      setDialogError(reason instanceof Error ? reason.message : "保存失败");
+    } finally {
+      setNamingBusy(false);
+    }
+  };
+
   const cloneSource = props.datasets.find((item) => item.id === cloneSourceId);
   const cloneSourceHasVersions = cloneSource != null && cloneSource.latest_version_number != null;
 
@@ -718,25 +790,6 @@ export function DatasetHome(props: {
   const isReportOpen = (datasetId: string, kind: CardReportKind) => expandedReports[datasetId] === kind;
   const closeReport = (datasetId: string) => setExpandedReports((items) => ({ ...items, [datasetId]: undefined }));
   const openReport = (datasetId: string, kind: CardReportKind) => setExpandedReports((items) => ({ ...items, [datasetId]: kind }));
-  const toggleValidation = async (dataset: Dataset) => {
-    if (isReportOpen(dataset.id, "validation")) return closeReport(dataset.id);
-    if (validationReports[dataset.id]) return openReport(dataset.id, "validation");
-    const report = await props.onValidate(dataset);
-    if (report) { setValidationReports((items) => ({ ...items, [dataset.id]: report })); openReport(dataset.id, "validation"); }
-  };
-  const toggleQuality = async (dataset: Dataset) => {
-    if (isReportOpen(dataset.id, "quality")) return closeReport(dataset.id);
-    if (qualityReports[dataset.id]) return openReport(dataset.id, "quality");
-    const report = await props.onQuality(dataset);
-    if (report) { setQualityReports((items) => ({ ...items, [dataset.id]: report })); openReport(dataset.id, "quality"); }
-  };
-  const toggleDuplicates = async (dataset: Dataset) => {
-    if (isReportOpen(dataset.id, "duplicates")) return closeReport(dataset.id);
-    if (duplicateReports[dataset.id]) return openReport(dataset.id, "duplicates");
-    const report = await props.onDuplicates(dataset);
-    if (report) { setDuplicateReports((items) => ({ ...items, [dataset.id]: report })); openReport(dataset.id, "duplicates"); }
-  };
-
   useEffect(() => {
     if (uploadMode !== "source" || !sourceId) return;
     let cancelled = false;
@@ -768,7 +821,7 @@ export function DatasetHome(props: {
       <div className="section-title-row"><div><span className="eyebrow">ALL DATASETS</span><h2>所有数据集</h2></div><span className="dataset-total">{props.datasets.length} 个数据集</span></div>
       <div className="dataset-grid">
         {props.datasets.map((dataset, index) => { const importing = dataset.import_state === "importing"; const merging = dataset.import_state === "merging"; const failedImport = dataset.import_state === "failed" || dataset.import_state === "stopped"; const mergeIssue = dataset.import_state === "merge_failed" || dataset.import_state === "merge_stopped"; const importBlocked = importing || merging || failedImport; return <article key={dataset.id} className="dataset-card">
-          <header><span className={`dataset-icon tone-${index % 3}`}>{dataset.task_type === "segment" || dataset.task_type === "obb" ? "◇" : dataset.task_type === "classify" ? "○" : dataset.task_type === "pose" ? "✥" : "□"}</span><div><h2>{dataset.name}</h2><small>{taskDescription(dataset.task_type)}{dataset.task_type === "pose" && dataset.pose_config ? ` · ${dataset.pose_config.kpt_count} 关键点` : ""}</small></div><div className="dataset-card-header-actions"><span className={`status ${dataset.import_state === "failed" || dataset.import_state === "merge_failed" ? "failed" : dataset.import_state === "stopped" || dataset.import_state === "merge_stopped" ? "stopped" : importing || merging ? "" : "ready"}`}>{merging ? "合并中" : importing ? "导入中" : dataset.import_state === "failed" ? "导入失败" : dataset.import_state === "stopped" ? "已停止" : dataset.import_state === "merge_failed" ? "合并失败" : dataset.import_state === "merge_stopped" ? "已停止" : "就绪"}</span>{!importBlocked && <button className="dataset-add-image-action" disabled={props.busy || importing || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>+ 添加图片</button>}</div></header>
+          <header><span className={`dataset-icon tone-${index % 3}`}>{dataset.task_type === "segment" || dataset.task_type === "obb" ? "◇" : dataset.task_type === "classify" ? "○" : dataset.task_type === "pose" ? "✥" : "□"}</span><div><h2>{dataset.name}</h2><small>{taskDescription(dataset.task_type)}{dataset.task_type === "pose" && dataset.pose_config ? ` · ${dataset.pose_config.kpt_count} 关键点` : ""}</small></div><div className="dataset-card-header-actions"><span className={`status ${dataset.import_state === "failed" || dataset.import_state === "merge_failed" ? "failed" : dataset.import_state === "stopped" || dataset.import_state === "merge_stopped" ? "stopped" : importing || merging ? "" : "ready"}`}>{merging ? "合并中" : importing ? "导入中" : dataset.import_state === "failed" ? "导入失败" : dataset.import_state === "stopped" ? "已停止" : dataset.import_state === "merge_failed" ? "合并失败" : dataset.import_state === "merge_stopped" ? "已停止" : "就绪"}</span></div></header>
           {(importing || merging) && <div className="dataset-import-progress" role="status"><div className="dataset-import-progress-top"><span>{dataset.import_message ?? "正在导入…"}</span><span>{Math.round(dataset.import_progress ?? 0)}%</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, Math.max(2, dataset.import_progress ?? 0))}%` }} /></div></div>}
           {dataset.import_state === "failed" && <div className="validation invalid"><span>导入失败：{dataset.import_message ?? "未知错误"}</span></div>}
           {dataset.import_state === "merge_failed" && <div className="validation invalid"><span>合并失败：{dataset.import_message ?? "未知错误"}</span><small>数据集仍可正常使用；重新上传压缩包会跳过已合并的同名图片。</small></div>}
@@ -783,17 +836,18 @@ export function DatasetHome(props: {
           <div className="dataset-card-actions">
             {importing || merging ? <button className="button danger" disabled={props.busy} onClick={() => props.onCancelImport?.(dataset)}>{importing ? "停止导入" : "停止合并"}</button> : failedImport ? <button className="button dataset-delete-action" disabled={props.busy} onClick={() => setDeleteTarget(dataset)}>删除</button> : <>
             {props.onAskAgent ? <button className="button" disabled={props.busy || importing} onClick={() => props.onAskAgent?.(dataset)}>{props.agentLabel ?? "询问助手"}</button> : null}
+            <button className="button" disabled={props.busy || importing || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>添加图片</button>
+            <button className="button" disabled={props.busy || importing} onClick={() => setRenameTarget(dataset)}>重命名</button>
+            <button className="button" disabled={props.busy || importing} onClick={() => void openModelNaming(dataset)}>模型命名</button>
             <button className="button" disabled={props.busy || importing} onClick={() => props.onTrain(dataset)}>训练</button>
             <button className="button dataset-auto-annotation-action" disabled={props.busy || importing || !dataset.image_count || isHistoricalActive(dataset)} onClick={() => setAutoAnnotationTarget(dataset)}>自动标注</button>
             <button className="button" disabled={props.busy || importing || !dataset.image_count} onClick={() => openExport(dataset)}>导出数据</button>
             <button className="button" disabled={props.busy || importing || !dataset.image_count} onClick={() => void toggleDuplicates(dataset)}>{isReportOpen(dataset.id, "duplicates") ? "收起重复图" : "重复/相似图"}</button>
-            <button className="button" disabled={props.busy || importing} onClick={() => void toggleValidation(dataset)}>{isReportOpen(dataset.id, "validation") ? "收起校验" : "运行校验"}</button>
             <button className="button" disabled={props.busy || importing} onClick={() => void toggleQuality(dataset)}>{isReportOpen(dataset.id, "quality") ? "收起报告" : "质量报告"}</button>
             <button className="button" disabled={props.busy || importing} onClick={() => setVersionTarget(dataset)}>版本管理</button>
             <button className="button dataset-delete-action" disabled={props.busy} onClick={() => setDeleteTarget(dataset)}>删除</button>
             </>}
           </div>
-          {isReportOpen(dataset.id, "validation") && validationReports[dataset.id] && <CardReport onClose={() => closeReport(dataset.id)}><ValidationPanel report={validationReports[dataset.id]} compact /></CardReport>}
           {isReportOpen(dataset.id, "quality") && qualityReports[dataset.id] && <CardReport onClose={() => closeReport(dataset.id)}><QualityPanel report={qualityReports[dataset.id]} compact /></CardReport>}
           {isReportOpen(dataset.id, "duplicates") && duplicateReports[dataset.id] && <CardReport onClose={() => closeReport(dataset.id)}><DuplicatePanel report={duplicateReports[dataset.id]} compact /></CardReport>}
         </article>; })}
@@ -922,6 +976,35 @@ export function DatasetHome(props: {
         <footer className="data-exchange-footer"><span>下载文件会由浏览器保存到默认下载目录。</span><div><button className="button" onClick={() => setExportTarget(undefined)}>取消</button><a className="button primary" href={exportUrl ?? undefined} onClick={() => setExportTarget(undefined)}>下载 {exportFormat.toUpperCase()} ZIP</a></div></footer>
       </section>
     </div>}
+    {renameTarget && (
+      <div className="modal-backdrop" role="presentation" onMouseDown={() => setRenameTarget(undefined)}>
+        <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-rename-title" onMouseDown={(event) => event.stopPropagation()}>
+          <header><div><span className="eyebrow">RENAME</span><h2 id="dataset-rename-title">重命名数据集</h2><p className="muted">仅修改名称，不影响图片、标注与版本。</p></div><button className="icon-button" onClick={() => setRenameTarget(undefined)} aria-label="关闭">×</button></header>
+          {dialogError && <p className="annotation-form-error">{dialogError}</p>}
+          <label><span>数据集名称</span><input value={renameName} autoFocus onChange={(event) => setRenameName(event.target.value)} /></label>
+          <footer><button className="button" disabled={renameBusy} onClick={() => setRenameTarget(undefined)}>取消</button><button className="button primary" disabled={renameBusy || !renameName.trim()} onClick={() => void submitRename()}>保存</button></footer>
+        </section>
+      </div>
+    )}
+
+    {modelNamingTarget && (
+      <div className="modal-backdrop" role="presentation" onMouseDown={() => setModelNamingTarget(undefined)}>
+        <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="model-naming-title" onMouseDown={(event) => event.stopPropagation()}>
+          <header><div><span className="eyebrow">MODEL NAMING</span><h2 id="model-naming-title">维护「{modelNamingTarget.name}」产出的模型名称</h2><p className="muted">修改后保存，模型库与训练记录中的名称同步更新。</p></div><button className="icon-button" onClick={() => setModelNamingTarget(undefined)} aria-label="关闭">×</button></header>
+          {dialogError && <p className="annotation-form-error">{dialogError}</p>}
+          <div className="model-naming-list">
+            {namingLoading ? <p className="muted">正在加载模型…</p> : !namingModels.length ? <p className="muted">该数据集还没有产出模型，完成一次训练后会自动出现。</p> : namingModels.map((model) => (
+              <label key={model.id}>
+                <span>{model.format.toUpperCase()} · {model.artifact_type.toUpperCase()}</span>
+                <input value={namingEdits[model.id] ?? model.name} onChange={(event) => setNamingEdits((prev) => ({ ...prev, [model.id]: event.target.value }))} />
+              </label>
+            ))}
+          </div>
+          <footer><button className="button" disabled={namingBusy} onClick={() => setModelNamingTarget(undefined)}>取消</button><button className="button primary" disabled={namingBusy || !namingModels.length} onClick={() => void saveModelNaming()}>保存</button></footer>
+        </section>
+      </div>
+    )}
+
     {deleteTarget && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
       <section className="dataset-dialog dataset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dataset-delete-dialog-title" aria-describedby="dataset-delete-dialog-description" onMouseDown={(event) => event.stopPropagation()}>
         <header><div><span className="eyebrow">DELETE DATASET</span><h2 id="dataset-delete-dialog-title">删除数据集“{deleteTarget.name}”？</h2><p id="dataset-delete-dialog-description">这会永久删除该数据集的 {deleteTarget.image_count} 张图片、类别和标注，且无法撤销。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
