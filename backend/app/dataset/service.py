@@ -29,6 +29,7 @@ def create_dataset(session: Session, payload: DatasetCreate) -> Dataset:
     dataset = Dataset(
         id=new_id("ds"),
         name=payload.name,
+        model_name=payload.model_name,
         description=payload.description,
         task_type=payload.task_type.value,
         pose_config_json=payload.pose_config.model_dump() if payload.pose_config else None,

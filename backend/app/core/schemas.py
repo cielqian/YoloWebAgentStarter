@@ -47,6 +47,7 @@ class ORMModel(BaseModel):
 
 class DatasetCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    model_name: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
     task_type: TaskType
     pose_config: PoseConfig | None = None
@@ -105,6 +106,7 @@ class DatasetFtpImportCreate(BaseModel):
 
     path: str = Field(min_length=1, max_length=1024)
     name: str = Field(min_length=1, max_length=255)
+    model_name: str | None = Field(default=None, max_length=255)
     task_type: TaskType
     format: Literal["yolo", "coco"]
     source: Literal["zip", "dir"] = "zip"
@@ -119,6 +121,7 @@ class DatasetFtpImportCreate(BaseModel):
 
 class DatasetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    model_name: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
 
     @field_validator("name")
@@ -130,6 +133,7 @@ class DatasetUpdate(BaseModel):
 class DatasetResponse(ORMModel):
     id: str
     name: str
+    model_name: str | None = None
     description: str | None
     task_type: TaskType
     # ORM 列名为 pose_config_json，API 对外统一暴露为 pose_config。

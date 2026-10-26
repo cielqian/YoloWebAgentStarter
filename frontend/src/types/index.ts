@@ -12,6 +12,7 @@ export interface PoseConfig {
 export interface Dataset {
   id: string;
   name: string;
+  model_name?: string | null;
   description: string | null;
   task_type: TaskType;
   pose_config?: PoseConfig | null;

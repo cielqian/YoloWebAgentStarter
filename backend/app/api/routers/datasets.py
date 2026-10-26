@@ -114,6 +114,7 @@ def _dataset_response(
     return DatasetResponse(
         id=dataset.id,
         name=dataset.name,
+        model_name=dataset.model_name,
         description=dataset.description,
         task_type=dataset.task_type,
         pose_config=PoseConfig.model_validate(dataset.pose_config_json) if dataset.pose_config_json else None,
@@ -204,6 +205,7 @@ def _start_async_import(
     request: Request,
     *,
     name: str,
+    model_name: str | None = None,
     task_type: TaskType,
     description: str | None,
     default_split: str,
@@ -215,6 +217,7 @@ def _start_async_import(
     placeholder = Dataset(
         id=new_id("ds"),
         name=name,
+        model_name=model_name,
         description=description,
         task_type=task_type.value,
         import_state="importing",
@@ -244,6 +247,7 @@ def _start_async_import(
 async def import_yolo_archive(
     file: UploadFile = File(...),
     name: str = Form(...),
+    model_name: str | None = Form(default=None),
     task_type: TaskType = Form(...),
     description: str | None = Form(default=None),
     default_split: SplitName = Form(default="train"),
@@ -259,14 +263,14 @@ async def import_yolo_archive(
     if not wait:
         return _start_async_import(
             session, storage, settings, request,
-            name=name, task_type=task_type, description=description,
+            name=name, model_name=model_name, task_type=task_type, description=description,
             default_split=default_split, archive_format="yolo", content=content,
         )
     dataset, imported_images, imported_annotations = import_dataset(
         session,
         storage,
         content,
-        DatasetCreate(name=name, description=description, task_type=task_type),
+        DatasetCreate(name=name, model_name=model_name or None, description=description, task_type=task_type),
         default_split,
         limits=YoloArchiveLimits(
             max_members=settings.max_yolo_archive_members,
@@ -286,6 +290,7 @@ async def import_yolo_archive(
 async def import_coco_archive(
     file: UploadFile = File(...),
     name: str = Form(...),
+    model_name: str | None = Form(default=None),
     task_type: TaskType = Form(...),
     description: str | None = Form(default=None),
     wait: bool = Query(default=True),
@@ -300,14 +305,14 @@ async def import_coco_archive(
     if not wait:
         return _start_async_import(
             session, storage, settings, request,
-            name=name, task_type=task_type, description=description,
+            name=name, model_name=model_name, task_type=task_type, description=description,
             default_split="train", archive_format="coco", content=content,
         )
     dataset, images, annotations = import_coco(
         session,
         storage,
         content,
-        DatasetCreate(name=name, description=description, task_type=task_type),
+        DatasetCreate(name=name, model_name=model_name or None, description=description, task_type=task_type),
         limits=YoloArchiveLimits(
             max_members=settings.max_yolo_archive_members,
             max_member_bytes=settings.max_yolo_archive_member_bytes,
@@ -361,14 +366,14 @@ def import_archive_from_ftp(
     if not wait:
         return _start_async_import(
             session, storage, settings, request,
-            name=payload.name, task_type=payload.task_type, description=payload.description,
+            name=payload.name, model_name=payload.model_name, task_type=payload.task_type, description=payload.description,
             default_split=payload.default_split, archive_format=payload.format,
             ftp_path=payload.path, ftp_source=payload.source,
         )
     content = _ftp_yolo_payload(settings, payload)
     if len(content) > settings.max_upload_bytes:
         raise ValidationError("upload_too_large", f"FTP 文件超过 {settings.max_upload_bytes // (1024 * 1024)} MB 导入上限。")
-    create = DatasetCreate(name=payload.name, description=payload.description, task_type=payload.task_type)
+    create = DatasetCreate(name=payload.name, model_name=payload.model_name, description=payload.description, task_type=payload.task_type)
     limits = YoloArchiveLimits(
         max_members=settings.max_yolo_archive_members,
         max_member_bytes=settings.max_yolo_archive_member_bytes,

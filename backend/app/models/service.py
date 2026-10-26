@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.ids import new_id
-from app.core.models import AutoAnnotationTask, ClassLabel, ImageItem, ModelEvaluationRecord, ModelTestRecord, ModelVersion, TrainingTask
+from app.core.models import AutoAnnotationTask, ClassLabel, Dataset, ImageItem, ModelEvaluationRecord, ModelTestRecord, ModelVersion, TrainingTask
 from app.core.storage import Storage
 from app.core.time import utc_now
 from app.models import onnx
@@ -29,6 +29,9 @@ class ModelService:
             return []
         registered: list[ModelVersion] = []
         created_ids: list[str] = []
+        dataset = session.get(Dataset, task.dataset_id)
+        # 默认命名优先取数据集的产出模型名称;未配置时退回任务名
+        naming_base = ((dataset.model_name if dataset else None) or task.name).strip()
         try:
             for artifact_type, source in (("best", task.best_model_path), ("last", task.last_model_path)):
                 if not source:
@@ -46,7 +49,7 @@ class ModelService:
                     model_id = f"model_{task.id}_{artifact_type}"
                     model = ModelVersion(
                         id=model_id,
-                        name=f"{task.name} ({artifact_type})",
+                        name=f"{naming_base} ({artifact_type})",
                         version=f"{task.id}-{artifact_type}",
                         dataset_id=task.dataset_id,
                         training_task_id=task.id,
@@ -64,8 +67,8 @@ class ModelService:
                     session.add(model)
                     session.flush()
                     created_ids.append(model_id)
-                destination = self.storage.copy_model_artifact(source_path, model.id, f"{artifact_type}.pt")
-                model.name = model.name or f"{task.name} ({artifact_type})"
+                destination = self.storage.copy_model_artifact(source_path, model.id, f"{naming_base}_{artifact_type}.pt")
+                model.name = model.name or f"{naming_base} ({artifact_type})"
                 model.dataset_id = task.dataset_id
                 model.task_type = task.task_type
                 model.format = "pt"

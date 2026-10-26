@@ -21,12 +21,13 @@ export function ImportCenterModal({
 }: {
   busy: boolean;
   onClose: () => void;
-  onArchiveImport: (file: File, name: string, taskType: TaskType, format: "yolo" | "coco") => void;
-  onFtpImport: (path: string, name: string, taskType: TaskType, format: "yolo" | "coco", source: "zip" | "dir") => void;
+  onArchiveImport: (file: File, name: string, taskType: TaskType, format: "yolo" | "coco", modelName?: string) => void;
+  onFtpImport: (path: string, name: string, taskType: TaskType, format: "yolo" | "coco", source: "zip" | "dir", modelName?: string) => void;
   onVideoCompleted: (task: VideoImportTask) => Promise<void> | void;
 }) {
   const [source, setSource] = useState<ImportSource>("yolo");
   const [name, setName] = useState("");
+  const [modelName, setModelName] = useState("");
   const [taskType, setTaskType] = useState<TaskType>("detect");
   const [archive, setArchive] = useState<File>();
   const [dragging, setDragging] = useState(false);
@@ -67,10 +68,10 @@ export function ImportCenterModal({
     if (!name.trim() || source === "video") return;
     if (origin === "ftp") {
       if (!ftpSelected) return;
-      onFtpImport(ftpSelected, name.trim(), taskType, source, ftpKind);
+      onFtpImport(ftpSelected, name.trim(), taskType, source, ftpKind, modelName.trim() || undefined);
     } else {
       if (!archive) return;
-      onArchiveImport(archive, name.trim(), taskType, source);
+      onArchiveImport(archive, name.trim(), taskType, source, modelName.trim() || undefined);
     }
     onClose();
   };
@@ -101,7 +102,7 @@ export function ImportCenterModal({
         <section className="import-center-panel">
           {source === "video" ? <VideoImportContent onClose={onClose} onCompleted={onVideoCompleted} /> : <>
             <div className="import-center-step"><span>1</span><div><strong>{activeSource.title}</strong><p>{activeSource.detail}</p></div></div>
-            <div className="exchange-fields"><label>数据集名称<input value={name} placeholder="例如：road-signs" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option>{source === "yolo" && <option value="pose">关键点检测（Pose）</option>}</select></label>{taskType === "pose" && source === "coco" && <p className="annotation-form-error">COCO 格式暂不支持 pose，请选择 YOLO 来源。</p>}</div>
+            <div className="exchange-fields"><label>数据集名称<input value={name} placeholder="例如：road-signs" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>产出模型名称（选填）<input value={modelName} placeholder="例如：blade-detector；训练产出的模型默认用此命名" onChange={(event) => setModelName(event.target.value)} /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option>{source === "yolo" && <option value="pose">关键点检测（Pose）</option>}</select></label>{taskType === "pose" && source === "coco" && <p className="annotation-form-error">COCO 格式暂不支持 pose，请选择 YOLO 来源。</p>}</div>
             <div className="import-origin-toggle" role="group" aria-label="文件来源">
               <button type="button" className={origin === "local" ? "active" : ""} onClick={() => setOrigin("local")}>本机文件</button>
               <button type="button" className={origin === "ftp" ? "active" : ""} onClick={() => setOrigin("ftp")}>FTP 选择</button>

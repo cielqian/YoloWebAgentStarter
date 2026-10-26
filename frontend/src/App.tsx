@@ -448,14 +448,14 @@ export default function App() {
         <DatasetHome
           datasets={datasets}
           busy={busy}
-          onCreate={(name, taskType, poseConfig) => run(async () => { const dataset = await api.createDataset(name, taskType, undefined, poseConfig); await refreshDatasets(); await loadDataset(dataset); setNotice("数据集已创建"); })}
+          onCreate={(name, taskType, poseConfig, modelName) => run(async () => { const dataset = await api.createDataset(name, taskType, undefined, poseConfig, modelName); await refreshDatasets(); await loadDataset(dataset); setNotice("数据集已创建"); })}
           onClone={(datasetId, versionId, cloneName) => run(async () => {
             const result = versionId ? await api.cloneDatasetVersion(datasetId, versionId, cloneName) : await api.cloneDataset(datasetId, cloneName);
             await refreshDatasets();
             setNotice(`已克隆为“${result.dataset.name}”：复制 ${result.imported_images} 张图片、${result.imported_annotations} 条标注${result.skipped_images ? `，${result.skipped_images} 张因文件缺失被跳过` : ""}`);
           })}
-          onImport={(file, name, taskType, format) => run(async () => { const result = format === "coco" ? await api.importCoco(file, name, taskType, false) : await api.importYolo(file, name, taskType, false); await refreshDatasets(); setNotice(`已开始导入「${result.dataset.name}」，进度见数据集列表。`); })}
-          onFtpImport={(path, name, taskType, format, source) => run(async () => { const result = await api.importDatasetFromFtp({ path, name, task_type: taskType, format, source }, false); await refreshDatasets(); setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}导入「${result.dataset.name}」，进度见数据集列表。`); })}
+          onImport={(file, name, taskType, format, modelName) => run(async () => { const result = format === "coco" ? await api.importCoco(file, name, taskType, false, modelName) : await api.importYolo(file, name, taskType, false, modelName); await refreshDatasets(); setNotice(`已开始导入「${result.dataset.name}」，进度见数据集列表。`); })}
+          onFtpImport={(path, name, taskType, format, source, modelName) => run(async () => { const result = await api.importDatasetFromFtp({ path, name, ...(modelName ? { model_name: modelName } : {}), task_type: taskType, format, source }, false); await refreshDatasets(); setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}导入「${result.dataset.name}」，进度见数据集列表。`); })}
           onCancelImport={(dataset) => run(async () => { await api.cancelDatasetImport(dataset.id); await refreshDatasets(); setNotice(`已请求停止「${dataset.name}」的导入。`); })}
           onQuality={(dataset) => runResult(() => api.qualityReport(dataset.id))}
           onAskAgent={(dataset) => { setAgentFocus({ dataset: { id: dataset.id, name: dataset.name } }); setView("agent"); }}
@@ -527,10 +527,10 @@ export default function App() {
 export function DatasetHome(props: {
   datasets: Dataset[];
   busy: boolean;
-  onCreate: (name: string, type: TaskType, poseConfig?: { kpt_count: number; kpt_dim: number }) => void;
+  onCreate: (name: string, type: TaskType, poseConfig?: { kpt_count: number; kpt_dim: number }, modelName?: string) => void;
   onClone: (datasetId: string, versionId: string | null, name: string) => void;
-  onImport: (file: File, name: string, type: TaskType, format: "yolo" | "coco") => void;
-  onFtpImport: (path: string, name: string, type: TaskType, format: "yolo" | "coco", source: "zip" | "dir") => void;
+  onImport: (file: File, name: string, type: TaskType, format: "yolo" | "coco", modelName?: string) => void;
+  onFtpImport: (path: string, name: string, type: TaskType, format: "yolo" | "coco", source: "zip" | "dir", modelName?: string) => void;
   onMergeYolo: (dataset: Dataset, file: File) => void;
   onMergeYoloFromFtp: (dataset: Dataset, path: string, source: "zip" | "dir") => void;
   onCancelImport: (dataset: Dataset) => void;
@@ -608,11 +608,8 @@ export function DatasetHome(props: {
   const [renameTarget, setRenameTarget] = useState<Dataset>();
   const [renameName, setRenameName] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
-  const [modelNamingTarget, setModelNamingTarget] = useState<Dataset>();
-  const [namingModels, setNamingModels] = useState<ModelVersion[]>([]);
-  const [namingEdits, setNamingEdits] = useState<Record<string, string>>({});
-  const [namingLoading, setNamingLoading] = useState(false);
-  const [namingBusy, setNamingBusy] = useState(false);
+  const [createModelName, setCreateModelName] = useState("");
+  const [renameModelName, setRenameModelName] = useState("");
   const [dialogError, setDialogError] = useState("");
   const toggleQuality = async (dataset: Dataset) => {
     if (isReportOpen(dataset.id, "quality")) return closeReport(dataset.id);
@@ -627,56 +624,25 @@ export function DatasetHome(props: {
     if (report) { setDuplicateReports((items) => ({ ...items, [dataset.id]: report })); openReport(dataset.id, "duplicates"); }
   };
 
-  const openRename = (dataset: Dataset) => {
+  const openBasicInfo = (dataset: Dataset) => {
     setRenameTarget(dataset);
     setRenameName(dataset.name);
+    setRenameModelName(dataset.model_name ?? "");
     setDialogError("");
   };
 
-  const submitRename = async () => {
+  const submitBasicInfo = async () => {
     if (!renameTarget || !renameName.trim()) return;
     setRenameBusy(true);
     setDialogError("");
     try {
-      await api.updateDataset(renameTarget.id, { name: renameName.trim() });
+      await api.updateDataset(renameTarget.id, { name: renameName.trim(), model_name: renameModelName.trim() || null });
       setRenameTarget(undefined);
       props.onVersionsChange?.();
     } catch (reason) {
-      setDialogError(reason instanceof Error ? reason.message : "重命名失败");
-    } finally {
-      setRenameBusy(false);
-    }
-  };
-
-  const openModelNaming = async (dataset: Dataset) => {
-    setModelNamingTarget(dataset);
-    setNamingModels([]);
-    setNamingEdits({});
-    setDialogError("");
-    setNamingLoading(true);
-    try {
-      const result = await api.listModels(dataset.id, true);
-      setNamingModels(result.items);
-    } catch (reason) {
-      setDialogError(reason instanceof Error ? reason.message : "模型列表加载失败");
-    } finally {
-      setNamingLoading(false);
-    }
-  };
-
-  const saveModelNaming = async () => {
-    setNamingBusy(true);
-    setDialogError("");
-    try {
-      for (const model of namingModels) {
-        const next = (namingEdits[model.id] ?? model.name).trim();
-        if (next && next !== model.name) await api.updateModel(model.id, { name: next });
-      }
-      setModelNamingTarget(undefined);
-    } catch (reason) {
       setDialogError(reason instanceof Error ? reason.message : "保存失败");
     } finally {
-      setNamingBusy(false);
+      setRenameBusy(false);
     }
   };
 
@@ -728,9 +694,9 @@ export function DatasetHome(props: {
       const count = Number(kptCount);
       const dim = Number(kptDim);
       if (!Number.isInteger(count) || count < 1 || count > 133 || (dim !== 2 && dim !== 3)) return;
-      props.onCreate(name.trim(), taskType, { kpt_count: count, kpt_dim: dim });
+      props.onCreate(name.trim(), taskType, { kpt_count: count, kpt_dim: dim }, createModelName.trim() || undefined);
     } else {
-      props.onCreate(name.trim(), taskType);
+      props.onCreate(name.trim(), taskType, undefined, createModelName.trim() || undefined);
     }
     closeDialog();
   };
@@ -837,8 +803,7 @@ export function DatasetHome(props: {
             {importing || merging ? <button className="button danger" disabled={props.busy} onClick={() => props.onCancelImport?.(dataset)}>{importing ? "停止导入" : "停止合并"}</button> : failedImport ? <button className="button dataset-delete-action" disabled={props.busy} onClick={() => setDeleteTarget(dataset)}>删除</button> : <>
             {props.onAskAgent ? <button className="button" disabled={props.busy || importing} onClick={() => props.onAskAgent?.(dataset)}>{props.agentLabel ?? "询问助手"}</button> : null}
             <button className="button" disabled={props.busy || importing || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>添加图片</button>
-            <button className="button" disabled={props.busy || importing} onClick={() => setRenameTarget(dataset)}>重命名</button>
-            <button className="button" disabled={props.busy || importing} onClick={() => void openModelNaming(dataset)}>模型命名</button>
+            <button className="button" disabled={props.busy || importing} onClick={() => openBasicInfo(dataset)}>基础信息维护</button>
             <button className="button" disabled={props.busy || importing} onClick={() => props.onTrain(dataset)}>训练</button>
             <button className="button dataset-auto-annotation-action" disabled={props.busy || importing || !dataset.image_count || isHistoricalActive(dataset)} onClick={() => setAutoAnnotationTarget(dataset)}>自动标注</button>
             <button className="button" disabled={props.busy || importing || !dataset.image_count} onClick={() => openExport(dataset)}>导出数据</button>
@@ -864,7 +829,7 @@ export function DatasetHome(props: {
           <button role="tab" aria-selected={createMode === "clone"} className={createMode === "clone" ? "active" : ""} onClick={() => { setCreateMode("clone"); if (!cloneSourceId && props.datasets[0]) setCloneSourceId(props.datasets[0].id); }}>从现有版本克隆</button>
         </div>
         {createMode === "blank" ? (
-          <div className="exchange-fields"><label>数据集名称<input value={name} placeholder="例如：my-dataset" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option><option value="pose">关键点检测（Pose）</option></select></label>{taskType === "pose" && <><label>关键点数量<input type="number" min={1} max={133} value={kptCount} onChange={(event) => setKptCount(event.target.value)} /></label><label>关键点维度<select value={kptDim} onChange={(event) => setKptDim(event.target.value)}><option value="3">x, y, 可见性（推荐）</option><option value="2">x, y</option></select></label></>}</div>
+          <div className="exchange-fields"><label>数据集名称<input value={name} placeholder="例如：my-dataset" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>产出模型名称（选填）<input value={createModelName} placeholder="例如：blade-detector；训练产出的模型默认用此命名" onChange={(event) => setCreateModelName(event.target.value)} /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option><option value="pose">关键点检测（Pose）</option></select></label>{taskType === "pose" && <><label>关键点数量<input type="number" min={1} max={133} value={kptCount} onChange={(event) => setKptCount(event.target.value)} /></label><label>关键点维度<select value={kptDim} onChange={(event) => setKptDim(event.target.value)}><option value="3">x, y, 可见性（推荐）</option><option value="2">x, y</option></select></label></>}</div>
         ) : (
           <>
             <div className="exchange-fields">
@@ -978,29 +943,12 @@ export function DatasetHome(props: {
     </div>}
     {renameTarget && (
       <div className="modal-backdrop" role="presentation" onMouseDown={() => setRenameTarget(undefined)}>
-        <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-rename-title" onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><span className="eyebrow">RENAME</span><h2 id="dataset-rename-title">重命名数据集</h2><p className="muted">仅修改名称，不影响图片、标注与版本。</p></div><button className="icon-button" onClick={() => setRenameTarget(undefined)} aria-label="关闭">×</button></header>
+        <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-basic-info-title" onMouseDown={(event) => event.stopPropagation()}>
+          <header><div><span className="eyebrow">BASIC INFO</span><h2 id="dataset-basic-info-title">基础信息维护 · {renameTarget.name}</h2><p className="muted">名称用于列表展示；产出模型名称将作为该数据集训练产出模型的默认命名（未填写时使用任务名）。</p></div><button className="icon-button" onClick={() => setRenameTarget(undefined)} aria-label="关闭">×</button></header>
           {dialogError && <p className="annotation-form-error">{dialogError}</p>}
           <label><span>数据集名称</span><input value={renameName} autoFocus onChange={(event) => setRenameName(event.target.value)} /></label>
-          <footer><button className="button" disabled={renameBusy} onClick={() => setRenameTarget(undefined)}>取消</button><button className="button primary" disabled={renameBusy || !renameName.trim()} onClick={() => void submitRename()}>保存</button></footer>
-        </section>
-      </div>
-    )}
-
-    {modelNamingTarget && (
-      <div className="modal-backdrop" role="presentation" onMouseDown={() => setModelNamingTarget(undefined)}>
-        <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="model-naming-title" onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><span className="eyebrow">MODEL NAMING</span><h2 id="model-naming-title">维护「{modelNamingTarget.name}」产出的模型名称</h2><p className="muted">修改后保存，模型库与训练记录中的名称同步更新。</p></div><button className="icon-button" onClick={() => setModelNamingTarget(undefined)} aria-label="关闭">×</button></header>
-          {dialogError && <p className="annotation-form-error">{dialogError}</p>}
-          <div className="model-naming-list">
-            {namingLoading ? <p className="muted">正在加载模型…</p> : !namingModels.length ? <p className="muted">该数据集还没有产出模型，完成一次训练后会自动出现。</p> : namingModels.map((model) => (
-              <label key={model.id}>
-                <span>{model.format.toUpperCase()} · {model.artifact_type.toUpperCase()}</span>
-                <input value={namingEdits[model.id] ?? model.name} onChange={(event) => setNamingEdits((prev) => ({ ...prev, [model.id]: event.target.value }))} />
-              </label>
-            ))}
-          </div>
-          <footer><button className="button" disabled={namingBusy} onClick={() => setModelNamingTarget(undefined)}>取消</button><button className="button primary" disabled={namingBusy || !namingModels.length} onClick={() => void saveModelNaming()}>保存</button></footer>
+          <label><span>产出模型名称</span><input value={renameModelName} placeholder="例如：blade-detector" onChange={(event) => setRenameModelName(event.target.value)} /></label>
+          <footer><button className="button" disabled={renameBusy} onClick={() => setRenameTarget(undefined)}>取消</button><button className="button primary" disabled={renameBusy || !renameName.trim()} onClick={() => void submitBasicInfo()}>保存</button></footer>
         </section>
       </div>
     )}

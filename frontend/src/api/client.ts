@@ -216,11 +216,11 @@ export const api = {
   deleteSourceTag: (datasetId: string, tagId: string) =>
     request<void>(`/api/source-datasets/${datasetId}/tags/${tagId}`, { method: "DELETE" }),
   listDatasets: () => request<Dataset[]>("/api/datasets"),
-  createDataset: (name: string, taskType: TaskType, description?: string, poseConfig?: { kpt_count: number; kpt_dim: number }) =>
-    request<Dataset>("/api/datasets", json({ name, task_type: taskType, description: description || null, ...(poseConfig ? { pose_config: poseConfig } : {}) })),
+  createDataset: (name: string, taskType: TaskType, description?: string, poseConfig?: { kpt_count: number; kpt_dim: number }, modelName?: string) =>
+    request<Dataset>("/api/datasets", json({ name, task_type: taskType, description: description || null, ...(poseConfig ? { pose_config: poseConfig } : {}), ...(modelName?.trim() ? { model_name: modelName.trim() } : {}) })),
   deleteDataset: (datasetId: string) => request<void>(`/api/datasets/${datasetId}`, { method: "DELETE" }),
   listDatasetVersions: (datasetId: string) => request<DatasetVersion[]>(`/api/datasets/${datasetId}/versions`),
-  updateDataset: (datasetId: string, payload: { name?: string; description?: string | null }) =>
+  updateDataset: (datasetId: string, payload: { name?: string; model_name?: string | null; description?: string | null }) =>
     request<Dataset>(`/api/datasets/${datasetId}`, json(payload, "PATCH")),
   getDatasetSplitCounts: (datasetId: string) => request<Record<string, number>>(`/api/datasets/${datasetId}/split-counts`),
   createDatasetVersion: (datasetId: string, note?: string) =>
@@ -324,11 +324,12 @@ export const api = {
   getVideoImport: (taskId: string) => request<VideoImportTask>(`/api/video-imports/${taskId}`),
   startVideoImport: (taskId: string) => request<VideoImportTask>(`/api/video-imports/${taskId}/start`, { method: "POST" }),
   retryVideoImport: (taskId: string) => request<VideoImportTask>(`/api/video-imports/${taskId}/retry`, { method: "POST" }),
-  importYolo: async (file: File, name: string, taskType: TaskType, wait = true) => {
+  importYolo: async (file: File, name: string, taskType: TaskType, wait = true, modelName?: string) => {
     const form = new FormData();
     form.append("file", file);
     form.append("name", name);
     form.append("task_type", taskType);
+    if (modelName?.trim()) form.append("model_name", modelName.trim());
     return request<DatasetImportResult>(`/api/datasets/import/yolo${wait ? "" : "?wait=false"}`, {
       method: "POST",
       body: form,
@@ -350,11 +351,11 @@ export const api = {
     return request<{ dataset: Dataset }>(`/api/datasets/${datasetId}/images/upload-yolo`, { method: "POST", body: form });
   },
   cancelDatasetImport: (datasetId: string) => request<Dataset>(`/api/datasets/${datasetId}/import/cancel`, json({})),
-  importDatasetFromFtp: (payload: { path: string; name: string; task_type: TaskType; format: "yolo" | "coco"; source?: "zip" | "dir"; description?: string }, wait = true) =>
+  importDatasetFromFtp: (payload: { path: string; name: string; model_name?: string; task_type: TaskType; format: "yolo" | "coco"; source?: "zip" | "dir"; description?: string }, wait = true) =>
     request<DatasetImportResult>(`/api/datasets/import/from-ftp${wait ? "" : "?wait=false"}`, json(payload)),
   exportYoloUrl: (datasetId: string) => apiUrl(`/api/datasets/${datasetId}/export/yolo`),
   exportCocoUrl: (datasetId: string) => apiUrl(`/api/datasets/${datasetId}/export/coco`),
-  importCoco: async (file: File, name: string, taskType: TaskType, wait = true) => { const form = new FormData(); form.append("file", file); form.append("name", name); form.append("task_type", taskType); return request<DatasetImportResult>(`/api/datasets/import/coco${wait ? "" : "?wait=false"}`, { method: "POST", body: form }); },
+  importCoco: async (file: File, name: string, taskType: TaskType, wait = true, modelName?: string) => { const form = new FormData(); form.append("file", file); form.append("name", name); form.append("task_type", taskType); if (modelName?.trim()) form.append("model_name", modelName.trim()); return request<DatasetImportResult>(`/api/datasets/import/coco${wait ? "" : "?wait=false"}`, { method: "POST", body: form }); },
   tileDataset: (datasetId: string, data: { name: string; description?: string; tile_size: number; overlap: number; keep_empty_tiles: boolean }) => request<{ dataset_id: string; source_dataset_id: string; generated_images: number; generated_annotations: number; skipped_empty_tiles: number }>(`/api/datasets/${datasetId}/tile`, json(data)),
   listTrainingTasks: (datasetId?: string, datasetVersion?: number) => {
     const params = new URLSearchParams();

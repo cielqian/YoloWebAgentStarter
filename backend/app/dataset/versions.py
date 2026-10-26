@@ -276,7 +276,7 @@ def clone_version(
             raise NotFoundError("dataset_version_snapshot_missing", "版本快照文件缺失，无法克隆。")
         payload = _read_snapshot(path)
 
-    target = Dataset(id=new_id("ds"), name=name, description=description, task_type=source.task_type, pose_config_json=source.pose_config_json)
+    target = Dataset(id=new_id("ds"), name=name, model_name=source.model_name, description=description, task_type=source.task_type, pose_config_json=source.pose_config_json)
     session.add(target)
 
     class_ids = {item["id"]: new_id("cls") for item in payload["classes"]}

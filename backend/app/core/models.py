@@ -20,6 +20,7 @@ class Dataset(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    model_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     task_type: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
     # pose 数据集的骨架配置：kpt_count / kpt_dim / kpt_names / skeleton；其余任务为 NULL。
