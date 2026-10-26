@@ -2442,21 +2442,33 @@ button.training-remote-device-card:hover:not(:disabled) { border-color: var(--bo
   .training-record-actions { margin-left: auto; }
 }
 
-.training-ws-check .tcc-toggle-pair {
-  display: grid;
-  gap: 4px;
-  align-content: start;
+.training-ws-check-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid #e6e9f0;
+  border-radius: 8px;
+  background: #f8f9fc;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: #43506a;
 }
 
-.training-ws-check input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+.training-ws-check-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
   padding: 0;
   accent-color: #3157d5;
+  cursor: pointer;
 }
 
-.training-ws-check small {
-  font-size: 10px;
+.training-ws-check-row small {
+  flex: 1;
+  font-size: 11px;
   font-weight: 500;
   color: #8a94a6;
   line-height: 1.4;

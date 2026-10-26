@@ -240,6 +240,15 @@ export function TrainingConfigPanel({
                 {IMG_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}px</option>)}
               </select>
             </label>
+            <label className="training-ws-check-row">
+              <input
+                type="checkbox"
+                checked={form.include_unannotated}
+                onChange={(event) => setForm((prev) => ({ ...prev, include_unannotated: event.target.checked }))}
+              />
+              <span>包含未标注图片</span>
+              <small>未标注图片生成空标签文件，作为背景样本参与训练与验证；不勾选则跳过</small>
+            </label>
           </div>
           <p className="tcc-model-hint training-ws-field-wide" role="note">
             首次使用 {form.model} 时，Ultralytics 可能下载对应权重。请确认适用许可后再训练。
@@ -281,17 +290,6 @@ export function TrainingConfigPanel({
               <label className="training-ws-field">
                 <span>Workers</span>
                 <input type="number" min={0} value={form.workers} onChange={(event) => setForm((prev) => ({ ...prev, workers: Number(event.target.value) }))} />
-              </label>
-              <label className="training-ws-field training-ws-check">
-                <span>包含未标注图片</span>
-                <label className="tcc-toggle-pair">
-                  <input
-                    type="checkbox"
-                    checked={form.include_unannotated}
-                    onChange={(event) => setForm((prev) => ({ ...prev, include_unannotated: event.target.checked }))}
-                  />
-                  <small>未标注图片生成空标签文件，作为背景样本参与训练与验证（YOLO 语义）。不勾选则跳过未标注图片。</small>
-                </label>
               </label>
             </div>
           )}
