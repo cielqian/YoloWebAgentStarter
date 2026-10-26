@@ -9,6 +9,7 @@ import {
   PRESETS,
   applyTaskToForm,
   defaultForm,
+  defaultTaskName,
   defaultRemoteSelection,
   defaultModelFor,
   estimateMinutes,
@@ -124,11 +125,8 @@ export function TrainingView({
     api.listDatasetVersions(activeDataset.id)
       .then((versions) => { if (!cancelled) setDatasetVersions(versions); })
       .catch(() => { if (!cancelled) setDatasetVersions([]); });
-    const stamp = new Date();
-    const pad = (value: number) => String(value).padStart(2, "0");
-    const defaultName = `${activeDataset.name}_${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}_${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}`;
     setForm((prev) => {
-      const base = { ...defaultForm(activeDataset.task_type), name: defaultName };
+      const base = { ...defaultForm(activeDataset.task_type), name: defaultTaskName(activeDataset.name) };
       const selection = defaultRemoteSelection(devicesRef.current);
       return selection ? { ...base, ...selection } : base;
     });
@@ -344,7 +342,7 @@ export function TrainingView({
     // 从任务记录复用配置时切到该任务的数据集，任务类型才能与提交的数据集匹配。
     const taskDataset = datasets.find((item) => item.id === task.dataset_id);
     if (taskDataset && taskDataset.id !== activeDataset?.id) onDatasetChange(taskDataset);
-    setForm(applyTaskToForm(task));
+    setForm(applyTaskToForm(task, defaultTaskName(taskDataset?.name ?? task.dataset_id)));
     setAdvancedOpen(true);
     setMode("create");
     setNotice(`已填入「${task.name}」的配置，可直接调整后提交。`);

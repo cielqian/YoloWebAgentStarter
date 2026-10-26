@@ -144,13 +144,19 @@ export function estimateOptimizerSteps(epochs: number, imageCount: number, batch
   return Math.max(1, Math.ceil(Math.max(imageCount, 1) / Math.max(batchSize, 1)) * epochs);
 }
 
-export function applyTaskToForm(task: TrainingTask): TrainingFormState {
+export function defaultTaskName(datasetName: string): string {
+  const stamp = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${datasetName}_${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}_${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}`;
+}
+
+export function applyTaskToForm(task: TrainingTask, name: string): TrainingFormState {
   const device = task.device || "auto";
   const isRemote = Boolean(task.node_id);
   const isCudaList = /^\d+(,\d+)*$/.test(device);
   const gpuIds = !isRemote && isCudaList ? device.split(",") : [];
   return {
-    name: `${task.name}-retry`,
+    name,
     dataset_version_number: task.dataset_version_number ?? null,
     model: task.model_name,
     epochs: task.epochs,
