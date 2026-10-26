@@ -391,6 +391,7 @@ export interface TrainingTask {
   id: string;
   dataset_id: string;
   dataset_version_number?: number | null;
+  include_unannotated?: boolean;
   profile_id: string | null;
   name: string;
   status: TrainingStatus;

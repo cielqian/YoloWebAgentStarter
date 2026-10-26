@@ -242,6 +242,7 @@ export function TrainingView({
       const task = await api.createTrainingTask({
         dataset_id: activeDataset.id,
         dataset_version_number: form.dataset_version_number,
+        include_unannotated: form.include_unannotated,
         name: form.name.trim() || `${activeDataset.name}_${Date.now()}`,
         model: form.model.trim() || defaultModelFor(activeDataset.task_type),
         task_type: activeDataset.task_type as TaskType,

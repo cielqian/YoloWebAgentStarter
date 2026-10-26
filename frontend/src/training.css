@@ -2441,3 +2441,23 @@ button.training-remote-device-card:hover:not(:disabled) { border-color: var(--bo
   .training-record-progress { width: 100%; order: 5; }
   .training-record-actions { margin-left: auto; }
 }
+
+.training-ws-check .tcc-toggle-pair {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.training-ws-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: #3157d5;
+}
+
+.training-ws-check small {
+  font-size: 10px;
+  font-weight: 500;
+  color: #8a94a6;
+  line-height: 1.4;
+}

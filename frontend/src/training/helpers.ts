@@ -17,6 +17,7 @@ export const IMG_SIZE_OPTIONS = [320, 416, 512, 640, 768, 896, 1024];
 export interface TrainingFormState {
   name: string;
   dataset_version_number: number | null;
+  include_unannotated: boolean;
   model: string;
   epochs: number;
   batch_size: number;
@@ -56,6 +57,7 @@ export function defaultForm(taskType: TaskType): TrainingFormState {
   return {
     name: "local-training",
     dataset_version_number: null,
+    include_unannotated: false,
     model: defaultModelFor(taskType),
     epochs: preset.epochs,
     batch_size: preset.batch_size,
@@ -158,6 +160,7 @@ export function applyTaskToForm(task: TrainingTask, name: string): TrainingFormS
   return {
     name,
     dataset_version_number: task.dataset_version_number ?? null,
+    include_unannotated: Boolean(task.include_unannotated),
     model: task.model_name,
     epochs: task.epochs,
     batch_size: task.batch_size,

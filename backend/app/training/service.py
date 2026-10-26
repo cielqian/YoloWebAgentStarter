@@ -137,6 +137,7 @@ class TrainingService:
             payload.device = DeviceService().normalize_selector(payload.device)
         dataset = get_dataset(session, payload.dataset_id)
         dataset_version_number = resolve_dataset_version(session, dataset.id, payload.dataset_version_number)
+        include_unannotated = bool(payload.include_unannotated)
         task_type = payload.task_type or TaskType(dataset.task_type)
         if task_type.value != dataset.task_type:
             raise ValidationError("task_type_mismatch", "Training task type must match the dataset task type.")
@@ -162,8 +163,8 @@ class TrainingService:
         try:
             if resume_checkpoint is not None:
                 model_reference = str(resume_checkpoint)
-            export = export_training_data(session, self.storage, dataset, dataset_version_number, export_root)
-            self._validate_export_training_splits(export, dataset.task_type, payload.device)
+            export = export_training_data(session, self.storage, dataset, dataset_version_number, export_root, include_unannotated=include_unannotated)
+            self._validate_export_training_splits(export, dataset.task_type, payload.device, include_unannotated=include_unannotated)
             data_yaml = str(export["data_yaml"])
             export_stats = {
                 key: export.get(key)
@@ -203,6 +204,7 @@ class TrainingService:
                 id=resolved_task_id,
                 dataset_id=dataset.id,
                 dataset_version_number=dataset_version_number,
+                include_unannotated=include_unannotated,
                 name=payload.name.strip(),
                 status="pending",
                 task_type=task_type.value,
@@ -368,6 +370,7 @@ class TrainingService:
             id=resolved_task_id,
             dataset_id=dataset.id,
             dataset_version_number=resolve_dataset_version(session, dataset.id, payload.dataset_version_number),
+            include_unannotated=bool(payload.include_unannotated),
             name=payload.name.strip(),
             status="dispatching",
             task_type=task_type.value,
@@ -649,8 +652,11 @@ class TrainingService:
             raise ValidationError("training_classes_missing", "Training requires at least one class label.")
 
     @staticmethod
-    def _validate_export_training_splits(export: dict[str, object], task_type: str, device: str | None = None) -> None:
+    def _validate_export_training_splits(export: dict[str, object], task_type: str, device: str | None = None, include_unannotated: bool = False) -> None:
         annotated_image_counts = dict(export.get("annotated_image_counts") or {})
+        if include_unannotated:
+            # 未标注图片以空标签参与训练/验证,门槛按总图片数评估
+            annotated_image_counts = dict(export.get("total_image_counts") or {})
         if device:
             from app.training.runtime.remote_training import parse_remote_device_set
 
@@ -705,12 +711,14 @@ def export_training_data(
     dataset: Dataset,
     dataset_version_number: int | None,
     export_root: Path,
+    *,
+    include_unannotated: bool = False,
 ) -> dict[str, object]:
     """训练数据导出：激活版本（或无版本）走当前工作区，历史版本走快照导出。"""
     from app.dataset.exchange.yolo import export_dataset_directory, export_dataset_version_directory
 
     if dataset_version_number is None:
-        return export_dataset_directory(session, storage, dataset.id, export_root)
+        return export_dataset_directory(session, storage, dataset.id, export_root, include_unannotated=include_unannotated)
     from app.core.models import DatasetVersion
 
     active = session.scalar(
@@ -719,8 +727,8 @@ def export_training_data(
         )
     )
     if active == dataset_version_number:
-        return export_dataset_directory(session, storage, dataset.id, export_root)
-    return export_dataset_version_directory(session, storage, dataset.id, dataset_version_number, export_root)
+        return export_dataset_directory(session, storage, dataset.id, export_root, include_unannotated=include_unannotated)
+    return export_dataset_version_directory(session, storage, dataset.id, dataset_version_number, export_root, include_unannotated=include_unannotated)
 
 
 def task_response(task: TrainingTask) -> TrainingTaskResponse:

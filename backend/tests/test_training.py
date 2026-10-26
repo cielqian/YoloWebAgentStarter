@@ -906,7 +906,18 @@ def test_remote_multi_gpu_device_selection(client, monkeypatch):
         "/api/training/nodes",
         json={"name": "gpu-01", "url": "http://gpu-01:8010", "token": "secret", "enabled": True},
     ).json()
-    dataset_id, _ = prepared_dataset(client)
+    dataset_id, label = prepared_dataset(client)
+    # 双卡门槛:验证集已标注图片需 ≥ 2×卡数,补足样本
+    for index in range(6):
+        extra = client.post(
+            f"/api/datasets/{dataset_id}/images/upload",
+            data={"split": "val"},
+            files=[("files", (f"val-multi-{index}.png", image_bytes(), "image/png"))],
+        ).json()["items"][0]
+        client.put(
+            f"/api/datasets/{dataset_id}/images/{extra['id']}/annotations",
+            json={"annotations": [{"type": "bbox", "class_id": label, "bbox": {"x": 5, "y": 5, "width": 25, "height": 20}}]},
+        )
 
     created = client.post(
         "/api/training/tasks",

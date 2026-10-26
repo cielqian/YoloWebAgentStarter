@@ -282,6 +282,17 @@ export function TrainingConfigPanel({
                 <span>Workers</span>
                 <input type="number" min={0} value={form.workers} onChange={(event) => setForm((prev) => ({ ...prev, workers: Number(event.target.value) }))} />
               </label>
+              <label className="training-ws-field training-ws-check">
+                <span>包含未标注图片</span>
+                <label className="tcc-toggle-pair">
+                  <input
+                    type="checkbox"
+                    checked={form.include_unannotated}
+                    onChange={(event) => setForm((prev) => ({ ...prev, include_unannotated: event.target.checked }))}
+                  />
+                  <small>未标注图片生成空标签文件，作为背景样本参与训练与验证（YOLO 语义）。不勾选则跳过未标注图片。</small>
+                </label>
+              </label>
             </div>
           )}
         </div>

@@ -382,6 +382,7 @@ export const api = {
   createTrainingTask: (payload: {
     dataset_id: string;
     dataset_version_number?: number | null;
+    include_unannotated?: boolean;
     name: string;
     model: string;
     task_type: TaskType;

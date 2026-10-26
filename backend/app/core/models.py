@@ -210,6 +210,7 @@ class TrainingTask(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True, nullable=False)
     dataset_version_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    include_unannotated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     profile_id: Mapped[str | None] = mapped_column(ForeignKey("training_profiles.id", ondelete="SET NULL"), index=True, nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True, nullable=False)
