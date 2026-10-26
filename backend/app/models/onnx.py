@@ -14,8 +14,7 @@ def export_fp32_onnx(source_path: Path, output_path: Path) -> Path:
         imgsz=640,
         batch=1,
         dynamic=False,
-        simplify=False,
-        half=False,
+        simplify=True,
         nms=False,
         opset=18,
     )
