@@ -34,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.5"
+AGENT_VERSION = "0.4.6"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -280,8 +280,8 @@ class TaskManager:
             "img_size": int(spec.get("img_size") or 640),
             "batch_size": int(spec.get("batch_size") or 16),
             "device": str(spec.get("device") or "auto"),
-            "workers": int(spec.get("workers") or 2),
-            "seed": int(spec.get("seed") or 42),
+            "workers": 2 if spec.get("workers") is None else max(0, int(spec["workers"])),
+            "seed": 42 if spec.get("seed") is None else int(spec["seed"]),
             "optimizer": spec.get("optimizer"),
             "lr0": spec.get("lr0"),
             "patience": spec.get("patience"),
