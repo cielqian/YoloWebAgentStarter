@@ -1548,95 +1548,75 @@
 .model-table-actions { text-align: right; }
 .model-table-actions .model-action-btn { margin-left: 6px; }
 
-/* ---- 模型库:数据集→版本 树形导航 + 版本面板 ---- */
-.models-workspace-split {
-  display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.models-tree {
-  background: #fff;
-  border: 1px solid #e6e9f0;
-  border-radius: 12px;
-  padding: 8px;
-  position: sticky;
-  top: 16px;
-}
-
-.models-tree-dataset {
-  border-radius: 8px;
-}
-
-.models-tree-dataset-btn {
-  width: 100%;
+/* ---- 模型库:数据集→版本 下钻导航 ---- */
+.models-crumb {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.models-crumb button {
   border: 0;
-  border-radius: 8px;
   background: transparent;
+  color: #4a5568;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.models-crumb button:hover {
+  background: #f4f6fb;
+  color: #1f3c88;
+}
+
+.models-crumb strong {
+  color: #1f3c88;
+}
+
+.models-crumb > span {
+  color: #a0a8b8;
+}
+
+.models-drill-list {
+  display: grid;
+  gap: 8px;
+}
+
+.models-drill-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #e6e9f0;
+  border-radius: 10px;
+  padding: 12px 16px;
   cursor: pointer;
   font-size: 13px;
 }
 
-.models-tree-dataset-btn:hover {
-  background: #f4f6fb;
+.models-drill-row:hover {
+  border-color: #b9c6e4;
+  background: #f8faff;
 }
 
-.models-tree-dataset.current > .models-tree-dataset-btn {
-  background: #eef3ff;
-  color: #1f3c88;
+.models-drill-row strong {
+  min-width: 160px;
 }
 
-.models-tree-dataset-btn em {
-  font-style: normal;
-  font-size: 11px;
-  font-weight: 700;
-  background: #eef0f4;
-  color: #68748a;
-  border-radius: 999px;
-  padding: 1px 8px;
-}
-
-.models-tree-versions {
-  padding: 2px 0 6px 10px;
-  display: grid;
-  gap: 2px;
-}
-
-.models-tree-version {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
-  color: #4a5568;
-  text-align: left;
-}
-
-.models-tree-version:hover {
-  background: #f4f6fb;
-}
-
-.models-tree-version.current {
-  background: #e8efff;
-  color: #1f3c88;
-  font-weight: 700;
-}
-
-.models-tree-version em {
-  font-style: normal;
-  font-size: 11px;
+.models-drill-row small {
   color: #8a94a6;
+  flex: 1;
+}
+
+.models-drill-row em {
+  font-style: normal;
+  color: #a0a8b8;
+  font-size: 16px;
 }
 
 .models-version-pane {
@@ -1670,14 +1650,4 @@
   padding: 10px 12px;
   background: #f8f9fc;
   border-radius: 8px;
-}
-
-@media (max-width: 1100px) {
-  .models-workspace-split {
-    grid-template-columns: 1fr;
-  }
-
-  .models-tree {
-    position: static;
-  }
 }

@@ -46,9 +46,9 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const [omNodeId, setOmNodeId] = useState("");
   const [omSocVersion, setOmSocVersion] = useState("Ascend310P3");
   const [omInputShape, setOmInputShape] = useState("images:1,3,640,640");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [versionLists, setVersionLists] = useState<Record<string, DatasetVersion[]>>({});
-  const [nav, setNav] = useState<{ datasetId: string; version: number | null }>();
+  const [drillDataset, setDrillDataset] = useState<string>();
+  const [drillVersion, setDrillVersion] = useState<number | null>();
 
   const refresh = useCallback(async () => {
     const result = await api.listModels(undefined, true);
@@ -142,56 +142,30 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     [models],
   );
 
-  // 默认选中:模型最多的数据集的最新版本
+  // 下钻到数据集时拉取版本列表
   useEffect(() => {
-    if (nav || !tree.size) return;
-    let bestId = UNLINKED;
-    let bestCount = -1;
-    for (const [datasetId, versions] of tree) {
-      const count = [...versions.values()].reduce((sum, list) => sum + list.length, 0);
-      if (count > bestCount) {
-        bestCount = count;
-        bestId = datasetId;
-      }
-    }
-    const versions = tree.get(bestId) ?? new Map();
-    const numbers = [...versions.keys()].filter((key): key is number => key != null);
-    const version = numbers.length ? Math.max(...numbers) : null;
-    setNav({ datasetId: bestId, version });
-    setExpanded((prev) => ({ ...prev, [bestId]: true }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tree]);
-
-  // 展开或选中的数据集拉取版本列表
-  useEffect(() => {
-    const wanted = new Set<string>(Object.keys(expanded).filter((id) => expanded[id]));
-    if (nav?.datasetId && nav.datasetId !== UNLINKED) wanted.add(nav.datasetId);
-    const missing = [...wanted].filter((id) => id !== UNLINKED && !versionLists[id]);
-    if (!missing.length) return;
+    if (!drillDataset || drillDataset === UNLINKED || versionLists[drillDataset]) return;
     let cancelled = false;
-    for (const datasetId of missing) {
-      api.listDatasetVersions(datasetId)
-        .then((list) => { if (!cancelled) setVersionLists((prev) => ({ ...prev, [datasetId]: list })); })
-        .catch(() => { if (!cancelled) setVersionLists((prev) => ({ ...prev, [datasetId]: [] })); });
-    }
+    api.listDatasetVersions(drillDataset)
+      .then((list) => { if (!cancelled) setVersionLists((prev) => ({ ...prev, [drillDataset]: list })); })
+      .catch(() => { if (!cancelled) setVersionLists((prev) => ({ ...prev, [drillDataset]: [] })); });
     return () => { cancelled = true; };
-  }, [expanded, nav?.datasetId, versionLists]);
+  }, [drillDataset, versionLists]);
 
   useEffect(() => {
     if (!focusModelId) return;
     const target = models.find((item) => item.id === focusModelId);
     if (target) {
-      const key = datasetKey(target.dataset_id);
-      setNav({ datasetId: key, version: target.dataset_version_number ?? null });
-      setExpanded((prev) => ({ ...prev, [key]: true }));
+      setDrillDataset(datasetKey(target.dataset_id));
+      setDrillVersion(target.dataset_version_number ?? null);
     }
     setDetailId(focusModelId);
     onFocusModelConsumed?.();
   }, [focusModelId, onFocusModelConsumed, models, datasetKey]);
 
   const selectedModels = useMemo(
-    () => (nav ? tree.get(nav.datasetId)?.get(nav.version) ?? [] : []),
-    [tree, nav],
+    () => (drillDataset && drillVersion !== undefined ? tree.get(drillDataset)?.get(drillVersion) ?? [] : []),
+    [tree, drillDataset, drillVersion],
   );
 
   const run = async (action: () => Promise<void>) => {
@@ -409,62 +383,91 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
         </section>
       )}
 
-      <div className="models-workspace-split">
-        <aside className="models-tree" aria-label="数据集版本导航">
-          {treeEntries.map(([datasetId, versions]) => {
-            const total = [...versions.values()].reduce((sum, list) => sum + list.length, 0);
-            const open = expanded[datasetId] || nav?.datasetId === datasetId;
-            const versionNumbers = versionKeysFor(datasetId, versions);
-            return (
-              <div key={datasetId} className={`models-tree-dataset${nav?.datasetId === datasetId ? " current" : ""}`}>
+      <nav className="models-crumb" aria-label="模型库导航">
+        <button type="button" onClick={() => { setDrillDataset(undefined); setDrillVersion(undefined); }}>模型库</button>
+        {drillDataset && (
+          <>
+            <span>›</span>
+            <button type="button" onClick={() => setDrillVersion(undefined)}>{datasetName(drillDataset)}</button>
+          </>
+        )}
+        {drillDataset && drillVersion !== undefined && (
+          <>
+            <span>›</span>
+            <strong>{drillVersion != null ? `v${drillVersion}` : "未指定版本"}</strong>
+          </>
+        )}
+      </nav>
+
+      {drillDataset === undefined ? (
+        <section className="models-library-section">
+          <div className="models-library-toolbar">
+            <div>
+              <h2>数据集</h2>
+              <p className="models-library-sub">选择数据集查看其各版本的模型</p>
+            </div>
+          </div>
+          <div className="models-drill-list">
+            {treeEntries.map(([datasetId, versions]) => {
+              const total = [...versions.values()].reduce((sum, list) => sum + list.length, 0);
+              return (
                 <button
+                  key={datasetId}
                   type="button"
-                  className="models-tree-dataset-btn"
-                  onClick={() => {
-                    setExpanded((prev) => ({ ...prev, [datasetId]: true }));
-                    setNav({ datasetId, version: versionNumbers[0] ?? null });
-                  }}
+                  className="models-drill-row"
+                  onClick={() => { setDrillDataset(datasetId); setDrillVersion(undefined); }}
                 >
                   <strong>{datasetName(datasetId)}</strong>
-                  <em>{total}</em>
+                  <small>{versions.size} 个版本 · {total} 个模型</small>
+                  <em>›</em>
                 </button>
-                {open && (
-                  <div className="models-tree-versions">
-                    {versionNumbers.map((number) => (
-                      <button
-                        key={number}
-                        type="button"
-                        className={`models-tree-version${nav?.datasetId === datasetId && nav?.version === number ? " current" : ""}`}
-                        onClick={() => setNav({ datasetId, version: number })}
-                      >
-                        <span>v{number}{isActiveVersion(datasetId, number) ? " · 激活" : ""}</span>
-                        <em>{versions.get(number)?.length ?? 0}</em>
-                      </button>
-                    ))}
-                    {versions.has(null) && (
-                      <button
-                        type="button"
-                        className={`models-tree-version${nav?.datasetId === datasetId && nav?.version === null ? " current" : ""}`}
-                        onClick={() => setNav({ datasetId, version: null })}
-                      >
-                        <span>未指定版本</span>
-                        <em>{versions.get(null)?.length ?? 0}</em>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </aside>
-
+              );
+            })}
+          </div>
+        </section>
+      ) : drillVersion === undefined ? (
+        <section className="models-library-section">
+          <div className="models-library-toolbar">
+            <div>
+              <h2>{datasetName(drillDataset)}</h2>
+              <p className="models-library-sub">选择版本查看 PT / ONNX / OM 模型</p>
+            </div>
+          </div>
+          <div className="models-drill-list">
+            {versionKeysFor(drillDataset, tree.get(drillDataset) ?? new Map()).map((number) => {
+              const meta = (versionLists[drillDataset] ?? []).find((version) => version.version_number === number);
+              return (
+                <button
+                  key={number}
+                  type="button"
+                  className="models-drill-row"
+                  onClick={() => setDrillVersion(number)}
+                >
+                  <strong>v{number}{meta?.is_active ? " · 当前激活" : ""}</strong>
+                  <small>{tree.get(drillDataset)?.get(number)?.length ?? 0} 个模型{meta ? ` · ${meta.image_count} 张图` : ""}{meta?.note ? ` · ${meta.note}` : ""}</small>
+                  <em>›</em>
+                </button>
+              );
+            })}
+            {(tree.get(drillDataset)?.has(null)) && (
+              <button
+                type="button"
+                className="models-drill-row"
+                onClick={() => setDrillVersion(null)}
+              >
+                <strong>未指定版本</strong>
+                <small>{tree.get(drillDataset)?.get(null)?.length ?? 0} 个模型 · 训练时未锁定版本</small>
+                <em>›</em>
+              </button>
+            )}
+          </div>
+        </section>
+      ) : (
         <section className="models-library-section models-version-pane">
           <div className="models-library-toolbar">
             <div>
-              <h2>{nav ? datasetName(nav.datasetId) : "模型库"}</h2>
-              <p className="models-library-sub">
-                {nav ? `${nav.version != null ? `v${nav.version}` : "未指定版本"} · ${selectedModels.length} 个模型` : "在左侧选择数据集与版本"}
-              </p>
+              <h2>{datasetName(drillDataset)} · {drillVersion != null ? `v${drillVersion}` : "未指定版本"}</h2>
+              <p className="models-library-sub">{selectedModels.length} 个模型</p>
             </div>
             <div className="models-library-toolbar-actions">
               <label className="models-library-search">
@@ -514,6 +517,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
                       <tbody>
                         {list.map((model) => {
                           const selected = selectedIds.includes(model.id);
+                          const generating = model.status === "converting";
                           return (
                             <tr key={model.id} className={`${selected ? "selected" : ""} ${model.status}`}>
                               {format === "pt" && (
@@ -533,17 +537,23 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
                               <td><span className={`model-table-status ${model.status}`}>{modelStatusLabel(model.status)}</span></td>
                               <td className="model-table-time" title={model.created_at}>{formatRelativeTime(model.created_at)}</td>
                               <td className="model-table-actions">
-                                {model.format === "pt" ? (
+                                {generating ? (
+                                  <span className="muted">转换进行中…</span>
+                                ) : (
                                   <>
-                                    <button type="button" className="model-action-btn model-action-btn--primary" disabled={busy} onClick={() => setTesting(model)}>测试</button>
-                                    <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => void exportOnnx(model)}>ONNX</button>
+                                    {model.format === "pt" ? (
+                                      <>
+                                        <button type="button" className="model-action-btn model-action-btn--primary" disabled={busy} onClick={() => setTesting(model)}>测试</button>
+                                        <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => void exportOnnx(model)}>ONNX</button>
+                                      </>
+                                    ) : null}
+                                    {model.format === "onnx" ? (
+                                      <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openOmConvert(model)}>转OM</button>
+                                    ) : null}
+                                    <button type="button" className="model-action-btn model-action-btn--ghost" onClick={() => setDetailId(model.id)}>详情</button>
+                                    <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => remove(model)}>删除</button>
                                   </>
-                                ) : null}
-                                {model.format === "onnx" ? (
-                                  <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openOmConvert(model)}>转OM</button>
-                                ) : null}
-                                <button type="button" className="model-action-btn model-action-btn--ghost" onClick={() => setDetailId(model.id)}>详情</button>
-                                <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy || model.status === "converting"} onClick={() => remove(model)}>删除</button>
+                                )}
                               </td>
                             </tr>
                           );
@@ -558,7 +568,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
             );
           })}
         </section>
-      </div>
+      )}
 
       {omTarget && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setOmTarget(undefined)}>

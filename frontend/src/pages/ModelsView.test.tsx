@@ -63,52 +63,77 @@ beforeEach(() => { container = document.createElement("div"); document.body.appe
 afterEach(() => { act(() => root?.unmount()); container?.remove(); });
 
 describe("ModelsView grouped by dataset and version", () => {
-  it("renders the dataset tree, defaults to the busiest dataset, and shows format sections", async () => {
-    const { api } = await import("../api/client");
-    (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-      items: [
-        modelFixture({ id: "model-1", name: "run-a (best)", dataset_id: "ds-1" }),
-        modelFixture({ id: "model-2", name: "run-b (best)", dataset_id: "ds-2", task_type: "segment" }),
-        modelFixture({ id: "model-3", name: "orphan (best)", dataset_id: null }),
-      ],
-      total: 3,
-    });
-    await act(async () => { root?.render(<ModelsView datasets={[detectSet, segmentSet]} />); });
-    await act(async () => {});
-
-    expect(container?.textContent).toContain("3 个模型");
-    expect(container?.textContent).toContain("detect-set");
-    expect(container?.textContent).toContain("segment-set");
-    expect(container?.textContent).toContain("未关联数据集");
-    expect(container?.textContent).toContain("PT 模型");
-    expect(container?.textContent).toContain("ONNX 模型");
-    expect(container?.textContent).toContain("OM 模型（华为昇腾）");
-    expect(container?.textContent).toContain("run-a (best)");
-    expect(container?.textContent).toContain("该版本暂无 ONNX");
-  });
-
-  it("navigates versions within a dataset and filters models by version", async () => {
+  it("lists datasets first and drills into versions and format sections", async () => {
     const { api } = await import("../api/client");
     (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue({
       items: [
         modelFixture({ id: "model-v2", name: "v2-best", dataset_id: "ds-1", dataset_version_number: 2 }),
         modelFixture({ id: "model-v1", name: "v1-best", dataset_id: "ds-1", dataset_version_number: 1 }),
+        modelFixture({ id: "model-2", name: "run-b (best)", dataset_id: "ds-2", task_type: "segment" }),
+        modelFixture({ id: "model-3", name: "orphan (best)", dataset_id: null }),
       ],
-      total: 2,
+      total: 4,
+    });
+    await act(async () => { root?.render(<ModelsView datasets={[detectSet, segmentSet]} />); });
+    await act(async () => {});
+
+    // 第一层:数据集列表
+    expect(container?.textContent).toContain("4 个模型");
+    expect(container?.textContent).toContain("detect-set");
+    expect(container?.textContent).toContain("segment-set");
+    expect(container?.textContent).toContain("未关联数据集");
+
+    // 下钻数据集 → 版本列表
+    const datasetRow = Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-drill-row") ?? []).find((row) => row.textContent?.includes("detect-set"));
+    await act(async () => { datasetRow?.click(); });
+    await act(async () => {});
+    expect(container?.textContent).toContain("选择版本查看 PT / ONNX / OM 模型");
+
+    // 下钻版本 v2 → 三格式分区
+    const v2 = Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-drill-row") ?? []).find((row) => row.textContent?.startsWith("v2"));
+    await act(async () => { v2?.click(); });
+    await act(async () => {});
+    expect(container?.textContent).toContain("PT 模型");
+    expect(container?.textContent).toContain("ONNX 模型");
+    expect(container?.textContent).toContain("OM 模型（华为昇腾）");
+    expect(container?.textContent).toContain("v2-best");
+    expect(container?.textContent).toContain("该版本暂无 ONNX");
+    expect(container?.textContent).not.toContain("v1-best");
+
+    // 面包屑回退到数据集层
+    const crumbDatasets = Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-crumb button") ?? []).find((button) => button.textContent === "模型库");
+    await act(async () => { crumbDatasets?.click(); });
+    await act(async () => {});
+    expect(container?.textContent).toContain("选择数据集查看其各版本的模型");
+  });
+
+  it("hides detail and delete actions while a model is converting", async () => {
+    const { api } = await import("../api/client");
+    (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [
+        modelFixture({
+          id: "om-conv",
+          name: "detect.om",
+          dataset_id: "ds-1",
+          dataset_version_number: 1,
+          format: "om",
+          artifact_type: "om",
+          status: "converting",
+        }),
+      ],
+      total: 1,
     });
     await act(async () => { root?.render(<ModelsView datasets={[detectSet]} />); });
     await act(async () => {});
-
-    // 默认选中最新版本 v2
-    expect(container?.textContent).toContain("v2-best");
-    expect(container?.querySelectorAll(".models-tree-version").length).toBeGreaterThanOrEqual(2);
-
-    const v1 = Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-tree-version") ?? []).find((button) => button.textContent?.startsWith("v1"));
-    expect(v1).toBeDefined();
-    await act(async () => { v1?.click(); });
+    await act(async () => { (Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-drill-row") ?? [])[0])?.click(); });
     await act(async () => {});
-    expect(container?.textContent).toContain("v1-best");
-    expect(container?.textContent).not.toContain("v2-best");
+    await act(async () => { (Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-drill-row") ?? [])[0])?.click(); });
+    await act(async () => {});
+
+    expect(container?.textContent).toContain("转换进行中…");
+    const row = container?.querySelector(`tr.converting`);
+    expect(row?.textContent).not.toContain("详情");
+    expect(row?.textContent).not.toContain("删除");
   });
 
   it("shows the empty state with no models and no datasets", async () => {
