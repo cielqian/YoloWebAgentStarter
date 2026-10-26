@@ -178,7 +178,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
   .annotation-layout .canvas-card { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
   .annotation-layout .stage-wrap { flex: 1 1 auto; min-height: 300px; }
 }
-.annotation-image-sidebar { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-height: 0; overflow: hidden; padding: 14px 10px; }
+.annotation-image-sidebar { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; min-height: 0; overflow: hidden; padding: 14px 10px; }
 .annotation-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 2px 8px 12px; border-bottom: 1px solid #edf0f4; }
 .annotation-list-heading strong { color: #68768d; font-size: 11px; }
 .annotation-image-list { display: grid; align-content: start; gap: 4px; min-height: 0; overflow-y: auto; padding-top: 8px; }
