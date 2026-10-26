@@ -23,7 +23,7 @@ from app.core.storage import SUPPORTED_IMAGE_SUFFIXES, Storage
 
 # YOLO 目录导入需要同时收集的标签与配置后缀（供 FTP 目录采集复用）
 SUPPORTED_LABEL_SUFFIXES = {".txt"}
-from app.dataset.annotation.geometry import obb_corners, validate_bbox, validate_obb, validate_polygon
+from app.dataset.annotation.geometry import MIN_SHAPE_SIZE, obb_corners, validate_bbox, validate_obb, validate_polygon
 from app.dataset.service import get_dataset, refresh_dataset_counts
 
 
@@ -341,24 +341,15 @@ def _parse_yolo_labels(
             y = (center_y - height / 2) * image_height
             box_width = width * image_width
             box_height = height * image_height
-            # 标注工具常允许框轻微压边：每边 1% 内夹回图片边界，更严重的越界视为标签问题。
-            margin_x = image_width * 0.01
-            margin_y = image_height * 0.01
-            if x < -margin_x or y < -margin_y or x + box_width > image_width + margin_x or y + box_height > image_height + margin_y:
-                raise ValidationError(
-                    "bbox_out_of_bounds",
-                    f"Bounding box must stay inside the image (line {line_number} of {source_name}: "
-                    f"x={x:.1f} y={y:.1f} w={box_width:.1f} h={box_height:.1f}, image {image_width}x{image_height}).",
-                )
+            # YOLO 训练容忍标注越界：导入时统一夹回图片边界，夹回后退化(<3px)的行跳过。
             x = min(max(x, 0.0), image_width)
             y = min(max(y, 0.0), image_height)
             box_width = min(box_width, image_width - x)
             box_height = min(box_height, image_height - y)
+            if box_width < MIN_SHAPE_SIZE or box_height < MIN_SHAPE_SIZE:
+                continue
             bbox = BBox(x=x, y=y, width=box_width, height=box_height)
-            try:
-                validate_bbox(bbox, image_width, image_height)
-            except ValidationError as exc:
-                raise ValidationError(exc.error_code, f"{exc.message} (line {line_number} of {source_name})") from exc
+            validate_bbox(bbox, image_width, image_height)
             annotations.append(
                 Annotation(
                     id=new_id("ann"),
@@ -374,8 +365,19 @@ def _parse_yolo_labels(
         elif task_type == "segment":
             if len(numbers) < 6 or len(numbers) % 2:
                 raise ValidationError("invalid_polygon_label", f"Segment labels require point pairs at line {line_number} of {source_name}.")
-            polygon = [(numbers[index] * image_width, numbers[index + 1] * image_height) for index in range(0, len(numbers), 2)]
-            validate_polygon(polygon, image_width, image_height)
+            polygon = [
+                (
+                    min(max(numbers[index] * image_width, 0.0), image_width),
+                    min(max(numbers[index + 1] * image_height, 0.0), image_height),
+                )
+                for index in range(0, len(numbers), 2)
+            ]
+            try:
+                validate_polygon(polygon, image_width, image_height)
+            except ValidationError as exc:
+                if exc.error_code != "polygon_too_small":
+                    raise
+                continue
             annotations.append(
                 Annotation(
                     id=new_id("ann"),
@@ -387,6 +389,11 @@ def _parse_yolo_labels(
             )
         elif task_type == "obb":
             obb = _obb_from_yolo(numbers, image_width, image_height)
+            try:
+                validate_obb(obb, image_width, image_height)
+            except ValidationError as exc:
+                if exc.error_code != "obb_out_of_bounds":
+                    raise
             annotations.append(
                 Annotation(
                     id=new_id("ann"),
@@ -410,17 +417,12 @@ def _parse_yolo_labels(
             y = (center_y - box_height / 2) * image_height
             width = box_width * image_width
             height = box_height * image_height
-            margin_x = image_width * 0.01
-            margin_y = image_height * 0.01
-            if x < -margin_x or y < -margin_y or x + width > image_width + margin_x or y + height > image_height + margin_y:
-                raise ValidationError(
-                    "bbox_out_of_bounds",
-                    f"Pose bounding box must stay inside the image (line {line_number} of {source_name}).",
-                )
             x = min(max(x, 0.0), image_width)
             y = min(max(y, 0.0), image_height)
             width = min(width, image_width - x)
             height = min(height, image_height - y)
+            if width < MIN_SHAPE_SIZE or height < MIN_SHAPE_SIZE:
+                continue
             keypoints: list[list[float]] = []
             for index in range(kpt_count):
                 offset = 4 + index * kpt_dim

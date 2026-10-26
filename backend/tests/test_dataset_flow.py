@@ -848,17 +848,40 @@ def test_yolo_import_clamps_slightly_overflowing_bbox(client):
     assert response.json()["imported_annotations"] == 1
 
 
-def test_yolo_import_rejects_severely_overflowing_bbox_with_context(client):
+def test_yolo_import_clamps_severely_overflowing_bbox(client):
     payload = _yolo_zip(b"0 0.6 0.6 1.2 1.2\n")
     response = client.post(
         "/api/datasets/import/yolo",
         data={"name": "overflow", "task_type": "detect"},
         files={"file": ("a.zip", payload, "application/zip")},
     )
-    assert response.status_code == 422, response.text
-    message = response.json()["error"]["message"]
-    assert "labels/train/object.txt" in message
-    assert "image 100x80" in message
+    assert response.status_code == 201, response.text
+    assert response.json()["imported_annotations"] == 1
+    annotations = client.get(f"/api/datasets/{response.json()['dataset']['id']}/images").json()["items"]
+    saved = client.get(f"/api/datasets/{response.json()['dataset']['id']}/images/{annotations[0]['id']}/annotations").json()
+    assert saved[0]["bbox"] == {"x": 0.0, "y": 0.0, "width": 100.0, "height": 80.0}
+
+
+def test_yolo_import_clamps_out_of_bounds_polygon(client):
+    payload = _yolo_zip(b"0 0.5 0.5 -0.1 0.2 0.8 0.95 0.8 0.1\n")
+    response = client.post(
+        "/api/datasets/import/yolo",
+        data={"name": "oob-polygon", "task_type": "segment"},
+        files={"file": ("a.zip", payload, "application/zip")},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["imported_annotations"] == 1
+
+
+def test_yolo_import_skips_fully_outside_bbox(client):
+    payload = _yolo_zip(b"0 1.5 1.5 0.2 0.2\n")
+    response = client.post(
+        "/api/datasets/import/yolo",
+        data={"name": "outside", "task_type": "detect"},
+        files={"file": ("a.zip", payload, "application/zip")},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["imported_annotations"] == 0
 
 
 def _merge_zip() -> bytes:

@@ -131,11 +131,25 @@ def import_coco(
                 raw = segmentation[0] if isinstance(segmentation[0], list) else segmentation
                 if len(raw) < 6 or len(raw) % 2:
                     raise ValidationError("coco_segment_invalid_polygon", "Segment COCO polygons require at least three point pairs.")
-                polygon = list(zip(raw[::2], raw[1::2], strict=True))
-                validate_polygon(polygon, image.width, image.height)
+                polygon = [
+                    (min(max(px, 0.0), image.width), min(max(py, 0.0), image.height))
+                    for px, py in zip(raw[::2], raw[1::2], strict=True)
+                ]
+                try:
+                    validate_polygon(polygon, image.width, image.height)
+                except ValidationError as exc:
+                    if exc.error_code != "polygon_too_small":
+                        raise
+                    continue
                 annotation = Annotation(id=new_id("ann"), image_id=image.id, dataset_id=dataset.id, class_id=class_id, type="polygon", polygon=[list(point) for point in polygon], source="imported")
             else:
-                x, y, width, height = item["bbox"]
+                raw_x, raw_y, width, height = item["bbox"]
+                x = min(max(raw_x, 0.0), image.width)
+                y = min(max(raw_y, 0.0), image.height)
+                width = min(width, image.width - x)
+                height = min(height, image.height - y)
+                if width < 3.0 or height < 3.0:
+                    continue
                 validate_bbox(BBox(x=x, y=y, width=width, height=height), image.width, image.height)
                 annotation = Annotation(id=new_id("ann"), image_id=image.id, dataset_id=dataset.id, class_id=class_id, type="bbox", x=x, y=y, width=width, height=height, source="imported")
             session.add(annotation); annotation_count += 1; annotated_ids.add(image.id)
