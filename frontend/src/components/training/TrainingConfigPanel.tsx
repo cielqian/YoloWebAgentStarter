@@ -176,11 +176,11 @@ export function TrainingConfigPanel({
             <h3>模型与基础参数</h3>
           </div>
           <div className="training-ws-form-grid training-ws-form-grid--base">
-            <label className="training-ws-field training-ws-field-wide">
+            <label className="training-ws-field">
               <span>任务名称</span>
               <input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} required />
             </label>
-            <label className="training-ws-field training-ws-field-wide">
+            <label className="training-ws-field">
               <span>数据集版本</span>
               <select
                 value={form.dataset_version_number ?? ""}
@@ -194,7 +194,7 @@ export function TrainingConfigPanel({
                 ))}
               </select>
             </label>
-            <label className="training-ws-field training-ws-field-wide">
+            <label className="training-ws-field">
               <span>基础权重</span>
               <select
                 value={modelInList ? form.model : "__custom__"}
@@ -211,7 +211,7 @@ export function TrainingConfigPanel({
               </select>
             </label>
             {!modelInList && (
-              <label className="training-ws-field training-ws-field-wide">
+              <label className="training-ws-field">
                 <span>自定义权重名</span>
                 <input value={form.model} onChange={(event) => setForm((prev) => ({ ...prev, model: event.target.value }))} />
               </label>

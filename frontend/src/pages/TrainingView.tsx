@@ -122,11 +122,7 @@ export function TrainingView({
     if (!activeDataset) return;
     let cancelled = false;
     api.listDatasetVersions(activeDataset.id)
-      .then((versions) => {
-        if (cancelled) return;
-        setDatasetVersions(versions);
-        setForm((prev) => ({ ...prev, dataset_version_number: versions[0]?.version_number ?? null }));
-      })
+      .then((versions) => { if (!cancelled) setDatasetVersions(versions); })
       .catch(() => { if (!cancelled) setDatasetVersions([]); });
     const stamp = new Date();
     const pad = (value: number) => String(value).padStart(2, "0");
