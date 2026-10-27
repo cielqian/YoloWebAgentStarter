@@ -74,4 +74,7 @@ my-plugin/
 
 ## 7. 示例
 
-仓库内 `plugins/hello-demo/` 是最小可运行示例（原生 HTML/JS）：读取 `__ctx` 上下文并调用 `/api/system/health`。把该目录内容（含 manifest.json）打成 zip 即可安装。
+仓库内提供两个示例：
+
+- `plugins/hello-demo/` — 最小可运行示例（原生 HTML/JS 单页）：读取 `__ctx` 上下文并调用 `/api/system/health`。把该目录内容（含 manifest.json）打成 zip 即可安装。
+- `plugins/training-dashboard/` — 完整工程示例（推荐参考）：按本规范推荐结构组织（`manifest.json` + `src/` + `dist/`，多文件 assets 拆分），实现训练任务看板——轮询 `/api/training/tasks` 展示统计卡片、epoch 进度条与 mAP/loss 指标，含自动刷新与加载/空/错误状态。`npm run pack` 一键产出可安装 zip，详见其 README 的「规范要点对照」。

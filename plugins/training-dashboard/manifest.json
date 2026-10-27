@@ -1,0 +1,9 @@
+{
+  "id": "training-dashboard",
+  "name": "训练任务看板",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "description": "按插件编码规范开发的完整示例：轮询平台 REST 接口，展示训练任务状态、进度与关键指标。",
+  "author": "YWA",
+  "icon": "📊"
+}

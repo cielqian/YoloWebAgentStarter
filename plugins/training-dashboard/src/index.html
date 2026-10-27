@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>训练任务看板</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-title">
+      <span class="logo">📊</span>
+      <div>
+        <h1>训练任务看板</h1>
+        <p class="sub" id="meta">v1.0.0</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <label class="auto-refresh">
+        <input type="checkbox" id="auto-refresh" checked />
+        <span>每 15s 自动刷新</span>
+      </label>
+      <button type="button" class="btn" id="refresh">立即刷新</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="cards" id="cards" aria-label="任务统计"></section>
+    <section class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>任务</th>
+            <th>状态</th>
+            <th>类型 / 权重</th>
+            <th>设备 / 节点</th>
+            <th class="num">进度</th>
+            <th class="num">mAP50</th>
+            <th class="num">mAP50-95</th>
+            <th class="num">loss</th>
+            <th>更新时间</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="state" id="state" hidden></p>
+    </section>
+  </main>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

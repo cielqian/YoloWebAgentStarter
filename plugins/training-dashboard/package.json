@@ -1,0 +1,10 @@
+{
+  "name": "ywa-plugin-training-dashboard",
+  "private": true,
+  "version": "1.0.0",
+  "description": "YWA 训练任务看板插件示例（原生 JS，无构建依赖）。package.json 仅开发期使用，不参与插件运行。",
+  "scripts": {
+    "build": "rm -rf dist && mkdir -p dist && cp -R src/. dist/ && cp manifest.json dist/",
+    "pack": "npm run build && rm -f training-dashboard.zip && cd dist && zip -qr ../training-dashboard.zip ."
+  }
+}
