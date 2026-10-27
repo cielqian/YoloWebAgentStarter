@@ -241,6 +241,7 @@ export interface WebhookSettings {
   method: WebhookMethod;
   events: WebhookEvent[];
   body_template: string;
+  body_templates: Record<WebhookEvent, string>;
 }
 
 export interface WebhookDeliveryResult {

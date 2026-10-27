@@ -374,12 +374,17 @@ class SettingsService:
         raw_events = section.get("events", WEBHOOK_EVENTS)
         events = [item for item in WEBHOOK_EVENTS if item in raw_events]
         method = str(section.get("method", "POST")).upper()
+        raw_templates = section.get("body_templates", {})
+        templates = raw_templates if isinstance(raw_templates, dict) else {}
         return WebhookSettingsOut(
             enabled=bool(section.get("enabled", False)),
             url=str(section.get("url", "")).strip(),
             method=method if method in ("GET", "POST") else "POST",
             events=events,
             body_template=str(section.get("body_template", "")),
+            body_templates={
+                event: str(templates.get(event, "") or "") for event in WEBHOOK_EVENTS
+            },
         )
 
     def update_webhook_settings(self, payload: WebhookSettingsUpdate) -> WebhookSettingsOut:
@@ -396,6 +401,7 @@ class SettingsService:
             "method": payload.method,
             "events": events,
             "body_template": payload.body_template.strip(),
+            "body_templates": payload.body_templates,
         }
         self._write(data)
         return self.get_webhook_settings()

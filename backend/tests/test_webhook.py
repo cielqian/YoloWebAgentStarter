@@ -32,6 +32,7 @@ def make_task() -> TrainingTask:
     task = TrainingTask(
         id="train-1",
         dataset_id="ds-1",
+        dataset_version_number=3,
         name="叶片检测训练",
         status="failed",
         task_type="detect",
@@ -59,6 +60,7 @@ def test_webhook_settings_roundtrip(client: TestClient):
         "method": "POST",
         "events": ["started", "completed", "failed", "stopped"],
         "body_template": "",
+        "body_templates": {"started": "", "completed": "", "failed": "", "stopped": ""},
     }
 
     updated = client.put(
@@ -69,6 +71,7 @@ def test_webhook_settings_roundtrip(client: TestClient):
             "method": "GET",
             "events": ["failed", "started"],
             "body_template": '{"msg": "{title}"}',
+            "body_templates": {"failed": "err {error_message}", "bogus": "ignored"},
         },
     )
     assert updated.status_code == 200, updated.text
@@ -79,6 +82,7 @@ def test_webhook_settings_roundtrip(client: TestClient):
         "method": "GET",
         "events": ["started", "failed"],
         "body_template": '{"msg": "{title}"}',
+        "body_templates": {"started": "", "completed": "", "failed": "err {error_message}", "stopped": ""},
     }
 
     assert client.get("/api/settings/webhook").json() == body
@@ -188,6 +192,7 @@ def test_notifier_gates_on_config_and_events(tmp_path: Path):
     _, payload = prepared
     assert payload["id"] == "train-1"
     assert payload["dataset_name"] == "叶片数据集"
+    assert payload["dataset_version_number"] == 3
     assert payload["status"] == "failed"
     assert payload["metrics"] == {"mAP50": 0.42}
 
@@ -225,6 +230,39 @@ def test_deliver_webhook_post_renders_body_template():
         "dataset": "叶片数据集",
         "duration": "3m 24s",
     }
+
+
+def test_deliver_webhook_prefers_event_template_and_renders_new_placeholders():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode("utf-8")
+        return httpx.Response(204)
+
+    config = WebhookSettingsOut(
+        enabled=True,
+        url="http://hook.test/notify",
+        method="POST",
+        body_template="generic",
+        body_templates={"started": "🚀 {task_name} · {dataset} · {dataset_version}", "failed": "  "},
+    )
+    payload = {
+        "id": "train-1",
+        "name": "叶片检测训练",
+        "status": "running",
+        "model_name": "yolov8n.pt",
+        "dataset_name": "叶片数据集",
+        "dataset_version_number": 3,
+    }
+    deliver_webhook(config, "started", payload, transport=httpx.MockTransport(handler))
+    assert captured["body"] == "🚀 叶片检测训练 · 叶片数据集 · v3"
+
+    payload.pop("dataset_version_number")
+    deliver_webhook(config, "started", payload, transport=httpx.MockTransport(handler))
+    assert captured["body"] == "🚀 叶片检测训练 · 叶片数据集 · 跟随数据集"
+
+    deliver_webhook(config, "failed", payload, transport=httpx.MockTransport(handler))
+    assert captured["body"] == "generic"
 
 
 def test_deliver_webhook_template_text_body_uses_plain_content_type():

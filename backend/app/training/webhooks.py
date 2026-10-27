@@ -71,6 +71,11 @@ def human_duration(started_at: Any, finished_at: Any) -> str:
     return f"{secs}s"
 
 
+def dataset_version_label(payload: dict[str, Any]) -> str:
+    number = payload.get("dataset_version_number")
+    return f"v{number}" if number else "跟随数据集"
+
+
 def template_variables(event: str, payload: dict[str, Any]) -> dict[str, str]:
     """请求体模板可用的占位符（{key} 形式，纯文本替换，不影响 JSON 大括号）。"""
     name = str(payload.get("name") or "")
@@ -84,8 +89,10 @@ def template_variables(event: str, payload: dict[str, Any]) -> dict[str, str]:
         "status": STATUS_LABELS.get(status, status),
         "model": str(payload.get("model_name") or ""),
         "dataset": str(payload.get("dataset_name") or ""),
+        "dataset_version": dataset_version_label(payload),
         "duration": human_duration(payload.get("started_at"), payload.get("finished_at")),
         "name": name,
+        "task_name": name,
         "task_id": str(payload.get("id") or ""),
         "error_message": str(payload.get("error_message") or ""),
         "progress_percent": f"{progress}" if progress is not None else "",
@@ -107,6 +114,7 @@ def task_payload(task: TrainingTask) -> dict[str, Any]:
         "name": task.name,
         "dataset_id": task.dataset_id,
         "dataset_name": dataset.name if dataset is not None else None,
+        "dataset_version_number": task.dataset_version_number,
         "task_type": task.task_type,
         "model_name": task.model_name,
         "epochs": task.epochs,
@@ -121,6 +129,12 @@ def task_payload(task: TrainingTask) -> dict[str, Any]:
         "progress_percent": task.progress_percent,
         "metrics": dict(task.metrics_json or {}),
     }
+
+
+def select_body_template(config: WebhookSettingsOut, event: str) -> str:
+    """事件专属模板优先，留空回退通用模板。"""
+    per_event = (config.body_templates or {}).get(event, "")
+    return per_event.strip() or config.body_template.strip()
 
 
 def deliver_webhook(
@@ -147,8 +161,8 @@ def deliver_webhook(
                 filtered = {key: str(value) for key, value in params.items() if value not in (None, "")}
                 request_body = "GET " + "&".join(f"{key}={value}" for key, value in filtered.items())
                 response = client.get(config.url, params=filtered)
-            elif config.body_template.strip():
-                request_body = render_body_template(config.body_template, event, payload)
+            elif select_body_template(config, event):
+                request_body = render_body_template(select_body_template(config, event), event, payload)
                 content_type = "application/json" if request_body.lstrip().startswith("{") else "text/plain; charset=utf-8"
                 response = client.post(
                     config.url,
@@ -229,6 +243,7 @@ class TrainingWebhookNotifier:
                 "status": "test",
                 "model_name": "yolov8n.pt",
                 "dataset_name": "示例数据集",
+                "dataset_version_number": 2,
                 "started_at": _iso(utc_now()),
                 "finished_at": _iso(utc_now()),
             },

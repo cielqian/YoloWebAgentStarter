@@ -165,6 +165,7 @@ class WebhookSettingsOut(BaseModel):
     method: WebhookMethod = "POST"
     events: list[WebhookEvent] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
     body_template: str = ""
+    body_templates: dict[WebhookEvent, str] = Field(default_factory=dict)
 
 
 class WebhookSettingsUpdate(BaseModel):
@@ -173,11 +174,20 @@ class WebhookSettingsUpdate(BaseModel):
     method: WebhookMethod = "POST"
     events: list[WebhookEvent] = Field(default_factory=lambda: list(WEBHOOK_EVENTS))
     body_template: str = Field(default="", max_length=4096)
+    body_templates: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("url", "body_template")
     @classmethod
     def strip_url(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("body_templates")
+    @classmethod
+    def normalise_templates(cls, value: dict[str, str]) -> dict[str, str]:
+        return {
+            event: str(value.get(event, "") or "").strip()[:4096]
+            for event in WEBHOOK_EVENTS
+        }
 
 
 class WebhookDeliveryResult(BaseModel):

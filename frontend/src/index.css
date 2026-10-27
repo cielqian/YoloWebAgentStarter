@@ -775,3 +775,5 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .source-tag-chip.batch { display: inline-flex; align-items: center; gap: 0; padding: 0; }
 .source-tag-chip.batch > button { padding: 5px 10px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .source-tag-chip.batch > select { max-width: 90px; padding: 4px 6px; border: 0; border-left: 1px solid rgba(0,0,0,.12); border-radius: 0 999px 999px 0; background: rgba(255,255,255,.85); color: #3157d5; font-size: 12px; font-weight: 650; cursor: pointer; }
+
+.settings-webhook-events-head { display: grid; gap: 4px; color: #536077; font-size: 12px; font-weight: 650; }
