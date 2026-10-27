@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
+import { confirmDialog } from "../components/confirm";
 import type { Annotation, BBox, ImageItem, OBB, PoseConfig, SamCapabilities, TaskType } from "../types";
 import { clamp, clampBBoxToImage, clampOBBToImage, MIN_SHAPE_SIZE, nearestEdgeOnPolygon, normalizeAngle, normalizeBBox, simplifyPolygon, toOriginalPoint } from "../utils/geometry";
 
@@ -341,8 +342,14 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
   ];
   const distanceToFirst = (point: [number, number]) => polygonPoints.length >= 3 ? Math.hypot(point[0] - polygonPoints[0][0], point[1] - polygonPoints[0][1]) : Infinity;
   const snapActive = tool === "polygon" && hoverPoint !== undefined && distanceToFirst(hoverPoint) <= SNAP_CLOSE_RADIUS_PX / zoom;
-  const clearAllDrafts = () => {
-    if (!annotations.length || !window.confirm("清空当前图片的全部草稿？此操作只会在点击“保存标注”后写入删除结果。")) return;
+  const clearAllDrafts = async () => {
+    if (!annotations.length) return;
+    const confirmed = await confirmDialog({
+      title: "清空当前图片的全部草稿？",
+      description: "尚未保存的绘制内容会被移除；此操作只会在点击“保存标注”后写入删除结果。",
+      confirmLabel: "清空草稿",
+    });
+    if (!confirmed) return;
     onChange([]);
     setPolygonPoints([]);
     setDragStart(undefined);
@@ -408,7 +415,7 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
           {taskType === "obb" && <><button className={tool === "obb" ? "button active" : "button"} disabled={!canAnnotate} onClick={() => { setTool("obb"); setPolygonPoints([]); }}>OBB</button><label className="angle-input">角度<input aria-label="OBB angle" type="number" value={selectedAngle} disabled={readOnly} onChange={(event) => { const nextAngle = Number(event.target.value); if (!Number.isFinite(nextAngle)) return; if (selectedObb?.obb) replaceObb(selectedObb.id, { ...toStageObb(selectedObb.obb), angle: nextAngle }); else setAngle(nextAngle); }} /></label>{selectedObb && <button className="button danger" disabled={readOnly} onClick={removeSelectedObb}>删除所选 OBB</button>}</>}
           {(tool === "polygon" || tool === "rect" || tool === "circle") && <button className="button primary" disabled={!canAnnotate} onClick={finishActiveShape} title="快捷键 Enter">{tool === "rect" ? "完成矩形" : tool === "circle" ? "完成圆形" : "完成多边形"}</button>}
           {selectedPolygon && <><select aria-label="简化精度" className="simplify-tolerance" value={simplifyTolerance} onChange={(event) => setSimplifyTolerance(Number(event.target.value))}><option value={1}>1px</option><option value={2}>2px</option><option value={4}>4px</option><option value={8}>8px</option><option value={16}>16px</option></select><button className="button" disabled={readOnly} onClick={simplifySelectedPolygon}>简化顶点</button></>}
-          <button className="button danger" disabled={!annotations.length || readOnly} onClick={clearAllDrafts}>清空全部草稿</button>
+          <button className="button danger" disabled={!annotations.length || readOnly} onClick={() => void clearAllDrafts()}>清空全部草稿</button>
         </div>
       </div>
       <p className="hint interaction-summary" aria-label="交互说明">

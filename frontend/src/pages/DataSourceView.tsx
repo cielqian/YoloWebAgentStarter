@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, apiUrl, type FtpSyncProgressEvent } from "../api/client";
 import { Toast } from "../components/Toast";
+import { confirmDialog } from "../components/confirm";
 import type { FtpEntry, SourceDataset, SourceImage, SourceImagePage, SourceTag } from "../types";
 
 const PAGE_SIZE = 60;
@@ -460,6 +461,12 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   };
 
   const deleteImage = async (image: SourceImage) => {
+    const confirmed = await confirmDialog({
+      title: `删除图片「${image.file_name}」？`,
+      description: "图片与其标签关联会从数据源永久删除，不可恢复。",
+      confirmLabel: "删除图片",
+    });
+    if (!confirmed) return;
     await runAction(async () => {
       await api.deleteSourceImage(dataset.id, image.id);
       setPreview(undefined);

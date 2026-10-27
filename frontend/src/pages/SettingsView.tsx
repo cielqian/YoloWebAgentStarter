@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { api } from "../api/client";
 import { ClassTemplatesView } from "./ClassTemplatesView";
 import { Toast } from "../components/Toast";
+import { confirmDialog } from "../components/confirm";
 import type { AppLocale } from "../locale";
 import { saveLocale } from "../locale";
 import type {
@@ -1069,7 +1070,12 @@ function BaseWeightsPanel({ text }: { text: SettingsText }) {
   };
 
   const remove = async (name: string) => {
-    if (!window.confirm(text.weightsDeleteConfirm.replace("{name}", name))) return;
+    const confirmed = await confirmDialog({
+      title: text.weightsDeleteConfirm.replace("{name}", name),
+      description: "删除后新任务将无法再使用该预置权重；已缓存在训练节点上的副本不受影响。",
+      confirmLabel: "删除权重",
+    });
+    if (!confirmed) return;
     setBusy(true); setError(""); setMessage("");
     try {
       await api.deleteWeight(name);

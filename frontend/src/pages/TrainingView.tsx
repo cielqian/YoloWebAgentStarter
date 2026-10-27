@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
+import { confirmDialog } from "../components/confirm";
 import { TrainingComputeRail } from "../components/training/TrainingComputeRail";
 import { TrainingConfigPanel } from "../components/training/TrainingConfigPanel";
 import { TrainingTaskDetailCard } from "../components/training/TrainingTaskDetailCard";
@@ -295,6 +296,13 @@ export function TrainingView({
   };
 
   const stop = async (taskId: string) => {
+    const target = tasks.find((item) => item.id === taskId);
+    const confirmed = await confirmDialog({
+      title: `停止训练「${target?.name ?? taskId}」？`,
+      description: "训练进程会被终止，当前 epoch 进度不再保存；已产出的 best/last 检查点会保留，可从记录页恢复训练。",
+      confirmLabel: "停止训练",
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await api.stopTrainingTask(taskId);
@@ -307,7 +315,12 @@ export function TrainingView({
   };
 
   const remove = async (task: TrainingTask) => {
-    if (!window.confirm(`删除训练记录「${task.name}」？任务目录与日志会一并清除，已注册的模型不受影响。`)) return;
+    const confirmed = await confirmDialog({
+      title: `删除训练记录「${task.name}」？`,
+      description: "任务目录、日志与检查点会一并清除，不可恢复；已注册到模型库的模型不受影响。",
+      confirmLabel: "删除记录",
+    });
+    if (!confirmed) return;
     setBusy(true);
     setError("");
     try {

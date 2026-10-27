@@ -3,6 +3,7 @@ import { AnnotationCanvas, type AnnotationDraft } from "./annotation/AnnotationC
 import { api, apiUrl } from "./api/client";
 import { StarterShell, type StarterSection } from "./components/StarterShell";
 import { useLeaveConfirm } from "./components/useLeaveConfirm";
+import { ConfirmProvider } from "./components/confirm";
 import { TrainingView } from "./pages/TrainingView";
 import { ModelsView } from "./pages/ModelsView";
 import { SettingsView } from "./pages/SettingsView";
@@ -364,6 +365,7 @@ export default function App() {
   };
 
   return (
+    <>
     <StarterShell active={activeSection} onNavigate={navigate} locale={locale} focusMode={view === "annotation" && focusMode} plugins={plugins}>
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <Toast kind="success" message={notice} onClose={() => setNotice("")} />
@@ -546,6 +548,8 @@ export default function App() {
         />
       )}
     </StarterShell>
+      <ConfirmProvider />
+    </>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, apiUrl } from "../api/client";
 import { Toast } from "../components/Toast";
+import { confirmDialog } from "../components/confirm";
 import type { Dataset, DatasetVersion, FtpEntry, ModelComparison, ModelEvaluationRecord, ModelVersion, SplitName, TrainingNode } from "../types";
 import { ModelTestModal } from "../components/ModelTestModal";
 import { ModelComparisonBar } from "../components/model-list/ModelComparisonBar";
@@ -297,24 +298,38 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   });
 
   const remove = (model: ModelVersion) => {
-    if (!window.confirm(`删除模型 ${model.name}？`)) return;
-    void run(async () => {
-      await api.deleteModel(model.id);
-      if (detailId === model.id) setDetailId(undefined);
-      await refresh();
-    });
+    void (async () => {
+      const confirmed = await confirmDialog({
+        title: `删除模型「${model.name}」？`,
+        description: "模型文件会从平台永久删除，不可恢复。",
+        confirmLabel: "删除模型",
+      });
+      if (!confirmed) return;
+      await run(async () => {
+        await api.deleteModel(model.id);
+        if (detailId === model.id) setDetailId(undefined);
+        await refresh();
+      });
+    })();
   };
 
   const removeSelected = () => {
     if (!selectedIds.length) return;
-    if (!window.confirm(`删除选中的 ${selectedIds.length} 个模型？`)) return;
-    void run(async () => {
-      for (const id of selectedIds) await api.deleteModel(id);
-      setSelectedIds([]);
-      setComparison(undefined);
-      if (detailId && selectedIds.includes(detailId)) setDetailId(undefined);
-      await refresh();
-    });
+    void (async () => {
+      const confirmed = await confirmDialog({
+        title: `删除选中的 ${selectedIds.length} 个模型？`,
+        description: "所选模型文件会从平台永久删除，不可恢复。",
+        confirmLabel: "批量删除",
+      });
+      if (!confirmed) return;
+      await run(async () => {
+        for (const id of selectedIds) await api.deleteModel(id);
+        setSelectedIds([]);
+        setComparison(undefined);
+        if (detailId && selectedIds.includes(detailId)) setDetailId(undefined);
+        await refresh();
+      });
+    })();
   };
 
   const compareSelected = async () => {
