@@ -954,12 +954,10 @@ def test_remote_multi_gpu_device_selection(client, monkeypatch):
     assert "cuda:9" in invalid.json()["error"]["message"]
 
 
-def test_remote_task_queues_when_devices_busy(client, monkeypatch):
-    from app.core.models import TrainingTask as TrainingTaskModel
+def test_remote_task_allows_busy_devices(client, monkeypatch):
+    """显卡忙碌不再限制选择：任务选忙碌卡也直接下发，可与运行任务并行用卡。"""
     from app.training.runtime import remote_nodes, remote_training
     import app.training.service as training_service_module
-
-    state = {"cuda0_busy": True}
 
     def fake_snapshot(url, token, timeout=3.0, use_cache=True):
         return {
@@ -967,7 +965,7 @@ def test_remote_task_queues_when_devices_busy(client, monkeypatch):
                 "hostname": "gpu-server-01",
                 "devices": [
                     {"id": "cpu", "type": "cpu", "name": "EPYC", "index": None, "memory_total_mb": None, "memory_free_mb": None, "status": "available"},
-                    {"id": "cuda:0", "type": "cuda", "name": "RTX 5880", "index": 0, "memory_total_mb": 49140, "memory_free_mb": 49000, "status": "busy" if state["cuda0_busy"] else "available"},
+                    {"id": "cuda:0", "type": "cuda", "name": "RTX 5880", "index": 0, "memory_total_mb": 49140, "memory_free_mb": 49000, "status": "busy"},
                     {"id": "cuda:1", "type": "cuda", "name": "RTX 5880", "index": 1, "memory_total_mb": 49140, "memory_free_mb": 49000, "status": "available"},
                 ],
             }
@@ -992,34 +990,22 @@ def test_remote_task_queues_when_devices_busy(client, monkeypatch):
     ).json()
     dataset_id, _ = prepared_dataset(client)
 
-    # cuda:0 被占用 → 入队等待
-    queued = client.post(
+    # cuda:0 显示忙碌 → 仍直接下发，不入队
+    busy_card = client.post(
         "/api/training/tasks",
-        json={"dataset_id": dataset_id, "name": "queued", "model": "yolo11n.pt", "epochs": 1, "batch_size": 1, "node_id": node["id"], "device": "cuda:0"},
+        json={"dataset_id": dataset_id, "name": "busy-card", "model": "yolo11n.pt", "epochs": 1, "batch_size": 1, "node_id": node["id"], "device": "cuda:0"},
     )
-    assert queued.status_code == 201, queued.text
-    queued_id = queued.json()["id"]
-    assert queued.json()["status"] == "dispatching"
-    wait_for_task_status(client, queued_id, ("pending",))
-    assert dispatched == []
+    assert busy_card.status_code == 201, busy_card.text
+    wait_for_task_status(client, busy_card.json()["id"], ("running",))
 
-    # cuda:1 空闲 → 后台立即下发
-    immediate = client.post(
+    # 第二个任务也选同一张忙碌卡 → 并行下发
+    same_card = client.post(
         "/api/training/tasks",
-        json={"dataset_id": dataset_id, "name": "immediate", "model": "yolo11n.pt", "epochs": 1, "batch_size": 1, "node_id": node["id"], "device": "cuda:1"},
+        json={"dataset_id": dataset_id, "name": "same-card", "model": "yolo11n.pt", "epochs": 1, "batch_size": 1, "node_id": node["id"], "device": "cuda:0"},
     )
-    assert immediate.status_code == 201, immediate.text
-    wait_for_task_status(client, immediate.json()["id"], ("running",))
-    assert [spec["device"] for spec in dispatched] == ["cuda:1"]
-
-    # 卡释放后调度器自动下发排队任务
-    state["cuda0_busy"] = False
-    app = client.app
-    with app.state.database.session_factory() as db:
-        remote_training.dispatch_due_remote_tasks(db, app.state.storage, app.state.settings)
-        task = db.get(TrainingTaskModel, queued.json()["id"])
-        assert task.status == "running"
-    assert [spec["device"] for spec in dispatched] == ["cuda:1", "cuda:0"]
+    assert same_card.status_code == 201, same_card.text
+    wait_for_task_status(client, same_card.json()["id"], ("running",))
+    assert [spec["device"] for spec in dispatched] == ["cuda:0", "cuda:0"]
 
 
 def test_delete_training_record(client, tmp_path, monkeypatch):

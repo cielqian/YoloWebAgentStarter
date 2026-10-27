@@ -490,20 +490,12 @@ def dispatch_due_remote_tasks(session: Session, storage: Storage, settings: Sett
             session.commit()
             continue
         try:
-            occupied = _agent_busy_device_ids(node)
+            _agent_busy_device_ids(node)
         except RemoteNodeUnavailable:
             continue
-        running_rows = session.scalars(
-            select(TrainingTask).where(TrainingTask.node_id == node_id, TrainingTask.status == "running")
-        )
-        for row in running_rows:
-            occupied |= parse_remote_device_set(row.device)
+        # 显卡不做忙碌互斥：排队任务按 FIFO 直接下发，允许与运行中的任务共用显卡
         for task in tasks:
-            requested = parse_remote_device_set(task.device)
-            if requested & occupied:
-                continue
-            if dispatch_task_from_row(session, storage, node, task, settings=settings):
-                occupied |= requested
+            dispatch_task_from_row(session, storage, node, task, settings=settings)
 
 
 class _DispatchCancelled(Exception):
@@ -588,17 +580,6 @@ def _dispatch_flow(session_factory: sessionmaker[Session], storage: Storage, set
                 row = session.get(TrainingTask, task_id)
                 if row is not None:
                     _cleanup_after_terminal(None, storage, row)
-            return
-
-        # 打包后复查占用：被占用则转入排队队列，由调度器接管（复用已导出的目录）。
-        with session_factory() as session:
-            try:
-                occupied = remote_node_occupied_devices(session, node, exclude_task_id=task_id)
-            except RemoteNodeUnavailable:
-                occupied = None
-        requested = parse_remote_device_set(_task_device(session_factory, task_id))
-        if occupied is not None and requested and requested & occupied:
-            _dispatching_update(session_factory, task_id, status="pending", progress_percent=0.0)
             return
 
         with session_factory() as session:

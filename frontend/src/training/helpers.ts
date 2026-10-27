@@ -214,8 +214,8 @@ export function defaultRemoteSelection(devices: TrainingDevice[]): { node_id: st
     byNode.set(key, [...(byNode.get(key) ?? []), item]);
   }
   const [nodeId, nodeDevices] = [...byNode.entries()].sort((a, b) => b[1].length - a[1].length)[0];
-  // 默认只选 1 张卡：优先挑空闲卡，避免多卡 DDP 环境直接撞上卡间通信问题。
-  const usable = nodeDevices.filter((item) => item.status !== "busy" && item.status !== "unavailable");
+  // 显卡不做忙碌限制；仅跳过不可用设备
+  const usable = nodeDevices.filter((item) => item.status !== "unavailable");
   const picked = (usable.length ? usable : nodeDevices)[0];
   return picked ? { node_id: nodeId, node_device: agentDeviceId(picked) } : null;
 }

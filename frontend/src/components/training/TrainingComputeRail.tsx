@@ -118,7 +118,7 @@ export function TrainingComputeRail({
               <div className="training-remote-device-grid">
                 {group.items.map((device) => {
                   const selected = form.node_id === device.node_id && remoteSelectedIds.includes(agentDeviceId(device));
-                  const blocked = device.status === "busy" || device.status === "unavailable";
+                  const blocked = device.status === "unavailable";
                   return (
                     <button
                       key={device.id}

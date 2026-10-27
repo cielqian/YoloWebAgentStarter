@@ -426,19 +426,7 @@ class TrainingService:
         dataset_zip: Path | None,
         weights_path: Path | None,
     ) -> TrainingTaskResponse:
-        try:
-            occupied = remote_node_occupied_devices(session, node, exclude_task_id=task.id)
-        except RemoteNodeUnavailable:
-            occupied = None
-        requested = parse_remote_device_set(task.device)
-        if occupied is None or (requested and requested & occupied):
-            if dataset_zip is not None:
-                dataset_zip.unlink(missing_ok=True)
-            reason = "训练节点暂不可达" if occupied is None else f"目标设备被占用（{', '.join(sorted(requested & occupied))}）"
-            session.commit()
-            TrainingLogStore(task.logs_path or "train.log").append(f"{reason}，任务加入排队队列，释放后自动下发。")
-            session.refresh(task)
-            return task_response(task)
+        # 显卡不再做忙碌限制：任务可直接选择任意显卡，与其他任务并行使用
         return self._dispatch_remote_task(session, task, node, dataset_zip, weights_path)
 
     def _dispatch_remote_task(
