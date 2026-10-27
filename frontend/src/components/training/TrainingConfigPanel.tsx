@@ -60,6 +60,7 @@ export function TrainingConfigPanel({
   onExit,
 }: Props) {
   const setForm = onFormChange;
+  const selectedVersion = datasetVersions.find((version) => version.version_number === form.dataset_version_number);
   const splitSummaryText = (() => {
     const total = (splitCounts.train ?? 0) + (splitCounts.val ?? 0) + (splitCounts.test ?? 0);
     const ratio = (count: number) => (total > 0 ? Math.round((count / total) * 100) : 0);
@@ -128,9 +129,19 @@ export function TrainingConfigPanel({
           </div>
           <div className="tcc-dataset-info-row">
             <span>{taskTypeLabel(dataset.task_type)}</span>
-            <span>{dataset.image_count} 张图片</span>
-            <span>{dataset.class_count} 类</span>
-            <span>{splitSummaryText}</span>
+            {selectedVersion ? (
+              <>
+                <span>v{selectedVersion.version_number} · {selectedVersion.image_count} 张图片</span>
+                <span>{selectedVersion.class_count} 类</span>
+                <span>{selectedVersion.annotation_count} 条标注</span>
+              </>
+            ) : (
+              <>
+                <span>{dataset.image_count} 张图片</span>
+                <span>{dataset.class_count} 类</span>
+                <span>{splitSummaryText}</span>
+              </>
+            )}
           </div>
           <div className="tcc-task-type-seg tcc-task-type-seg--wrap" role="group" aria-label="任务类型">
             {(["detect", "segment", "obb", "classify", "pose"] as const).map((kind) => {
