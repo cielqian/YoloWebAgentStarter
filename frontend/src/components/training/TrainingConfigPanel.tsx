@@ -257,12 +257,15 @@ export function TrainingConfigPanel({
               <input type="number" step="0.05" min={0} max={1} value={form.fliplr} placeholder="0" onChange={(event) => setForm((prev) => ({ ...prev, fliplr: event.target.value }))} />
             </label>
             <div className="training-ws-field">
-              <span>未标注图片</span>
+              <span className="tcc-field-label-help">未标注图片
+                <i className="tcc-help-icon" tabIndex={0} role="img" aria-label="提示">!
+                  <span className="tcc-help-tip" role="tooltip">包含时未标注图片以空标签参与训练与验证（YOLO 背景样本）</span>
+                </i>
+              </span>
               <div className="tcc-seg-toggle" role="radiogroup" aria-label="未标注图片处理方式">
                 <button type="button" role="radio" aria-checked={!form.include_unannotated} className={!form.include_unannotated ? "active" : ""} title="只使用已标注图片训练" onClick={() => setForm((prev) => ({ ...prev, include_unannotated: false }))}>跳过</button>
                 <button type="button" role="radio" aria-checked={form.include_unannotated} className={form.include_unannotated ? "active" : ""} title="未标注图片生成空标签文件作为背景样本" onClick={() => setForm((prev) => ({ ...prev, include_unannotated: true }))}>包含·空标签</button>
               </div>
-              <small className="tcc-field-hint">包含时未标注图片以空标签参与训练与验证（YOLO 背景样本）</small>
             </div>
           </div>
           <p className="tcc-model-hint training-ws-field-wide" role="note">

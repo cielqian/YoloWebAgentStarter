@@ -61,7 +61,7 @@ export function defaultForm(taskType: TaskType): TrainingFormState {
   return {
     name: "local-training",
     dataset_version_number: null,
-    include_unannotated: false,
+    include_unannotated: true,
     hsv_h: "0.015",
     degrees: "10",
     mixup: "0.1",

@@ -2488,9 +2488,61 @@ button.training-remote-device-card:hover:not(:disabled) { border-color: var(--bo
   background: #3157d5;
 }
 
-.tcc-field-hint {
+
+.tcc-field-label-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tcc-help-icon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #c6d2ec;
+  color: #3157d5;
   font-size: 10px;
+  font-weight: 800;
+  font-style: normal;
+  line-height: 1;
+  cursor: help;
+}
+
+.tcc-help-icon:hover,
+.tcc-help-icon:focus {
+  background: #3157d5;
+  color: #fff;
+  outline: none;
+}
+
+.tcc-help-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  z-index: 30;
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 10px;
+  border: 1px solid #d8e2f6;
+  border-radius: 8px;
+  background: #1f2d4d;
+  color: #e8eefc;
+  font-size: 11px;
   font-weight: 500;
-  color: #8a94a6;
-  line-height: 1.4;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 10px 28px rgba(20, 31, 55, .25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease;
+}
+
+.tcc-help-icon:hover .tcc-help-tip,
+.tcc-help-icon:focus .tcc-help-tip {
+  opacity: 1;
 }
