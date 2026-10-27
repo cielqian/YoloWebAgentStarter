@@ -223,7 +223,7 @@ class ModelService:
             raise NotFoundError("model_file_missing", "The managed model file is missing.")
         return path
 
-    def export_onnx(self, session: Session, model_id: str) -> ModelVersionResponse:
+    def export_onnx(self, session: Session, model_id: str, dynamic: bool = True) -> ModelVersionResponse:
         source_model = self.get_model(session, model_id)
         if source_model.format == "onnx":
             return model_response(source_model)
@@ -267,7 +267,7 @@ class ModelService:
             created = True
         output_path = self.storage.model_version_dir(export_model.id) / f"{onnx_file_stem}.onnx"
         try:
-            exported_path = onnx.export_fp32_onnx(source_path, output_path)
+            exported_path = onnx.export_fp32_onnx(source_path, output_path, dynamic=dynamic)
             exported_path = self.storage.managed_model_path(exported_path)
             if not exported_path.is_file():
                 raise RuntimeError("ONNX exporter did not produce a managed file.")

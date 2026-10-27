@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 
-def export_fp32_onnx(source_path: Path, output_path: Path) -> Path:
+def export_fp32_onnx(source_path: Path, output_path: Path, dynamic: bool = True) -> Path:
     """Export one Ultralytics PT file to a managed FP32 ONNX file."""
 
     from ultralytics import YOLO
@@ -13,7 +13,7 @@ def export_fp32_onnx(source_path: Path, output_path: Path) -> Path:
         format="onnx",
         imgsz=640,
         batch=1,
-        dynamic=False,
+        dynamic=dynamic,
         simplify=True,
         nms=False,
         opset=18,

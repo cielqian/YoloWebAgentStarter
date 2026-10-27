@@ -43,6 +43,8 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const [search, setSearch] = useState("");
   const [nodes, setNodes] = useState<TrainingNode[]>([]);
   const [omTarget, setOmTarget] = useState<ModelVersion>();
+  const [onnxTarget, setOnnxTarget] = useState<ModelVersion>();
+  const [onnxDynamic, setOnnxDynamic] = useState(true);
   const [omNodeId, setOmNodeId] = useState("");
   const [omSocVersion, setOmSocVersion] = useState("Ascend310P3");
   const [omInputShape, setOmInputShape] = useState("images:1,3,640,640");
@@ -246,6 +248,19 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     } finally {
       setFtpBusy(false);
     }
+  };
+
+  const submitOnnxExport = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!onnxTarget) return;
+    const target = onnxTarget;
+    void run(async () => {
+      const exported = await api.exportModelOnnx(target.id, onnxDynamic);
+      setOnnxTarget(undefined);
+      await refresh();
+      setDetailId(exported.id);
+      setNotice(`已导出 ONNX：${exported.name}${onnxDynamic ? "（动态 batch）" : "（固定 batch）"}`);
+    });
   };
 
   const openOmConvert = (model: ModelVersion) => {
@@ -610,7 +625,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
                                     {model.format === "pt" ? (
                                       <>
                                         <button type="button" className="model-action-btn model-action-btn--primary" disabled={busy} onClick={() => setTesting(model)}>测试</button>
-                                        <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => void exportOnnx(model)}>转ONNX</button>
+                                        <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => { setOnnxTarget(model); setOnnxDynamic(true); }}>转ONNX</button>
                                       </>
                                     ) : null}
                                     {model.format === "onnx" ? (
@@ -635,6 +650,32 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
             );
           })}
         </section>
+      )}
+
+      {onnxTarget && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setOnnxTarget(undefined)}>
+          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="onnx-export-title" onMouseDown={(event) => event.stopPropagation()}>
+            <form onSubmit={submitOnnxExport}>
+              <header>
+                <div>
+                  <span className="eyebrow">ONNX EXPORT</span>
+                  <h2 id="onnx-export-title">导出 ONNX：{onnxTarget.name}</h2>
+                  <p className="muted">FP32 ONNX，opset 18，自动化简；文件名与 PT 同名仅换后缀。</p>
+                </div>
+                <button type="button" className="icon-button" onClick={() => setOnnxTarget(undefined)} aria-label="关闭">×</button>
+              </header>
+              <label className="onnx-dynamic-row">
+                <input type="checkbox" checked={onnxDynamic} onChange={(event) => setOnnxDynamic(event.target.checked)} />
+                <span>动态尺寸（dynamic）</span>
+                <small>勾选后 batch 维度动态，推理时可变 batch 输入；不勾选则固定为 1×3×640×640。</small>
+              </label>
+              <footer>
+                <button type="button" className="button" onClick={() => setOnnxTarget(undefined)}>取消</button>
+                <button type="submit" className="button primary" disabled={busy}>开始导出</button>
+              </footer>
+            </form>
+          </section>
+        </div>
       )}
 
       {ftpTarget && (

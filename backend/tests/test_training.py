@@ -334,14 +334,15 @@ def test_model_metadata_and_onnx_lifecycle(client, tmp_path, monkeypatch):
     best = next(item for item in models if item["artifact_type"] == "best")
     calls: list[tuple[str, str]] = []
 
-    def fake_export(source, destination):
-        calls.append((str(source), str(destination)))
+    def fake_export(source, destination, dynamic=True):
+        calls.append((str(source), str(destination), dynamic))
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(b"fake onnx")
         return destination
 
     monkeypatch.setattr("app.models.onnx.export_fp32_onnx", fake_export)
-    exported = client.post(f"/api/models/{best['id']}/export-onnx")
+    exported = client.post(f"/api/models/{best['id']}/export-onnx", json={"dynamic": False})
+    assert calls[0][2] is False
     assert exported.status_code == 200, exported.text
     exported_model = exported.json()
     assert exported_model["format"] == "onnx"
@@ -379,7 +380,8 @@ def test_onnx_export_failure_does_not_register_an_orphan(client, tmp_path, monke
         raise RuntimeError("converter unavailable")
 
     monkeypatch.setattr("app.models.onnx.export_fp32_onnx", fail_export)
-    exported = client.post(f"/api/models/{best['id']}/export-onnx")
+    exported = client.post(f"/api/models/{best['id']}/export-onnx", json={"dynamic": False})
+    assert calls[0][2] is False
     assert exported.status_code == 422
     assert exported.json()["error"]["code"] == "onnx_export_failed"
     assert client.get(f"/api/models?dataset_id={dataset_id}").json()["total"] == 2

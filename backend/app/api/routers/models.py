@@ -11,7 +11,7 @@ from app.core.config import Settings
 from app.core.errors import ValidationError
 from app.core.storage import Storage
 from app.models import om_convert
-from app.models.schemas import InferenceResult, ModelCompareRequest, ModelCompareResponse, ModelEvaluationLogResponse, ModelEvaluationRecordResponse, ModelEvaluationRequest, ModelTestRecordResponse, ModelVersionList, ModelVersionResponse, ModelVersionUpdate, OmConvertJobResponse, OmConvertRequest
+from app.models.schemas import InferenceResult, OnnxExportRequest, ModelCompareRequest, ModelCompareResponse, ModelEvaluationLogResponse, ModelEvaluationRecordResponse, ModelEvaluationRequest, ModelTestRecordResponse, ModelVersionList, ModelVersionResponse, ModelVersionUpdate, OmConvertJobResponse, OmConvertRequest
 from app.models.evaluation import YoloEvaluationRunner
 from app.models.service import ModelService
 from app.settings.schemas import TrainingNodeCreate, TrainingNodeOut, TrainingNodeTestRequest, TrainingNodeTestResult
@@ -180,10 +180,12 @@ def download_model(
 @router.post("/{model_id}/export-onnx", response_model=ModelVersionResponse)
 def export_onnx(
     model_id: str,
+    payload: OnnxExportRequest | None = None,
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
 ) -> ModelVersionResponse:
-    return ModelService(storage).export_onnx(session, model_id)
+    dynamic = payload.dynamic if payload is not None else True
+    return ModelService(storage).export_onnx(session, model_id, dynamic=dynamic)
 
 
 @router.post("/{model_id}/test", response_model=InferenceResult)

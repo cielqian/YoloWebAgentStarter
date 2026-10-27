@@ -126,6 +126,10 @@ class ModelCompareResponse(BaseModel):
     suggestions: list[str]
 
 
+class OnnxExportRequest(BaseModel):
+    dynamic: bool = True
+
+
 class OmConvertRequest(BaseModel):
     node_id: str = Field(min_length=1)
     soc_version: str = Field(default="Ascend310P3", min_length=1, max_length=64)

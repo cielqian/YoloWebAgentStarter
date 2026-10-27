@@ -1706,3 +1706,33 @@
 .plugin-row-main { flex: 1; display: grid; gap: 3px; }
 .plugin-row-main small { color: #8a94a6; font-size: 11px; }
 .plugin-row-main em { font-style: normal; color: #3157d5; font-size: 11px; }
+
+.onnx-dynamic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e6e9f0;
+  border-radius: 8px;
+  background: #f8f9fc;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: #43506a;
+}
+
+.onnx-dynamic-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  padding: 0;
+  accent-color: #3157d5;
+  cursor: pointer;
+}
+
+.onnx-dynamic-row small {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 500;
+  color: #8a94a6;
+}
