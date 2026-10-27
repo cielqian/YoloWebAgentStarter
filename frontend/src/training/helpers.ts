@@ -18,6 +18,10 @@ export interface TrainingFormState {
   name: string;
   dataset_version_number: number | null;
   include_unannotated: boolean;
+  hsv_h: string;
+  degrees: string;
+  mixup: string;
+  fliplr: string;
   model: string;
   epochs: number;
   batch_size: number;
@@ -58,6 +62,10 @@ export function defaultForm(taskType: TaskType): TrainingFormState {
     name: "local-training",
     dataset_version_number: null,
     include_unannotated: false,
+    hsv_h: "0.015",
+    degrees: "10",
+    mixup: "0.1",
+    fliplr: "0",
     model: defaultModelFor(taskType),
     epochs: preset.epochs,
     batch_size: preset.batch_size,
@@ -161,6 +169,10 @@ export function applyTaskToForm(task: TrainingTask, name: string): TrainingFormS
     name,
     dataset_version_number: task.dataset_version_number ?? null,
     include_unannotated: Boolean(task.include_unannotated),
+    hsv_h: task.hsv_h != null ? String(task.hsv_h) : "",
+    degrees: task.degrees != null ? String(task.degrees) : "",
+    mixup: task.mixup != null ? String(task.mixup) : "",
+    fliplr: task.fliplr != null ? String(task.fliplr) : "",
     model: task.model_name,
     epochs: task.epochs,
     batch_size: task.batch_size,

@@ -196,6 +196,10 @@ class TrainingService:
                 optimizer=payload.optimizer,
                 lr0=payload.lr0,
                 patience=payload.patience,
+                hsv_h=payload.hsv_h,
+                degrees=payload.degrees,
+                mixup=payload.mixup,
+                fliplr=payload.fliplr,
                 resume=resume_epoch,
             )
                 command_args = command.args
@@ -221,6 +225,10 @@ class TrainingService:
                 optimizer=payload.optimizer,
                 lr0=payload.lr0,
                 patience=payload.patience,
+                hsv_h=payload.hsv_h,
+                degrees=payload.degrees,
+                mixup=payload.mixup,
+                fliplr=payload.fliplr,
                 config_json={
                     **payload.model_dump(),
                     **({"resume_source_task_id": resume_source_task_id, "resume_epoch": resume_epoch} if resume_source_task_id else {}),
@@ -366,6 +374,10 @@ class TrainingService:
             args.append(f"lr0={payload.lr0}")
         if payload.patience is not None:
             args.append(f"patience={payload.patience}")
+        for key in ("hsv_h", "degrees", "mixup", "fliplr"):
+            value = getattr(payload, key)
+            if value is not None:
+                args.append(f"{key}={value}")
         task = TrainingTask(
             id=resolved_task_id,
             dataset_id=dataset.id,
@@ -387,6 +399,10 @@ class TrainingService:
             optimizer=payload.optimizer,
             lr0=payload.lr0,
             patience=payload.patience,
+            hsv_h=payload.hsv_h,
+            degrees=payload.degrees,
+            mixup=payload.mixup,
+            fliplr=payload.fliplr,
             config_json=dict(payload.model_dump()),
             command_args_json=args,
             command_preview=shlex.join(args),

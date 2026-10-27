@@ -34,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.7"
+AGENT_VERSION = "0.4.8"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -285,6 +285,10 @@ class TaskManager:
             "optimizer": spec.get("optimizer"),
             "lr0": spec.get("lr0"),
             "patience": spec.get("patience"),
+            "hsv_h": spec.get("hsv_h"),
+            "degrees": spec.get("degrees"),
+            "mixup": spec.get("mixup"),
+            "fliplr": spec.get("fliplr"),
             "weights_url": spec.get("weights_url"),
         }
         with self.lock:
@@ -541,6 +545,10 @@ class TaskManager:
             args.append(f"lr0={spec['lr0']}")
         if spec.get("patience") is not None:
             args.append(f"patience={spec['patience']}")
+        for key in ("hsv_h", "degrees", "mixup", "fliplr"):
+            value = spec.get(key)
+            if value is not None:
+                args.append(f"{key}={value}")
 
         log(f"Training started on {socket.gethostname()}.")
         process_env = dict(os.environ)

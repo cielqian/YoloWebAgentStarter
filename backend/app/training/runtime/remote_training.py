@@ -424,6 +424,10 @@ def spec_from_task(task: TrainingTask) -> dict[str, Any]:
         "optimizer": task.optimizer,
         "lr0": task.lr0,
         "patience": task.patience,
+        "hsv_h": task.hsv_h,
+        "degrees": task.degrees,
+        "mixup": task.mixup,
+        "fliplr": task.fliplr,
     }
 
 

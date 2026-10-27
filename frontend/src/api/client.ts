@@ -393,6 +393,10 @@ export const api = {
     dataset_id: string;
     dataset_version_number?: number | null;
     include_unannotated?: boolean;
+    hsv_h?: number;
+    degrees?: number;
+    mixup?: number;
+    fliplr?: number;
     name: string;
     model: string;
     task_type: TaskType;

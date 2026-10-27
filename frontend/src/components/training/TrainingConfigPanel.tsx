@@ -240,6 +240,22 @@ export function TrainingConfigPanel({
                 {IMG_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}px</option>)}
               </select>
             </label>
+            <label className="training-ws-field">
+              <span>HSV 色调 (hsv_h)</span>
+              <input type="number" step="0.001" min={0} max={1} value={form.hsv_h} placeholder="0.015" onChange={(event) => setForm((prev) => ({ ...prev, hsv_h: event.target.value }))} />
+            </label>
+            <label className="training-ws-field">
+              <span>旋转角度 (degrees)</span>
+              <input type="number" step="1" min={0} max={180} value={form.degrees} placeholder="10" onChange={(event) => setForm((prev) => ({ ...prev, degrees: event.target.value }))} />
+            </label>
+            <label className="training-ws-field">
+              <span>Mixup 概率</span>
+              <input type="number" step="0.05" min={0} max={1} value={form.mixup} placeholder="0.1" onChange={(event) => setForm((prev) => ({ ...prev, mixup: event.target.value }))} />
+            </label>
+            <label className="training-ws-field">
+              <span>水平翻转 (fliplr)</span>
+              <input type="number" step="0.05" min={0} max={1} value={form.fliplr} placeholder="0" onChange={(event) => setForm((prev) => ({ ...prev, fliplr: event.target.value }))} />
+            </label>
             <label className="training-ws-check-row">
               <input
                 type="checkbox"

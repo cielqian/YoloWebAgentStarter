@@ -28,6 +28,10 @@ class TrainingTaskCreate(BaseModel):
     optimizer: str | None = Field(default=None, max_length=64)
     lr0: float | None = Field(default=None, gt=0)
     patience: int | None = Field(default=None, ge=0)
+    hsv_h: float | None = Field(default=None, ge=0.0, le=1.0)
+    degrees: float | None = Field(default=None, ge=0.0, le=180.0)
+    mixup: float | None = Field(default=None, ge=0.0, le=1.0)
+    fliplr: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class TrainingTaskResumeRequest(BaseModel):
@@ -43,6 +47,10 @@ class TrainingTaskResponse(BaseModel):
     dataset_id: str
     dataset_version_number: int | None = None
     include_unannotated: bool = False
+    hsv_h: float | None = None
+    degrees: float | None = None
+    mixup: float | None = None
+    fliplr: float | None = None
     profile_id: str | None
     name: str
     status: TrainingStatus

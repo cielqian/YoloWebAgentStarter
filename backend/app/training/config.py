@@ -79,6 +79,10 @@ def build_training_command(
     optimizer: str | None = None,
     lr0: float | None = None,
     patience: int | None = None,
+    hsv_h: float | None = None,
+    degrees: float | None = None,
+    mixup: float | None = None,
+    fliplr: float | None = None,
     resume: bool = False,
 ) -> TrainingCommand:
     run_path = Path(run_dir).resolve()
@@ -105,6 +109,9 @@ def build_training_command(
         args.append(f"lr0={lr0}")
     if patience is not None:
         args.append(f"patience={patience}")
+    for key, value in (("hsv_h", hsv_h), ("degrees", degrees), ("mixup", mixup), ("fliplr", fliplr)):
+        if value is not None:
+            args.append(f"{key}={value}")
     if resume:
         # The selected managed checkpoint is already the model reference. This
         # matches upstream: loading that model and passing resume=True makes

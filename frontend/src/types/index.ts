@@ -392,6 +392,10 @@ export interface TrainingTask {
   dataset_id: string;
   dataset_version_number?: number | null;
   include_unannotated?: boolean;
+  hsv_h?: number | null;
+  degrees?: number | null;
+  mixup?: number | null;
+  fliplr?: number | null;
   profile_id: string | null;
   name: string;
   status: TrainingStatus;
