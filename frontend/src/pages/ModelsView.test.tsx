@@ -192,3 +192,31 @@ describe("ModelsView save to FTP", () => {
     }
   });
 });
+
+
+describe("ModelsView FTP default name from lineage", () => {
+  it("derives the om file name from the source pt when the chain uses generic names", async () => {
+    const { api } = await import("../api/client");
+    (api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [
+        modelFixture({ id: "pt-1", name: "blade (best)", dataset_id: "ds-1", dataset_version_number: 1, model_path: "/m/pt-1/blade_best.pt", format: "pt", artifact_type: "best" }),
+        modelFixture({ id: "onnx-1", name: "model.onnx", dataset_id: "ds-1", dataset_version_number: 1, model_path: "/m/onnx-1/model.onnx", format: "onnx", artifact_type: "onnx", source_model_id: "pt-1" }),
+        modelFixture({ id: "om-1", name: "model.om", dataset_id: "ds-1", dataset_version_number: 1, model_path: "/m/om-1/model.om", format: "om", artifact_type: "om", source_model_id: "onnx-1" }),
+      ],
+      total: 3,
+    });
+    await act(async () => { root?.render(<ModelsView datasets={[detectSet]} />); });
+    await act(async () => {});
+    await act(async () => { (Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-drill-row") ?? [])[0])?.click(); });
+    await act(async () => {});
+    await act(async () => { (Array.from(container?.querySelectorAll<HTMLButtonElement>(".models-drill-row") ?? [])[0])?.click(); });
+    await act(async () => {});
+
+    const omRow = Array.from(container?.querySelectorAll<HTMLTableRowElement>("tbody tr") ?? []).find((row) => row.textContent?.includes("model.om"));
+    const saveButton = Array.from(omRow?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "转存FTP");
+    expect(saveButton).toBeDefined();
+    await act(async () => { saveButton?.click(); });
+    await act(async () => {});
+    expect(container?.querySelector<HTMLInputElement>(".ftp-save-name input")?.value).toBe("blade.om");
+  });
+});

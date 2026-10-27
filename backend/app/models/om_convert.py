@@ -129,9 +129,22 @@ def _target_model_id(source_model_id: str) -> str:
     return f"model_{source_model_id}_om"
 
 
-def _om_file_name(source: ModelVersion) -> str:
-    stem = Path(source.model_path).stem or Path(source.name).stem or "model"
-    return f"{stem}.om"
+def _om_file_name(session: Session, source: ModelVersion) -> str:
+    """OM 文件名沿用血缘链上最近的非通用命名(与 PT/ONNX 文件同名,仅后缀不同)。
+
+    旧版本导出的 ONNX 文件名可能是通用的 model.onnx,沿 source_model 链回溯到 PT 命名。
+    """
+    current: ModelVersion | None = source
+    seen: set[str] = set()
+    stem = ""
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        candidate = Path(current.model_path).stem or Path(current.name).stem
+        if candidate and candidate.lower() != "model":
+            stem = candidate
+            break
+        current = session.get(ModelVersion, current.source_model_id) if current.source_model_id else None
+    return f"{stem or 'model'}.om"
 
 
 def _ensure_converting_row(session: Session, storage: Storage, source: ModelVersion, soc_version: str) -> str:
@@ -151,7 +164,7 @@ def _ensure_converting_row(session: Session, storage: Storage, source: ModelVers
                 format="om",
                 task_type=source.task_type,
                 engine_type="ascend-atc",
-                model_path=str(storage.model_version_dir(target_id) / _om_file_name(source)),
+                model_path=str(storage.model_version_dir(target_id) / _om_file_name(session, source)),
                 base_model=source.name,
                 status="converting",
                 metrics_json=dict(source.metrics_json or {}),
@@ -269,7 +282,7 @@ def _persist_om(session: Session, storage: Storage, job: dict[str, Any], om_byte
     managed = storage.managed_model_path(output_path)
     existing = session.get(ModelVersion, target_id)
     if existing is not None:
-        existing.name = _om_file_name(source)
+        existing.name = _om_file_name(session, source)
         existing.model_path = str(managed)
         existing.status = "active"
         existing.notes = f"Converted from {source.name} via ATC ({job['soc_version']})."

@@ -205,8 +205,22 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     }
   };
 
+  const ftpDefaultName = (target: ModelVersion): string => {
+    const extension = ((target.model_path.split("/").pop() ?? target.name).match(/\.[^.]+$/) ?? [".om"])[0];
+    let current: ModelVersion | undefined = target;
+    const seen = new Set<string>();
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      const base = (current.model_path.split("/").pop() || current.name).replace(/_(best|last)(\.[^.]+)$/i, "$2");
+      const stem = base.replace(/\.[^.]+$/, "");
+      if (stem && stem.toLowerCase() !== "model") return `${stem}${extension}`;
+      current = models.find((item) => item.id === current?.source_model_id);
+    }
+    return `${(target.name.replace(/\.[^.]+$/, "").replace(/_(best|last)$/i, "") || "model")}${extension}`;
+  };
+
   const openFtpSave = (model: ModelVersion) => {
-    const fileName = (model.model_path.split("/").pop() || model.name).replace(/_(best|last)(\.[^.]+)$/i, "$2");
+    const fileName = ftpDefaultName(model);
     setFtpTarget(model);
     setFtpFileName(fileName);
     setFtpEntries([]);
