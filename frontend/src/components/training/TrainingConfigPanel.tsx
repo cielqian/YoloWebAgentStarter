@@ -256,15 +256,14 @@ export function TrainingConfigPanel({
               <span>水平翻转 (fliplr)</span>
               <input type="number" step="0.05" min={0} max={1} value={form.fliplr} placeholder="0" onChange={(event) => setForm((prev) => ({ ...prev, fliplr: event.target.value }))} />
             </label>
-            <label className="training-ws-check-row">
-              <input
-                type="checkbox"
-                checked={form.include_unannotated}
-                onChange={(event) => setForm((prev) => ({ ...prev, include_unannotated: event.target.checked }))}
-              />
-              <span>包含未标注图片</span>
-              <small>未标注图片生成空标签文件，作为背景样本参与训练与验证；不勾选则跳过</small>
-            </label>
+            <div className="training-ws-field">
+              <span>未标注图片</span>
+              <div className="tcc-seg-toggle" role="radiogroup" aria-label="未标注图片处理方式">
+                <button type="button" role="radio" aria-checked={!form.include_unannotated} className={!form.include_unannotated ? "active" : ""} title="只使用已标注图片训练" onClick={() => setForm((prev) => ({ ...prev, include_unannotated: false }))}>跳过</button>
+                <button type="button" role="radio" aria-checked={form.include_unannotated} className={form.include_unannotated ? "active" : ""} title="未标注图片生成空标签文件作为背景样本" onClick={() => setForm((prev) => ({ ...prev, include_unannotated: true }))}>包含·空标签</button>
+              </div>
+              <small className="tcc-field-hint">包含时未标注图片以空标签参与训练与验证（YOLO 背景样本）</small>
+            </div>
           </div>
           <p className="tcc-model-hint training-ws-field-wide" role="note">
             首次使用 {form.model} 时，Ultralytics 可能下载对应权重。请确认适用许可后再训练。

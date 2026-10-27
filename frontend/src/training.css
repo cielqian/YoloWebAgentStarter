@@ -2442,21 +2442,6 @@ button.training-remote-device-card:hover:not(:disabled) { border-color: var(--bo
   .training-record-actions { margin-left: auto; }
 }
 
-.training-ws-check-row {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid #e6e9f0;
-  border-radius: 8px;
-  background: #f8f9fc;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  color: #43506a;
-}
-
 .training-ws-check-row input[type="checkbox"] {
   width: 15px;
   height: 15px;
@@ -2469,6 +2454,42 @@ button.training-remote-device-card:hover:not(:disabled) { border-color: var(--bo
 .training-ws-check-row small {
   flex: 1;
   font-size: 11px;
+  font-weight: 500;
+  color: #8a94a6;
+  line-height: 1.4;
+}
+
+.tcc-seg-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 4px;
+}
+
+.tcc-seg-toggle button {
+  min-height: var(--control-height);
+  padding: 0 var(--control-padding-x);
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  color: #64748b;
+  background: #fff;
+  font-weight: 650;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tcc-seg-toggle button:hover {
+  border-color: #9db4e8;
+  color: #3157d5;
+}
+
+.tcc-seg-toggle button.active {
+  border-color: #3157d5;
+  color: #fff;
+  background: #3157d5;
+}
+
+.tcc-field-hint {
+  font-size: 10px;
   font-weight: 500;
   color: #8a94a6;
   line-height: 1.4;
