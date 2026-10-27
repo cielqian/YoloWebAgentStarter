@@ -232,6 +232,21 @@ def _append_new_logs(node: dict[str, Any], task: TrainingTask) -> None:
         counter_path.write_text(str(remote_count), encoding="utf-8")
 
 
+def _mirror_results_csv(node: dict[str, Any], task: TrainingTask) -> None:
+    """训练中把 agent 上的 results.csv 镜像到本地 run_dir，供 telemetry/summary 实时解析。"""
+    if not task.run_dir:
+        return
+    try:
+        response = httpx.get(f"{_base(node)}/tasks/{task.id}/artifacts/results.csv", headers=_headers(node), timeout=_POLL_TIMEOUT)
+    except httpx.HTTPError:
+        return
+    if response.status_code != 200:
+        return
+    destination = Path(task.run_dir) / "results.csv"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(response.text, encoding="utf-8")
+
+
 def sync_remote_task(session: Session, storage: Storage, settings: Settings, task: TrainingTask, unreachable_since: dict[str, float]) -> None:
     node = find_node(settings, task.node_id or "")
     if node is None:
@@ -253,6 +268,8 @@ def sync_remote_task(session: Session, storage: Storage, settings: Settings, tas
     unreachable_since.pop(task.id, None)
 
     remote_status = str(status.get("status") or "")
+    if remote_status == "running":
+        _mirror_results_csv(node, task)
     progress = status.get("progress") or {}
     if isinstance(progress, dict):
         total = int(progress.get("total_epochs") or task.epochs or 1)

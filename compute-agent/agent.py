@@ -34,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.8"
+AGENT_VERSION = "0.4.9"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -447,10 +447,11 @@ class TaskManager:
             shutil.rmtree(workspace, ignore_errors=True)
 
     def artifact_path(self, task_id: str, name: str) -> Path:
-        if name not in ("best.pt", "last.pt"):
-            raise TaskError(400, "artifact must be best.pt or last.pt")
+        if name not in ("best.pt", "last.pt", "results.csv"):
+            raise TaskError(400, "artifact must be best.pt, last.pt or results.csv")
         self.get(task_id)
-        path = self.workspace(task_id) / "run" / "weights" / name
+        relative = "run/results.csv" if name == "results.csv" else f"run/weights/{name}"
+        path = self.workspace(task_id) / relative
         if not path.is_file():
             raise TaskError(404, f"{name} is not ready yet")
         return path
