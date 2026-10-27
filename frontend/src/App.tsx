@@ -11,15 +11,17 @@ import { FtpView } from "./pages/FtpView";
 import { DataSourceView } from "./pages/DataSourceView";
 import { sam3TranslateMessage } from "./pages/ClassTemplatesView";
 import { AgentView, type AgentPageContext } from "./pages/AgentView";
+import { PluginHostView } from "./components/plugins/PluginHostView";
+import { PluginManagerView } from "./components/plugins/PluginManagerView";
 import { AutoAnnotationModal } from "./components/AutoAnnotationModal";
 import { ClassLibraryPicker } from "./components/ClassLibraryPicker";
 import { ImportCenterModal } from "./components/ImportCenterModal";
 import { DatasetVersionDialog } from "./components/DatasetVersionDialog";
 import { Toast } from "./components/Toast";
 import { readLocale, saveLocale, type AppLocale } from "./locale";
-import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, ModelVersion, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
+import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, ModelVersion, PluginMeta, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
 
-type View = "workspace" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources";
+type View = "workspace" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources" | "plugin-manager" | "plugin";
 type CardReportKind = "validation" | "quality" | "duplicates";
 const ANNOTATION_IMAGE_PAGE_SIZE = 20;
 
@@ -48,6 +50,8 @@ export default function App() {
   const [trainingCreateDatasetId, setTrainingCreateDatasetId] = useState<string>();
   const [focusModelId, setFocusModelId] = useState<string>();
   const [agentFocus, setAgentFocus] = useState<AgentPageContext>({});
+  const [plugins, setPlugins] = useState<PluginMeta[]>([]);
+  const [activePluginId, setActivePluginId] = useState<string>();
   const { requestLeave, dialog: leaveDialog } = useLeaveConfirm(view === "annotation" && annotationDirty);
 
   const rejectReadOnly = (dataset: Dataset) => {
@@ -144,6 +148,11 @@ export default function App() {
   useEffect(() => {
     saveLocale(locale);
   }, [locale]);
+
+  const refreshPlugins = () => {
+    api.listPlugins().then((result) => setPlugins(result.items)).catch(() => undefined);
+  };
+  useEffect(refreshPlugins, []);
 
   // 有数据集在异步导入时轮询列表，并在完成/失败时提示结果。
   const importStatesRef = useRef<Record<string, string | null | undefined>>({});
@@ -248,17 +257,29 @@ export default function App() {
   };
 
   const displayedDataset = selected;
+  const activePlugin = plugins.find((item) => item.id === activePluginId);
   const activeSection: StarterSection =
     view === "annotation"
       ? "workspace"
       : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-weights" || view === "settings-basedata" || view === "settings-webhook" || view === "settings-language"
         ? "settings"
-        : view;
+        : view === "plugin"
+          ? `plugin:${activePluginId ?? ""}`
+          : view;
   const navigate = (section: StarterSection) => {
     const proceed = () => {
       setNotice("");
       setError("");
       if (section === "agent") setAgentFocus({});
+      if (typeof section === "string" && section.startsWith("plugin:")) {
+        setActivePluginId(section.slice("plugin:".length));
+        setView("plugin");
+        return;
+      }
+      if (section === "plugin-manager") {
+        setView("plugin-manager");
+        return;
+      }
       // 训练与模型是全局入口：直接进入跨数据集的任务/模型列表，无数据集也可浏览。
       if (section === "training" || section === "models") {
         setView(section);
@@ -269,7 +290,7 @@ export default function App() {
         setNotice("请先创建或选择一个数据集。");
         return;
       }
-      setView(section === "settings" ? "settings-llm" : section);
+      setView((section === "settings" ? "settings-llm" : section) as View);
     };
     if (view === "annotation" && annotationDirty) {
       requestLeave(() => {
@@ -343,7 +364,7 @@ export default function App() {
   };
 
   return (
-    <StarterShell active={activeSection} onNavigate={navigate} locale={locale} focusMode={view === "annotation" && focusMode}>
+    <StarterShell active={activeSection} onNavigate={navigate} locale={locale} focusMode={view === "annotation" && focusMode} plugins={plugins}>
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <Toast kind="success" message={notice} onClose={() => setNotice("")} />
       {leaveDialog}
@@ -430,6 +451,10 @@ export default function App() {
             api.getSystemInfo().then((info) => setSamCapabilities(info.sam)).catch(() => undefined);
           }}
         />
+      ) : view === "plugin-manager" ? (
+        <PluginManagerView onChanged={refreshPlugins} />
+      ) : view === "plugin" ? (
+        activePlugin && <PluginHostView plugin={activePlugin} />
       ) : view === "ftp" ? (
         <FtpView />
       ) : view === "datasources" ? (

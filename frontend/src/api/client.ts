@@ -15,6 +15,7 @@ import type {
   TrainingTask,
   ModelVersion,
   OmConvertJob,
+  PluginMeta,
   InferenceResult,
   ModelComparison,
   ModelEvaluationRecord,
@@ -372,6 +373,15 @@ export const api = {
   deleteTrainingNode: (nodeId: string) => request<void>(`/api/training/nodes/${nodeId}`, { method: "DELETE" }),
   listOmNodes: () => request<TrainingNode[]>("/api/om-convert/nodes"),
   listOmNodeStatuses: () => request<TrainingNodeStatus[]>("/api/om-convert/nodes/status"),
+  listPlugins: () => request<{ items: PluginMeta[]; dropins_dir: string }>("/api/plugins"),
+  installPlugin: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<PluginMeta>("/api/plugins/install", { method: "POST", body: form });
+  },
+  scanPluginDropins: () => request<PluginMeta[]>("/api/plugins/dropins/scan", json({})),
+  deletePlugin: (pluginId: string) => request<void>(`/api/plugins/${pluginId}`, { method: "DELETE" }),
+  pluginAssetUrl: (pluginId: string, path: string) => apiUrl(`/api/plugins/${pluginId}/asset/${path.replace(/^\/+/, "")}`),
   createOmNode: (name: string, url: string, token: string, enabled = true) =>
     request<TrainingNode>("/api/om-convert/nodes", json({ name, url, token, enabled })),
   deleteOmNode: (nodeId: string) => request<void>(`/api/om-convert/nodes/${nodeId}`, { method: "DELETE" }),

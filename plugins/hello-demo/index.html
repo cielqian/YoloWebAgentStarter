@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hello 示例插件</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 32px; color: #273248; background: #f7f9ff; }
+    .card { max-width: 640px; padding: 24px; border: 1px solid #e1e6ef; border-radius: 12px; background: #fff; }
+    h1 { margin-top: 0; font-size: 20px; }
+    code { padding: 2px 6px; border-radius: 6px; background: #eef2fb; color: #3157d5; }
+    #health { margin-top: 12px; font-size: 13px; color: #25753c; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🧩 Hello 示例插件</h1>
+    <p>宿主上下文（URL 参数 <code>__ctx</code>）：<code id="ctx">-</code></p>
+    <p>平台健康检查：<span id="health">请求中…</span></p>
+    <p>插件可以做任何静态 Web 应用能做的事，并通过 REST 调用平台接口。</p>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    let context = {};
+    try { context = JSON.parse(atob(params.get("__ctx") || "")); } catch (e) {}
+    document.getElementById("ctx").textContent = JSON.stringify(context);
+    const base = context.apiBase || "";
+    fetch(base + "/api/system/health").then((response) => response.json()).then((data) => {
+      document.getElementById("health").textContent = JSON.stringify(data);
+    }).catch((error) => {
+      document.getElementById("health").textContent = "请求失败：" + error;
+    });
+  </script>
+</body>
+</html>

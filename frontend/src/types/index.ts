@@ -694,3 +694,14 @@ export interface SourceImagePage {
   limit: number;
   items: SourceImage[];
 }
+
+export interface PluginMeta {
+  id: string;
+  name: string;
+  version: string;
+  entry: string;
+  description: string | null;
+  author: string | null;
+  icon: string | null;
+  installed_at: string | null;
+}

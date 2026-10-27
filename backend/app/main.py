@@ -49,6 +49,16 @@ def create_app(settings: Settings | None = None, *, run_migrations: bool = True)
         video_import_queue.recover_orphaned()
         AgentService(database.session_factory, resolved).recover_orphaned()
         remote_training_poller.start(database.session_factory, storage, resolved)
+        try:
+            from app.plugins import service as plugin_service
+
+            installed = plugin_service.scan_dropins(storage)
+            if installed:
+                import logging
+
+                logging.getLogger("ywa").info("plugins auto-installed from dropins: %s", [item.id for item in installed])
+        except Exception:  # noqa: BLE001 - 插件装载失败不阻塞主服务
+            pass
         app.state.agent_executor = AgentRunExecutor()
         import logging
 

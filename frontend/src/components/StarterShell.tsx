@@ -2,13 +2,14 @@ import type { ReactNode } from "react";
 import type { AppLocale } from "../locale";
 import { localeText } from "../locale";
 
-export type StarterSection = "workspace" | "training" | "models" | "agent" | "logs" | "ftp" | "datasources" | "settings";
+export type StarterSection = "workspace" | "training" | "models" | "agent" | "logs" | "ftp" | "datasources" | "plugin-manager" | `plugin:${string}` | "settings";
 
 interface Props {
   active: StarterSection;
   onNavigate: (section: StarterSection) => void;
   locale?: AppLocale;
   focusMode?: boolean;
+  plugins?: Array<{ id: string; name: string; icon: string | null }>;
   children: ReactNode;
 }
 
@@ -24,9 +25,9 @@ const navigation: Array<{ id: StarterSection; label: string; icon: ReactNode }> 
 ];
 
 /** 应用外壳：顶栏 + 左侧导航 + 内容区。 */
-export function StarterShell({ active, onNavigate, locale = "zh", focusMode = false, children }: Props) {
+export function StarterShell({ active, onNavigate, locale = "zh", focusMode = false, plugins = [], children }: Props) {
   const text = localeText[locale];
-  const labels: Record<StarterSection, string> = {
+  const labels: Partial<Record<StarterSection, string>> = {
     workspace: text.datasets,
     training: text.training,
     models: text.models,
@@ -43,6 +44,15 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
           <nav className="starter-menu" aria-label={text.mainNav}>
             <span className="starter-menu-group-label">{text.workspaceGroup}</span>
             {navigation.slice(0, 7).map((item) => <NavigationButton key={item.id} item={item} active={active} labels={labels} onNavigate={onNavigate} />)}
+            <span className="starter-menu-group-label">{text.pluginsGroup}</span>
+            {plugins.map((plugin) => (
+              <button key={`plugin-${plugin.id}`} className={active === `plugin:${plugin.id}` ? "starter-menu-item active" : "starter-menu-item"} title={plugin.name} onClick={() => onNavigate(`plugin:${plugin.id}`)}>
+                <PluginIcon /><span>{plugin.name}</span>
+              </button>
+            ))}
+            <button className={active === "plugin-manager" ? "starter-menu-item active" : "starter-menu-item"} title="插件管理" onClick={() => onNavigate("plugin-manager")}>
+              <PluginIcon /><span>插件管理</span>
+            </button>
             <span className="starter-menu-group-label">{text.settingsGroup}</span>
             {navigation.slice(7).map((item) => <NavigationButton key={item.id} item={item} active={active} labels={labels} onNavigate={onNavigate} />)}
           </nav>
@@ -53,12 +63,14 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
   );
 }
 
-function NavigationButton({ item, active, labels, onNavigate }: { item: (typeof navigation)[number]; active: StarterSection; labels: Record<StarterSection, string>; onNavigate: (section: StarterSection) => void }) {
-  return <button className={active === item.id ? "starter-menu-item active" : "starter-menu-item"} title={labels[item.id]} onClick={() => onNavigate(item.id)}>
-    {item.icon}<span>{labels[item.id]}</span>
+function NavigationButton({ item, active, labels, onNavigate }: { item: (typeof navigation)[number]; active: StarterSection; labels: Partial<Record<StarterSection, string>>; onNavigate: (section: StarterSection) => void }) {
+  const label = labels[item.id] ?? item.label;
+  return <button className={active === item.id ? "starter-menu-item active" : "starter-menu-item"} title={label} onClick={() => onNavigate(item.id)}>
+    {item.icon}<span>{label}</span>
   </button>;
 }
 
+function PluginIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3 1.4 3.2L14.6 7.6 18 9l-3.4 1.4L13.2 13 12 15l-1.2-2-1.4-2.6L6 9l3.4-1.4L10.8 5 10 3Z" /><path d="M17.5 14.5 18.4 16.6 20.5 17.5 18.4 18.4 17.5 20.5 16.6 18.4 14.5 17.5 16.6 16.6 17.5 14.5Z" /><path d="M6 15.5 6.7 17.3 8.5 18 6.7 18.7 6 20.5 5.3 18.7 3.5 18 5.3 17.3 6 15.5Z" /></svg>; }
 function DatasetIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Z" /><path d="m7.5 15 2.5-3 2 2.2 1.7-1.8 2.8 3.1" /><circle cx="9" cy="9" r="1.2" /></svg>; }
 function TrainingIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18V9m5 9V5m5 13v-7m4 7V8" /><path d="M3.5 20.5h17" /></svg>; }
 function ModelIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 4v10l-7 4-7-4V7l7-4Z" /><path d="m5 7 7 4 7-4M12 11v10" /></svg>; }

@@ -6,6 +6,7 @@ from app.source_dataset.router import router as source_dataset_router
 from app.agent.router import router as agent_router
 from app.auto_annotation.router import dataset_router as auto_annotation_dataset_router, task_router as auto_annotation_task_router
 from app.logs.router import router as logs_router
+from app.plugins.router import router as plugins_router
 from app.video_import.router import router as video_import_router
 
 api_router = APIRouter(prefix="/api")
@@ -21,6 +22,7 @@ api_router.include_router(settings.router)
 api_router.include_router(ftp.router)
 api_router.include_router(source_dataset_router)
 api_router.include_router(logs_router)
+api_router.include_router(plugins_router)
 api_router.include_router(auto_annotation_dataset_router)
 api_router.include_router(auto_annotation_task_router)
 api_router.include_router(video_import_router)

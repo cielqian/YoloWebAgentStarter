@@ -1,0 +1,9 @@
+{
+  "id": "hello-demo",
+  "name": "Hello 示例插件",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "description": "演示插件规范的最小示例：读取宿主上下文并调用平台健康检查接口。",
+  "author": "YWA",
+  "icon": "🧩"
+}

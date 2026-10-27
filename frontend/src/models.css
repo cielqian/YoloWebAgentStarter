@@ -1684,3 +1684,25 @@
 .ftp-save-name input {
   font-weight: 500;
 }
+
+/* ---- 插件宿主与管理 ---- */
+.plugin-host-page { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; height: 100%; }
+
+.plugin-host-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
+.plugin-host-head h1 { margin: 4px 0 0; font-size: 22px; }
+.plugin-host-head p { margin: 6px 0 0; }
+.plugin-host-actions { display: flex; align-items: center; gap: 8px; }
+
+.plugin-host-frame { overflow: hidden; border: 1px solid #e1e6ef; border-radius: 12px; background: #fff; min-height: 0; }
+.plugin-host-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+.plugin-manager-page { display: grid; gap: 14px; align-content: start; }
+.dropins-hint { display: grid; gap: 6px; font-size: 12px; }
+.dropins-hint code { padding: 8px 10px; border-radius: 7px; background: #f4f6fb; color: #3157d5; font-size: 11px; word-break: break-all; }
+.dropins-hint small { color: #8a94a6; }
+
+.plugin-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #e6e9f0; border-radius: 10px; background: #fff; }
+.plugin-row-icon { font-size: 18px; }
+.plugin-row-main { flex: 1; display: grid; gap: 3px; }
+.plugin-row-main small { color: #8a94a6; font-size: 11px; }
+.plugin-row-main em { font-style: normal; color: #3157d5; font-size: 11px; }

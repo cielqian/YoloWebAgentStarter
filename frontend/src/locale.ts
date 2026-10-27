@@ -25,6 +25,7 @@ export const localeText = {
     logs: "日志",
     settingsGroup: "设置",
     workspaceGroup: "工作区",
+    pluginsGroup: "扩展",
     mainNav: "主导航",
   },
   en: {
@@ -40,6 +41,7 @@ export const localeText = {
     logs: "Logs",
     settingsGroup: "Settings",
     workspaceGroup: "Workspace",
+    pluginsGroup: "Extensions",
     mainNav: "Main navigation",
   },
 } as const;
