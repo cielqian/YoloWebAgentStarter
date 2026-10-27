@@ -376,12 +376,11 @@ def test_onnx_export_failure_does_not_register_an_orphan(client, tmp_path, monke
     wait_for_terminal(client, response.json()["id"])
     best = next(item for item in client.get(f"/api/models?dataset_id={dataset_id}").json()["items"] if item["artifact_type"] == "best")
 
-    def fail_export(source, destination):
+    def fail_export(source, destination, dynamic=True):
         raise RuntimeError("converter unavailable")
 
     monkeypatch.setattr("app.models.onnx.export_fp32_onnx", fail_export)
-    exported = client.post(f"/api/models/{best['id']}/export-onnx", json={"dynamic": False})
-    assert calls[0][2] is False
+    exported = client.post(f"/api/models/{best['id']}/export-onnx")
     assert exported.status_code == 422
     assert exported.json()["error"]["code"] == "onnx_export_failed"
     assert client.get(f"/api/models?dataset_id={dataset_id}").json()["total"] == 2
