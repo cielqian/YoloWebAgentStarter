@@ -1,6 +1,6 @@
 # 训练任务看板（插件包示例）
 
-按 [docs/PLUGIN_SPEC.md](../../docs/PLUGIN_SPEC.md) v1 规范开发的**完整示例插件**：原生 HTML/CSS/JS，无框架、无构建依赖，演示插件包的推荐工程结构与平台 API 对接方式。
+按 [docs/PLUGIN_SPEC.md](../../docs/PLUGIN_SPEC.md) 规范开发的**完整示例插件**：原生 HTML/CSS/JS，无框架、无构建依赖，演示插件包的推荐工程结构与平台 API 对接方式。
 
 ## 功能
 
