@@ -2546,3 +2546,32 @@ button.training-remote-device-card:hover:not(:disabled) { border-color: var(--bo
 .tcc-help-icon:focus .tcc-help-tip {
   opacity: 1;
 }
+
+.tcc-dataset-pick-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 10px 12px;
+}
+
+@media (max-width: 900px) {
+  .tcc-dataset-pick-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tcc-dataset-info-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.tcc-dataset-info-row span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #dbe4fb;
+  background: #f2f6ff;
+  color: #3157d5;
+  font-size: 11px;
+  font-weight: 700;
+}

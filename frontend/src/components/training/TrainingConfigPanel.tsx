@@ -94,22 +94,44 @@ export function TrainingConfigPanel({
             <h3>数据集</h3>
             <p>任务类型由数据集锁定；切换数据集会重置表单默认值。</p>
           </div>
-          <label className="training-ws-field training-ws-field-wide">
-            <span>选择数据集</span>
-            <select
-              value={dataset.id}
-              onChange={(event) => {
-                const next = datasets.find((item) => item.id === event.target.value);
-                if (next) onDatasetChange(next);
-              }}
-            >
-              {datasets.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} · {taskTypeLabel(item.task_type)} · {item.image_count} 张
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="tcc-dataset-pick-grid">
+            <label className="training-ws-field">
+              <span>选择数据集</span>
+              <select
+                value={dataset.id}
+                onChange={(event) => {
+                  const next = datasets.find((item) => item.id === event.target.value);
+                  if (next) onDatasetChange(next);
+                }}
+              >
+                {datasets.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} · {taskTypeLabel(item.task_type)} · {item.image_count} 张
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="training-ws-field">
+              <span>数据集版本</span>
+              <select
+                value={form.dataset_version_number ?? ""}
+                onChange={(event) => setForm((prev) => ({ ...prev, dataset_version_number: event.target.value ? Number(event.target.value) : null }))}
+              >
+                <option value="">跟随数据集</option>
+                {datasetVersions.map((version) => (
+                  <option key={version.id} value={version.version_number}>
+                    v{version.version_number}{version.is_active ? "（激活）" : ""} · {version.image_count} 张
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="tcc-dataset-info-row">
+            <span>{taskTypeLabel(dataset.task_type)}</span>
+            <span>{dataset.image_count} 张图片</span>
+            <span>{dataset.class_count} 类</span>
+            <span>{splitSummaryText}</span>
+          </div>
           <div className="tcc-task-type-seg tcc-task-type-seg--wrap" role="group" aria-label="任务类型">
             {(["detect", "segment", "obb", "classify", "pose"] as const).map((kind) => {
               const { Icon } = TASK_META[kind];
@@ -185,20 +207,6 @@ export function TrainingConfigPanel({
             <label className="training-ws-field">
               <span>任务名称</span>
               <input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} required />
-            </label>
-            <label className="training-ws-field">
-              <span>数据集版本</span>
-              <select
-                value={form.dataset_version_number ?? ""}
-                onChange={(event) => setForm((prev) => ({ ...prev, dataset_version_number: event.target.value ? Number(event.target.value) : null }))}
-              >
-                <option value="">跟随数据集（不指定版本）</option>
-                {datasetVersions.map((version) => (
-                  <option key={version.id} value={version.version_number}>
-                    v{version.version_number}{version.is_active ? "（当前激活）" : ""} · {version.image_count} 张{version.note ? ` · ${version.note}` : ""}
-                  </option>
-                ))}
-              </select>
             </label>
             <label className="training-ws-field">
               <span>基础权重</span>
@@ -308,13 +316,6 @@ export function TrainingConfigPanel({
               </label>
             </div>
           )}
-        </div>
-
-        <div className="training-ws-meta-row">
-          <span>{dataset.name}</span>
-          <span>{dataset.image_count} 张 · {dataset.class_count} 类</span>
-          <span>{splitSummaryText}</span>
-          <span>{taskTypeLabel(dataset.task_type)}</span>
         </div>
 
         <div className="training-config-summary-bar">
