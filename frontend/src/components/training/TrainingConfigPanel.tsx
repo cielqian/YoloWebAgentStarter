@@ -268,9 +268,6 @@ export function TrainingConfigPanel({
               </div>
             </div>
           </div>
-          <p className="tcc-model-hint training-ws-field-wide" role="note">
-            首次使用 {form.model} 时，Ultralytics 可能下载对应权重。请确认适用许可后再训练。
-          </p>
         </section>
 
         <div className="training-ws-advanced">
