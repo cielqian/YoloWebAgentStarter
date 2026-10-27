@@ -62,13 +62,20 @@ def plugin_dir(storage: Storage, plugin_id: str) -> Path:
     return plugins_root(storage) / plugin_id
 
 
-def _safe_member(name: str) -> str | None:
-    """zip 成员安全检查:拒绝绝对路径、.. 逃逸与设备文件;返回规整后的相对路径。"""
+def _clean_member(name: str) -> str | None:
+    """zip 成员规整:归一分隔符、剥掉前导 /;返回 None 表示应静默忽略的杂项。
+
+    忽略 .git,以及 macOS Finder 打包产生的 __MACOSX/、.DS_Store 与 ._* 资源分叉文件。
+    """
     cleaned = name.replace("\\", "/").lstrip("/")
-    if not cleaned or cleaned.startswith(".git/") or cleaned == ".git":
+    if not cleaned:
         return None
     parts = [part for part in cleaned.split("/") if part not in ("", ".")]
-    if any(part == ".." for part in parts):
+    if not parts:
+        return None
+    if parts[0] in (".git", "__MACOSX"):
+        return None
+    if any(part == ".DS_Store" or part.startswith("._") for part in parts):
         return None
     return "/".join(parts)
 
@@ -86,8 +93,10 @@ def install_zip(storage: Storage, payload: bytes) -> PluginOut:
     for info in archive.infolist():
         if info.is_dir():
             continue
-        safe = _safe_member(info.filename)
+        safe = _clean_member(info.filename)
         if safe is None:
+            continue
+        if ".." in safe.split("/"):
             raise ValidationError("plugin_zip_unsafe_path", f"插件包含不安全的路径：{info.filename}")
         if len(members) >= MAX_ENTRIES:
             raise ValidationError("plugin_zip_too_many_files", f"插件包文件数超过 {MAX_ENTRIES}。")

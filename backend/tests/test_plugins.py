@@ -90,6 +90,22 @@ def test_install_rejects_unsafe_paths_and_accepts_nested_root(client):
     assert client.get("/api/plugins/hello-demo/asset/index.html").status_code == 200
 
 
+def test_install_skips_macos_and_git_artifacts(client):
+    finder = io.BytesIO()
+    with zipfile.ZipFile(finder, "w") as archive:
+        archive.writestr("pkg/manifest.json", json.dumps(MANIFEST))
+        archive.writestr("pkg/index.html", INDEX_HTML)
+        archive.writestr("__MACOSX/pkg/._manifest.json", "junk")
+        archive.writestr("pkg/.DS_Store", "junk")
+        archive.writestr("pkg/._index.html", "junk")
+        archive.writestr("pkg/.git/config", "junk")
+    response = client.post("/api/plugins/install", files={"file": ("a.zip", finder.getvalue(), "application/zip")})
+    assert response.status_code == 201, response.text
+    assert client.get("/api/plugins/hello-demo/asset/index.html").status_code == 200
+    assert client.get("/api/plugins/hello-demo/asset/.DS_Store").status_code == 404
+    assert client.get("/api/plugins/hello-demo/asset/._index.html").status_code == 404
+
+
 def test_dropins_auto_scan_installs_zip(client):
     dropins = client.app.state.storage.data_dir / "plugins" / "dropins"
     dropins.mkdir(parents=True, exist_ok=True)
