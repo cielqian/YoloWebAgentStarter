@@ -290,3 +290,32 @@ def test_plugin_process_crash_never_affects_platform_and_self_heals(client, monk
     assert revived.json()["ok"] is True
 
     assert client.delete("/api/plugins/backend-demo").status_code == 204
+
+
+def test_plugin_runtime_logs_view_and_download(client):
+    installed = client.post(
+        "/api/plugins/install",
+        files={"file": ("backend-demo.zip", backend_plugin_zip(), "application/zip")},
+    )
+    assert installed.status_code == 201, installed.text
+
+    listed = client.get("/api/logs/plugins").json()["items"]
+    entry = next((item for item in listed if item["plugin_id"] == "backend-demo"), None)
+    assert entry is not None and entry["size_bytes"] > 0
+
+    tail = client.get("/api/logs/plugins/backend-demo?lines=100")
+    assert tail.status_code == 200, tail.text
+    assert "runner.log" in tail.json()["path"]
+    assert len(tail.json()["lines"]) > 0
+
+    download = client.get("/api/logs/plugins/backend-demo/download")
+    assert download.status_code == 200
+    assert "attachment" in download.headers.get("content-disposition", "")
+    assert "backend-demo_runner.log" in download.headers.get("content-disposition", "")
+    assert len(download.text) > 0
+
+    assert client.get("/api/logs/plugins/missing-plugin").status_code == 404
+
+    # 卸载后日志保留,可做事后排查
+    assert client.delete("/api/plugins/backend-demo").status_code == 204
+    assert client.get("/api/logs/plugins/backend-demo/download").status_code == 200

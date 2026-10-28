@@ -39,6 +39,7 @@ import type {
   TagTemplate,
   SystemInfo,
   RuntimeLogResponse,
+  PluginLogEntry,
   VideoImportTask,
   BaseWeight,
   TrainingDevice,
@@ -458,4 +459,8 @@ export const api = {
     if (options.level) query.set("level", options.level);
     return request<RuntimeLogResponse>(`/api/logs/runtime${query.toString() ? `?${query.toString()}` : ""}`);
   },
+  listPluginLogs: () => request<{ items: PluginLogEntry[] }>("/api/logs/plugins"),
+  pluginLogTail: (pluginId: string, lines: number) =>
+    request<RuntimeLogResponse>(`/api/logs/plugins/${encodeURIComponent(pluginId)}?lines=${lines}`),
+  pluginLogDownloadUrl: (pluginId: string) => apiUrl(`/api/logs/plugins/${encodeURIComponent(pluginId)}/download`),
 };

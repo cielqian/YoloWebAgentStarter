@@ -336,6 +336,13 @@ export interface RuntimeLogResponse {
   lines: string[];
 }
 
+export interface PluginLogEntry {
+  plugin_id: string;
+  name: string;
+  size_bytes: number;
+  modified_at: string;
+}
+
 export interface SystemInfo {
   name: string;
   edition: string;

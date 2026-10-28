@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 import re
 from collections import deque
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from app.core.config import Settings
+from app.core.errors import NotFoundError
 from app.logs.schemas import RuntimeLogResponse
 
 
@@ -127,3 +129,56 @@ def _tail_log_lines(path: Path, line_count: int) -> list[str]:
 def _line_level(line: str) -> str | None:
     match = LOG_LINE_RE.match(line)
     return match.group("level") if match else None
+
+
+def _plugin_log_path(settings: Settings, plugin_id: str) -> Path:
+    return settings.data_dir / "plugins-data" / plugin_id / "runner.log"
+
+
+def list_plugin_logs(settings: Settings) -> list[dict[str, object]]:
+    """列出有运行日志的后端插件(插件子进程输出,排查插件问题第一入口)。"""
+    plugins_root = settings.data_dir / "plugins"
+    entries: list[dict[str, object]] = []
+    if not plugins_root.is_dir():
+        return entries
+    for plugin_dir in sorted(plugins_root.iterdir()):
+        if not plugin_dir.is_dir() or plugin_dir.name == "dropins":
+            continue
+        manifest_path = plugin_dir / "manifest.json"
+        log_path = _plugin_log_path(settings, plugin_dir.name)
+        if not log_path.is_file():
+            continue
+        name = plugin_dir.name
+        if manifest_path.is_file():
+            try:
+                import json
+
+                name = str(json.loads(manifest_path.read_text(encoding="utf-8")).get("name") or name)
+            except (OSError, ValueError):
+                pass
+        stat = log_path.stat()
+        entries.append(
+            {
+                "plugin_id": plugin_dir.name,
+                "name": name,
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            }
+        )
+    return entries
+
+
+def read_plugin_log(settings: Settings, plugin_id: str, *, lines: int = 300) -> RuntimeLogResponse:
+    log_path = _plugin_log_path(settings, plugin_id)
+    if not log_path.is_file():
+        raise NotFoundError("plugin_log_not_found", "该插件还没有运行日志(未安装过或从未启动后端)。")
+    safe_lines = min(max(lines, 1), 1000)
+    return RuntimeLogResponse(path=str(log_path), level=None, lines=_tail_log_lines(log_path, safe_lines))
+
+
+def plugin_log_file(settings: Settings, plugin_id: str) -> Path:
+    """插件完整日志文件(下载用);文件名带插件 id。"""
+    log_path = _plugin_log_path(settings, plugin_id)
+    if not log_path.is_file():
+        raise NotFoundError("plugin_log_not_found", "该插件还没有运行日志(未安装过或从未启动后端)。")
+    return log_path

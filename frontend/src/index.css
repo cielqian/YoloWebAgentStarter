@@ -788,3 +788,5 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .dataset-version-badge[role="button"]:hover { outline: 1px dashed #b6c2e5; }
 
 .plugin-backend-badge { margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: #e6f4ec; color: #1d8a4e; font-size: 10px; font-style: normal; }
+
+.logs-source-toggle { margin-right: 4px; }
