@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.core.config import Settings
 from app.core.ids import new_id
 from app.core.models import Annotation, ClassLabel, Dataset, ImageItem
 from app.core.schemas import ClassLabelCreate, DatasetCreate, DatasetUpdate

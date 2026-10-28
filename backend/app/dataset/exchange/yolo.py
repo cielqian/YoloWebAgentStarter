@@ -235,7 +235,7 @@ def _class_for_image(image_name: str) -> str | None:
     return None
 
 
-def _obb_from_yolo(numbers: list[float], image_width: int, image_height: int) -> OBB:
+def _obb_from_yolo(numbers: list[float], image_width: int, image_height: int, source_name: str = "label file") -> OBB:
     if len(numbers) != 8:
         raise ValidationError("invalid_obb_label", f"OBB labels require four point pairs (in {source_name}).")
     if any(coordinate < 0 or coordinate > 1 for coordinate in numbers):

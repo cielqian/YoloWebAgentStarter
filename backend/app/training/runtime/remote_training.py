@@ -37,6 +37,8 @@ POLL_TIMEOUT_SECONDS = 10.0
 POLL_INTERVAL_SECONDS = 5.0
 UNREACHABLE_FAIL_AFTER_SECONDS = 600.0
 
+logger = logging.getLogger("ywa")
+
 TERMINAL_STATUSES = {"completed", "failed", "stopped"}
 
 
@@ -237,8 +239,9 @@ def _mirror_results_csv(node: dict[str, Any], task: TrainingTask) -> None:
     if not task.run_dir:
         return
     try:
-        response = httpx.get(f"{_base(node)}/tasks/{task.id}/artifacts/results.csv", headers=_headers(node), timeout=_POLL_TIMEOUT)
-    except httpx.HTTPError:
+        response = httpx.get(f"{_base(node)}/tasks/{task.id}/artifacts/results.csv", headers=_headers(node), timeout=POLL_TIMEOUT_SECONDS)
+    except Exception:  # noqa: BLE001 - 镜像失败只影响实时性,绝不能中断状态同步(曾经的静默 NameError 让全部遥测冻结)
+        logger.warning("镜像任务 %s 的 results.csv 失败", task.id, exc_info=True)
         return
     if response.status_code != 200:
         return
@@ -632,7 +635,6 @@ def _dispatch_flow(session_factory: sessionmaker[Session], storage: Storage, set
     except _DispatchCancelled:
         _dispatching_update(session_factory, task_id, require_status=None, status="stopped", error_message="数据下发已停止。", finished_at=utc_now(), progress_percent=0.0)
     except Exception as exc:  # noqa: BLE001 - 下发失败必须落到任务状态
-        logger = logging.getLogger("ywa")
         logger.warning("远程训练 %s 数据下发失败：%s", task_id, exc)
         _dispatching_update(session_factory, task_id, require_status=None, status="failed", error_message=f"数据下发失败：{exc}", finished_at=utc_now())
     finally:

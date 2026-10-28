@@ -34,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.10"
+AGENT_VERSION = "0.4.11"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -46,6 +46,8 @@ _SAFE_FILE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _EPOCH_LINE = re.compile(r"^\s*(\d+)\s*/\s*(\d+)\s")
 _SPEED_LINE = re.compile(r"([\d.]+)\s*(?:it|iter)/s", re.IGNORECASE)
 _S_PER_ITER_LINE = re.compile(r"([\d.]+)\s*s/(?:it|iter)", re.IGNORECASE)
+# tqdm 进度行带 \x1b[K 等转义前缀,不剥掉的话 _EPOCH_LINE 的行首锚定永远匹配不上
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 _device_cache: tuple[float, list[dict[str, Any]]] | None = None
 
@@ -635,6 +637,7 @@ class TaskManager:
         record = self.tasks.get(task_id)
         if record is None:
             return
+        line = _ANSI_ESCAPE.sub("", line)
         progress = dict(record.get("progress") or {})
         match = _EPOCH_LINE.match(line)
         if match:
