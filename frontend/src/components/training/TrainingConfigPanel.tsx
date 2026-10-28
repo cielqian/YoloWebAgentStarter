@@ -121,7 +121,7 @@ export function TrainingConfigPanel({
                 <option value="">跟随数据集</option>
                 {datasetVersions.map((version) => (
                   <option key={version.id} value={version.version_number}>
-                    v{version.version_number}{version.is_active ? "（激活）" : ""} · {version.image_count} 张
+                    {version.version_label || `v${version.version_number}`}{version.is_active ? "（激活）" : ""} · {version.image_count} 张
                   </option>
                 ))}
               </select>
@@ -131,7 +131,7 @@ export function TrainingConfigPanel({
             <span>{taskTypeLabel(dataset.task_type)}</span>
             {selectedVersion ? (
               <>
-                <span>v{selectedVersion.version_number} · {selectedVersion.image_count} 张图片</span>
+                <span>{selectedVersion.version_label || `v${selectedVersion.version_number}`} · {selectedVersion.image_count} 张图片</span>
                 <span>{selectedVersion.class_count} 类</span>
                 <span>{selectedVersion.annotation_count} 条标注</span>
               </>

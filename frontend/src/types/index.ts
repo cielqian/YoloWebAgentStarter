@@ -21,6 +21,8 @@ export interface Dataset {
   class_count: number;
   latest_version_number?: number | null;
   active_version_number?: number | null;
+  latest_version_label?: string | null;
+  active_version_label?: string | null;
   import_state?: "importing" | "completed" | "failed" | "stopped" | "merging" | "merge_failed" | "merge_stopped" | null;
   import_progress?: number;
   import_message?: string | null;
@@ -41,6 +43,7 @@ export interface DatasetVersion {
   id: string;
   dataset_id: string;
   version_number: number;
+  version_label: string;
   note: string | null;
   is_active: boolean;
   image_count: number;

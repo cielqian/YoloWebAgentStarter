@@ -55,7 +55,7 @@ def workspace_counts(session: Session, dataset_id: str) -> tuple[int, int, int]:
 def ensure_editable(session: Session, dataset_id: str) -> None:
     """激活历史版本时工作区只读；新建版本或激活最新版本后恢复可写。"""
     active = session.scalar(
-        select(DatasetVersion.version_number).where(
+        select(DatasetVersion).where(
             DatasetVersion.dataset_id == dataset_id, DatasetVersion.is_active.is_(True)
         )
     )
@@ -64,10 +64,10 @@ def ensure_editable(session: Session, dataset_id: str) -> None:
     latest = session.scalar(
         select(func.max(DatasetVersion.version_number)).where(DatasetVersion.dataset_id == dataset_id)
     )
-    if latest is not None and active != latest:
+    if latest is not None and active.version_number != latest:
         raise ConflictError(
             "dataset_read_only",
-            f"当前激活的是历史版本 v{active}（最新为 v{latest}），数据集只读。请新建版本或激活最新版本后再编辑。",
+            f"当前激活的是历史版本 {active.version_label}（最新为 v{latest}），数据集只读。请新建版本或激活最新版本后再编辑。",
         )
 
 
@@ -144,7 +144,38 @@ def _workspace_payload(session: Session, dataset_id: str) -> dict[str, Any]:
     }
 
 
-def create_version(session: Session, storage: Storage, dataset_id: str, note: str | None) -> DatasetVersion:
+def _label_taken(session: Session, dataset_id: str, label: str) -> bool:
+    """同数据集内标签唯一(忽略大小写,避免 v1 与 V1 共存)。"""
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(DatasetVersion)
+            .where(
+                DatasetVersion.dataset_id == dataset_id,
+                func.lower(DatasetVersion.version_label) == label.lower(),
+            )
+        )
+        or 0
+    ) > 0
+
+
+def _unique_label(session: Session, dataset_id: str, base: str) -> str:
+    """默认标签被占用时追加 _2/_3…,保证自动新建版本永不因重名失败。"""
+    if not _label_taken(session, dataset_id, base):
+        return base
+    suffix = 2
+    while _label_taken(session, dataset_id, f"{base}_{suffix}"):
+        suffix += 1
+    return f"{base}_{suffix}"
+
+
+def create_version(
+    session: Session,
+    storage: Storage,
+    dataset_id: str,
+    note: str | None,
+    version_label: str | None = None,
+) -> DatasetVersion:
     get_dataset(session, dataset_id)
     payload = _workspace_payload(session, dataset_id)
     image_count, annotation_count, class_count = workspace_counts(session, dataset_id)
@@ -152,10 +183,17 @@ def create_version(session: Session, storage: Storage, dataset_id: str, note: st
     last_number = session.scalar(
         select(func.max(DatasetVersion.version_number)).where(DatasetVersion.dataset_id == dataset_id)
     )
+    number = (last_number or 0) + 1
+    label = (version_label or "").strip()
+    if not label:
+        label = _unique_label(session, dataset_id, f"v{number}")
+    elif _label_taken(session, dataset_id, label):
+        raise ConflictError("dataset_version_label_taken", f"版本号“{label}”已存在，请换一个。")
     version = DatasetVersion(
         id=new_id("dsv"),
         dataset_id=dataset_id,
-        version_number=(last_number or 0) + 1,
+        version_number=number,
+        version_label=label,
         note=note,
         is_active=True,
         image_count=image_count,
@@ -329,6 +367,20 @@ def clone_version(
     session.commit()
     session.refresh(target)
     return target, imported, annotation_total, skipped
+
+
+def rename_version(session: Session, dataset_id: str, version_id: str, version_label: str) -> DatasetVersion:
+    """手动维护版本号文本;数据集内唯一(忽略大小写)。"""
+    version = get_version(session, dataset_id, version_id)
+    label = version_label.strip()
+    if not label:
+        raise ConflictError("dataset_version_label_invalid", "版本号不能为空。")
+    if label.lower() != version.version_label.lower() and _label_taken(session, dataset_id, label):
+        raise ConflictError("dataset_version_label_taken", f"版本号“{label}”已存在，请换一个。")
+    version.version_label = label
+    session.commit()
+    session.refresh(version)
+    return version
 
 
 def delete_version(session: Session, storage: Storage, dataset_id: str, version_id: str) -> None:

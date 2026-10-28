@@ -143,6 +143,8 @@ class DatasetResponse(ORMModel):
     class_count: int
     latest_version_number: int | None = None
     active_version_number: int | None = None
+    latest_version_label: str | None = None
+    active_version_label: str | None = None
     import_state: str | None = None
     import_progress: float = 0.0
     import_message: str | None = None
@@ -152,17 +154,33 @@ class DatasetResponse(ORMModel):
 
 class DatasetVersionCreate(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
+    version_label: str | None = Field(default=None, max_length=64)
 
     @field_validator("note")
     @classmethod
     def strip_note(cls, value: str | None) -> str | None:
         return value.strip() if value is not None else None
 
+    @field_validator("version_label")
+    @classmethod
+    def strip_label(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+
+class DatasetVersionRename(BaseModel):
+    version_label: str = Field(min_length=1, max_length=64)
+
+    @field_validator("version_label")
+    @classmethod
+    def strip_label(cls, value: str) -> str:
+        return value.strip()
+
 
 class DatasetVersionResponse(ORMModel):
     id: str
     dataset_id: str
     version_number: int
+    version_label: str
     note: str | None
     is_active: bool
     image_count: int

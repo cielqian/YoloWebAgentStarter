@@ -781,3 +781,8 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .tag-dialog-form { display: grid; gap: 14px; }
 .tag-dialog-form input { width: 100%; padding: 9px 10px; border: 1px solid #d5dcea; border-radius: 7px; font-size: 12px; }
 .tag-dialog-form label small { color: #8994a8; font-size: 10px; font-weight: 400; }
+
+.dataset-version-rename { display: flex; align-items: center; gap: 6px; }
+.dataset-version-rename input { width: 120px; padding: 6px 8px; border: 1px solid #d5dcea; border-radius: 7px; font-size: 12px; }
+.dataset-version-badge[role="button"] { cursor: pointer; }
+.dataset-version-badge[role="button"]:hover { outline: 1px dashed #b6c2e5; }

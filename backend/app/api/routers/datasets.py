@@ -33,6 +33,7 @@ from app.core.schemas import (
     DatasetVersionCloneCreate,
     DatasetVersionCloneResponse,
     DatasetVersionCreate,
+    DatasetVersionRename,
     DatasetVersionResponse,
     DuplicateReport,
     ImageItemResponse,
@@ -92,6 +93,7 @@ from app.dataset.versions import (
     delete_version as delete_dataset_version,
     ensure_editable,
     list_versions as list_dataset_versions,
+    rename_version as rename_dataset_version,
     workspace_counts,
 )
 
@@ -110,6 +112,8 @@ def _dataset_response(
     annotated_image_count: int = 0,
     latest_version_number: int | None = None,
     active_version_number: int | None = None,
+    latest_version_label: str | None = None,
+    active_version_label: str | None = None,
 ) -> DatasetResponse:
     return DatasetResponse(
         id=dataset.id,
@@ -123,6 +127,8 @@ def _dataset_response(
         class_count=dataset.class_count,
         latest_version_number=latest_version_number,
         active_version_number=active_version_number,
+        latest_version_label=latest_version_label,
+        active_version_label=active_version_label,
         import_state=dataset.import_state,
         import_progress=dataset.import_progress or 0.0,
         import_message=dataset.import_message,
@@ -142,22 +148,28 @@ def _dataset_responses(session: Session, datasets: list[Dataset]) -> list[Datase
             .group_by(Annotation.dataset_id)
         ).all()
     )
-    latest: dict[str, int] = {}
-    active: dict[str, int] = {}
-    for dataset_id, number, is_active in session.execute(
-        select(DatasetVersion.dataset_id, DatasetVersion.version_number, DatasetVersion.is_active).where(
-            DatasetVersion.dataset_id.in_(ids)
-        )
+    latest: dict[str, tuple[int, str]] = {}
+    active: dict[str, tuple[int, str]] = {}
+    for dataset_id, number, label, is_active in session.execute(
+        select(
+            DatasetVersion.dataset_id,
+            DatasetVersion.version_number,
+            DatasetVersion.version_label,
+            DatasetVersion.is_active,
+        ).where(DatasetVersion.dataset_id.in_(ids))
     ).all():
-        latest[dataset_id] = max(latest.get(dataset_id, 0), number)
+        if number > latest.get(dataset_id, (0, ""))[0]:
+            latest[dataset_id] = (number, label)
         if is_active:
-            active[dataset_id] = number
+            active[dataset_id] = (number, label)
     return [
         _dataset_response(
             dataset,
             annotated_image_count=annotated.get(dataset.id, 0),
-            latest_version_number=latest.get(dataset.id),
-            active_version_number=active.get(dataset.id),
+            latest_version_number=latest.get(dataset.id, (None,))[0],
+            active_version_number=active.get(dataset.id, (None,))[0],
+            latest_version_label=latest.get(dataset.id, (None, None))[1],
+            active_version_label=active.get(dataset.id, (None, None))[1],
         )
         for dataset in datasets
     ]
@@ -541,7 +553,17 @@ def post_dataset_version(
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
 ) -> DatasetVersionResponse:
-    return create_dataset_version(session, storage, dataset_id, payload.note)
+    return create_dataset_version(session, storage, dataset_id, payload.note, payload.version_label)
+
+
+@router.patch("/{dataset_id}/versions/{version_id}", response_model=DatasetVersionResponse)
+def patch_dataset_version(
+    dataset_id: str,
+    version_id: str,
+    payload: DatasetVersionRename,
+    session: Session = Depends(get_session),
+) -> DatasetVersionResponse:
+    return DatasetVersionResponse.model_validate(rename_dataset_version(session, dataset_id, version_id, payload.version_label))
 
 
 @router.post("/{dataset_id}/versions/{version_id}/activate", response_model=DatasetVersionActivateResponse)

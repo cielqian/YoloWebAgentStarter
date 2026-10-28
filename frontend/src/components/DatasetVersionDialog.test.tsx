@@ -11,14 +11,15 @@ vi.mock("../api/client", () => ({
   api: {
     listDatasetVersions: vi.fn(),
     createDatasetVersion: vi.fn(),
+    renameDatasetVersion: vi.fn(),
     activateDatasetVersion: vi.fn(),
     deleteDatasetVersion: vi.fn(),
   },
 }));
 
 const dataset: Dataset = { id: "ds-1", name: "vehicles", description: null, task_type: "detect", image_count: 3, annotated_image_count: 2, class_count: 1, created_at: "", updated_at: "" };
-const active: DatasetVersion = { id: "v-2", dataset_id: "ds-1", version_number: 2, note: "第二轮", is_active: true, image_count: 3, annotation_count: 5, class_count: 1, has_pending_changes: true, created_at: "2026-10-19T10:00:00Z", updated_at: "" };
-const inactive: DatasetVersion = { id: "v-1", dataset_id: "ds-1", version_number: 1, note: null, is_active: false, image_count: 2, annotation_count: 2, class_count: 1, created_at: "2026-10-18T10:00:00Z", updated_at: "" };
+const active: DatasetVersion = { id: "v-2", dataset_id: "ds-1", version_number: 2, version_label: "v2", note: "第二轮", is_active: true, image_count: 3, annotation_count: 5, class_count: 1, has_pending_changes: true, created_at: "2026-10-19T10:00:00Z", updated_at: "" };
+const inactive: DatasetVersion = { id: "v-1", dataset_id: "ds-1", version_number: 1, version_label: "v1", note: null, is_active: false, image_count: 2, annotation_count: 2, class_count: 1, created_at: "2026-10-18T10:00:00Z", updated_at: "" };
 
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
@@ -71,9 +72,36 @@ describe("DatasetVersionDialog", () => {
     });
     await act(async () => { findButton("新建版本（快照当前数据）")?.click(); });
 
-    expect(api.createDatasetVersion).toHaveBeenCalledWith("ds-1", "修复漏标");
+    expect(api.createDatasetVersion).toHaveBeenCalledWith("ds-1", "修复漏标", "");
     expect(api.listDatasetVersions).toHaveBeenCalledTimes(2);
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("creates a version with a custom label and renames inline", async () => {
+    await act(async () => {
+      root?.render(<DatasetVersionDialog dataset={dataset} onClose={vi.fn()} onChanged={vi.fn()} />);
+    });
+    const labelInput = container?.querySelector<HTMLInputElement>("input[placeholder='默认 v3']");
+    expect(labelInput).toBeTruthy();
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    act(() => {
+      setValue?.call(labelInput, "20261028_返修版");
+      labelInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => { findButton("新建版本（快照当前数据）")?.click(); });
+    expect(api.createDatasetVersion).toHaveBeenCalledWith("ds-1", "", "20261028_返修版");
+
+    // 点击版本徽标进入行内重命名,保存调用 PATCH
+    const badge = container?.querySelector<HTMLElement>(".dataset-version-badge");
+    expect(badge?.textContent).toBe("v2");
+    await act(async () => { badge?.click(); });
+    const renameInput = container?.querySelector<HTMLInputElement>("input[aria-label='新版本号']");
+    act(() => {
+      setValue?.call(renameInput, "正式版");
+      renameInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => { findButton("保存")?.click(); });
+    expect(api.renameDatasetVersion).toHaveBeenCalledWith("ds-1", "v-2", "正式版");
   });
 
   it("activates a version directly when the workspace matches the snapshot", async () => {

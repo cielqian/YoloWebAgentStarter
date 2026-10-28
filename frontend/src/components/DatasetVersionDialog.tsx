@@ -3,17 +3,21 @@ import { api } from "../api/client";
 import type { Dataset, DatasetVersion } from "../types";
 
 const formatTime = (value: string) => new Date(value).toLocaleString();
+const versionName = (version: DatasetVersion) => version.version_label || `v${version.version_number}`;
 
 export function DatasetVersionDialog({ dataset, onClose, onChanged }: { dataset: Dataset; onClose: () => void; onChanged: () => void }) {
   const [versions, setVersions] = useState<DatasetVersion[] | null>(null);
   const [note, setNote] = useState("");
+  const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string>();
   const [switchTarget, setSwitchTarget] = useState<DatasetVersion>();
+  const [renaming, setRenaming] = useState<{ id: string; label: string } | null>(null);
 
   const activeVersion = versions?.find((item) => item.is_active);
+  const nextNumber = (versions?.[0]?.version_number ?? 0) + 1;
 
   const reload = async () => {
     try {
@@ -44,10 +48,20 @@ export function DatasetVersionDialog({ dataset, onClose, onChanged }: { dataset:
 
   const create = () =>
     run(async () => {
-      await api.createDatasetVersion(dataset.id, note);
+      await api.createDatasetVersion(dataset.id, note, label);
       setNote("");
+      setLabel("");
       await reload();
       onChanged();
+    });
+
+  const rename = (version: DatasetVersion) =>
+    run(async () => {
+      await api.renameDatasetVersion(dataset.id, version.id, renaming?.label ?? "");
+      setRenaming(null);
+      await reload();
+      onChanged();
+      setNotice(`版本号已更新为“${renaming?.label ?? ""}”`);
     });
 
   const skippedSuffix = (skipped: number) => (skipped ? `，${skipped} 张因文件缺失被跳过` : "");
@@ -57,7 +71,7 @@ export function DatasetVersionDialog({ dataset, onClose, onChanged }: { dataset:
       const result = await api.activateDatasetVersion(dataset.id, version.id);
       await reload();
       onChanged();
-      setNotice(`已激活 v${version.version_number}：恢复 ${result.restored_images} 张图片` + skippedSuffix(result.skipped_images));
+      setNotice(`已激活 ${versionName(version)}：恢复 ${result.restored_images} 张图片` + skippedSuffix(result.skipped_images));
     });
 
   const archiveAndActivate = (version: DatasetVersion) =>
@@ -67,7 +81,7 @@ export function DatasetVersionDialog({ dataset, onClose, onChanged }: { dataset:
         const result = await api.activateDatasetVersion(dataset.id, version.id);
         onChanged();
         setNotice(
-          `已归档为 v${archived.version_number} 并激活 v${version.version_number}：恢复 ${result.restored_images} 张图片` +
+          `已归档为 ${versionName(archived)} 并激活 ${versionName(version)}：恢复 ${result.restored_images} 张图片` +
             skippedSuffix(result.skipped_images),
         );
       } finally {
@@ -104,6 +118,16 @@ export function DatasetVersionDialog({ dataset, onClose, onChanged }: { dataset:
         </header>
         <div className="dataset-version-create">
           <label>
+            版本号
+            <input
+              value={label}
+              placeholder={`默认 v${nextNumber}`}
+              onChange={(event) => setLabel(event.target.value)}
+              disabled={busy}
+              aria-label="版本号"
+            />
+          </label>
+          <label>
             版本备注
             <input value={note} placeholder="例如：修复了 20 张漏标" onChange={(event) => setNote(event.target.value)} disabled={busy} />
           </label>
@@ -114,7 +138,7 @@ export function DatasetVersionDialog({ dataset, onClose, onChanged }: { dataset:
         {switchTarget && (
           <div className="dataset-version-switch" role="alert">
             <p>
-              当前激活的 v{activeVersion?.version_number} 有未归档改动，切换到 v{switchTarget.version_number}{" "}
+              当前激活的 {activeVersion ? versionName(activeVersion) : ""} 有未归档改动，切换到 {versionName(switchTarget)}{" "}
               将丢失这些改动。可先归档当前工作区（会生成一个新版本），再执行切换。
             </p>
             <div className="dataset-version-switch-actions">
@@ -138,7 +162,34 @@ export function DatasetVersionDialog({ dataset, onClose, onChanged }: { dataset:
           ) : (
             versions.map((version) => (
               <div key={version.id} className={`dataset-version-row${version.is_active ? " active" : ""}`}>
-                <span className="dataset-version-badge">v{version.version_number}</span>
+                {renaming?.id === version.id ? (
+                  <div className="dataset-version-rename">
+                    <input
+                      value={renaming.label}
+                      autoFocus
+                      aria-label="新版本号"
+                      disabled={busy}
+                      onChange={(event) => setRenaming({ id: version.id, label: event.target.value })}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && renaming.label.trim()) void rename(version);
+                        if (event.key === "Escape") setRenaming(null);
+                      }}
+                    />
+                    <button className="button primary" disabled={busy || !renaming.label.trim()} onClick={() => void rename(version)}>保存</button>
+                    <button className="button" disabled={busy} onClick={() => setRenaming(null)}>取消</button>
+                  </div>
+                ) : (
+                  <span
+                    className="dataset-version-badge"
+                    title="点击修改版本号"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setRenaming({ id: version.id, label: versionName(version) })}
+                    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setRenaming({ id: version.id, label: versionName(version) }); }}
+                  >
+                    {versionName(version)}
+                  </span>
+                )}
                 <div className="dataset-version-meta">
                   <strong>
                     {version.note || "（无备注）"}

@@ -296,3 +296,57 @@ def test_clone_dataset_without_versions_clones_workspace(client):
     # 传不存在的 version_id 仍然 404
     missing = client.post(f"/api/datasets/{dataset_id}/clone", json={"name": "bad", "version_id": "dsv_missing"})
     assert missing.status_code == 404, missing.text
+
+
+def test_version_label_defaults_and_manual_text(client):
+    dataset_id = create_dataset(client, "detect")
+
+    first = client.post(f"/api/datasets/{dataset_id}/versions", json={"note": "默认标签"}).json()
+    assert first["version_number"] == 1
+    assert first["version_label"] == "v1"
+
+    custom = client.post(f"/api/datasets/{dataset_id}/versions", json={"note": "自定义", "version_label": "20261028_返修版"})
+    assert custom.status_code == 201, custom.text
+    assert custom.json()["version_label"] == "20261028_返修版"
+    assert custom.json()["version_number"] == 2
+
+    # 数据集内标签唯一(忽略大小写)
+    dup = client.post(f"/api/datasets/{dataset_id}/versions", json={"version_label": "V1"})
+    assert dup.status_code == 409
+    assert dup.json()["error"]["code"] == "dataset_version_label_taken"
+
+    # 提前把 v1 改名为未来的默认标签 v3 后,新建版本自动改用 v3_2 而不是撞名
+    client.patch(f"/api/datasets/{dataset_id}/versions/{first['id']}", json={"version_label": "v3"})
+    auto = client.post(f"/api/datasets/{dataset_id}/versions", json={}).json()
+    assert auto["version_number"] == 3
+    assert auto["version_label"] == "v3_2"
+
+
+def test_rename_version_label(client):
+    dataset_id = create_dataset(client, "detect")
+    first = client.post(f"/api/datasets/{dataset_id}/versions", json={}).json()
+    second = client.post(f"/api/datasets/{dataset_id}/versions", json={}).json()
+
+    renamed = client.patch(
+        f"/api/datasets/{dataset_id}/versions/{second['id']}", json={"version_label": "正式版"}
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["version_label"] == "正式版"
+    assert renamed.json()["version_number"] == 2
+
+    # 改成与其它版本重名(忽略大小写) → 409
+    conflict = client.patch(
+        f"/api/datasets/{dataset_id}/versions/{second['id']}", json={"version_label": "V1"}
+    )
+    assert conflict.status_code == 409
+
+    # 自己保持原名(仅大小写调整)允许
+    keep = client.patch(
+        f"/api/datasets/{dataset_id}/versions/{second['id']}", json={"version_label": "正式版-V2"}
+    )
+    assert keep.status_code == 200
+
+    # Dataset 汇总带出最新/激活版本标签
+    summary = client.get(f"/api/datasets/{dataset_id}").json()
+    assert summary["latest_version_label"] == "正式版-V2"
+    assert summary["active_version_label"] == "正式版-V2"

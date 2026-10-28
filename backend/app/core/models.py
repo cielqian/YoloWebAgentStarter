@@ -138,11 +138,15 @@ class DatasetVersion(Base, TimestampMixin):
     """
 
     __tablename__ = "dataset_versions"
-    __table_args__ = (UniqueConstraint("dataset_id", "version_number", name="uq_dataset_version_number"),)
+    __table_args__ = (
+        UniqueConstraint("dataset_id", "version_number", name="uq_dataset_version_number"),
+        UniqueConstraint("dataset_id", "version_label", name="uq_dataset_version_label"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True, nullable=False)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    version_label: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     image_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -224,8 +224,13 @@ export const api = {
   updateDataset: (datasetId: string, payload: { name?: string; model_name?: string | null; description?: string | null }) =>
     request<Dataset>(`/api/datasets/${datasetId}`, json(payload, "PATCH")),
   getDatasetSplitCounts: (datasetId: string) => request<Record<string, number>>(`/api/datasets/${datasetId}/split-counts`),
-  createDatasetVersion: (datasetId: string, note?: string) =>
-    request<DatasetVersion>(`/api/datasets/${datasetId}/versions`, json({ note: note?.trim() || null })),
+  createDatasetVersion: (datasetId: string, note?: string, versionLabel?: string) =>
+    request<DatasetVersion>(
+      `/api/datasets/${datasetId}/versions`,
+      json({ note: note?.trim() || null, version_label: versionLabel?.trim() || null }),
+    ),
+  renameDatasetVersion: (datasetId: string, versionId: string, versionLabel: string) =>
+    request<DatasetVersion>(`/api/datasets/${datasetId}/versions/${versionId}`, json({ version_label: versionLabel }, "PATCH")),
   activateDatasetVersion: (datasetId: string, versionId: string) =>
     request<{ version: DatasetVersion; restored_images: number; skipped_images: number }>(
       `/api/datasets/${datasetId}/versions/${versionId}/activate`,

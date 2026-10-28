@@ -16,8 +16,8 @@ vi.mock("./api/client", () => ({
 
 const dataset: Dataset = { id: "ds-1", name: "vehicles", description: null, task_type: "detect", image_count: 5, annotated_image_count: 3, class_count: 1, latest_version_number: 2, active_version_number: 2, created_at: "", updated_at: "" };
 const versions = [
-  { id: "v-2", dataset_id: "ds-1", version_number: 2, note: "第二轮", is_active: true, image_count: 5, annotation_count: 6, class_count: 1, created_at: "", updated_at: "" },
-  { id: "v-1", dataset_id: "ds-1", version_number: 1, note: null, is_active: false, image_count: 3, annotation_count: 3, class_count: 1, created_at: "", updated_at: "" },
+  { id: "v-2", dataset_id: "ds-1", version_number: 2, version_label: "v2", note: "第二轮", is_active: true, image_count: 5, annotation_count: 6, class_count: 1, created_at: "", updated_at: "" },
+  { id: "v-1", dataset_id: "ds-1", version_number: 1, version_label: "v1", note: null, is_active: false, image_count: 3, annotation_count: 3, class_count: 1, created_at: "", updated_at: "" },
 ];
 
 let root: Root | undefined;
