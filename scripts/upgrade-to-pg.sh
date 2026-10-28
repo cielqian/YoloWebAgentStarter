@@ -36,8 +36,10 @@ VOLUME="$(docker volume ls --format '{{.Name}}' | grep -E 'ywa-data$' | head -1)
 echo "数据卷: $VOLUME"
 
 step "1/7 预检:PG 连通性"
-$COMPOSE run --rm --no-deps -e PG_URL="$PG_URL" backend \
-  python -c "import psycopg2, os; psycopg2.connect(os.environ['PG_URL']); print('PG 可连通')"
+# psycopg2 原生 connect 只认 postgresql:// DSN,先剥掉 SQLAlchemy 的 +psycopg2 后缀
+PG_DSN="${PG_URL/postgresql+psycopg2:/postgresql:}"
+$COMPOSE run --rm --no-deps -e PG_DSN="$PG_DSN" backend \
+  python -c "import psycopg2, os; psycopg2.connect(os.environ['PG_DSN']); print('PG 可连通')"
 
 step "2/7 备份 SQLite(只读拷贝)"
 BACKUP="$APP_DIR/${DB_NAME}.bak-$STAMP"
