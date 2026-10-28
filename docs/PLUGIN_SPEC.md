@@ -10,9 +10,9 @@
 
 ## 0. 什么是 YWA 插件（一句话）
 
-插件 = **一个自包含的静态 Web 应用**，打成一个 zip 交给平台；平台解压后在你无需关心的页面里用 **iframe** 打开你的入口页，你的页面再通过 **HTTP REST** 调用平台接口完成业务功能。
+插件 = **一个自包含的 Web 应用包**（可选带 Python 后端），打成一个 zip 交给平台；平台解压后在 iframe 里打开你的入口页，页面通过 **HTTP REST** 调用平台接口或**自身后端**完成业务功能。带后端时，平台进程会加载你的 Python 路由并热挂载（见第 5 节）。
 
-**最终交付物：一个符合第 3 节规则的 `.zip` 文件。** 不需要服务端、不需要进程、不需要登录态。
+**最终交付物：一个符合第 3 节规则的 `.zip` 文件。** 不需要独立服务进程、不需要登录态。
 
 ---
 
@@ -23,9 +23,10 @@
 3. 编写 `manifest.json`（契约见 2.1，直接复制模板改）。
 4. 编写入口页 `index.html`（**必须**包含 4.2 的 `__ctx` 解析样板代码）。
 5. 其余 JS/CSS/图片等资源用**相对路径**引用（规则见 4.3）。
-6. 调平台 REST API 时**必须**使用 `__ctx` 解析出的 `apiBase`（规则见 4.2），常用接口见第 5 节。
-7. 按**第 7 节自检清单**逐条核对。
-8. 按**第 6 节**打包 zip 并安装验证。
+6. 调平台 REST API 时**必须**使用 `__ctx` 解析出的 `apiBase`（规则见 4.2），常用接口见第 6 节。
+7. 需要后端逻辑时，按**第 5 节**编写 `server/main.py` 并在 manifest 声明 `backend`。
+8. 按**第 8 节自检清单**逐条核对。
+9. 按**第 7 节**打包 zip 并安装验证。
 
 ---
 
@@ -41,6 +42,7 @@
 | `name` | 是 | string | 1-100 字符 | 显示在扩展区菜单 |
 | `version` | 是 | string | 正则 `\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?`（如 `1.0.0`、`1.2.0-beta.1`） | 语义化版本号 |
 | `entry` | 否 | string | 默认 `index.html`；必须是 zip 内相对路径，**禁止**含 `..`、反斜杠、前导 `/` | 入口页面 |
+| `backend` | 否 | object | `{"entry": "server/main.py"}`；entry 必须是包内相对 `.py` 路径且存在 | 声明携带 Python 后端（契约见第 5 节） |
 | `description` | 否 | string | ≤ 2000 字符 | 一句话描述 |
 | `author` | 否 | string | ≤ 100 字符 | 作者 |
 | `icon` | 否 | string | ≤ 8 字符 | emoji，作为菜单图标，如 `"📊"` |
@@ -122,11 +124,12 @@ cd dist && zip -r ../my-plugin.zip .
 宿主通过查询参数 `__ctx` 注入 base64 编码的 JSON：
 
 ```json
-{ "apiBase": "http://10.11.107.94:8000", "pluginId": "my-plugin" }
+{ "apiBase": "http://10.11.107.94:8000", "pluginId": "my-plugin", "pluginApiBase": "http://10.11.107.94:8000/api/plugins/my-plugin" }
 ```
 
 - `apiBase`：平台 origin（**不含** `/api` 后缀，无尾部斜杠）。调用接口时拼接 `apiBase + "/api/..."`。
 - `pluginId`：当前插件 id。
+- `pluginApiBase`：本插件后端 API 的基地址（含后端的插件才有意义），拼接 `pluginApiBase + "/..."` 调用自身后端（见第 5 节）。
 
 **禁止**硬编码平台地址；**必须**在每次启动时从 `__ctx` 解析。入口页 JS 中**必须**包含如下解析样板（可直接复制）：
 
@@ -160,7 +163,67 @@ function api(path, options) {
 
 ---
 
-## 5. 平台 REST API
+## 5. 后端插件（Python，可选）
+
+插件包可选携带 Python 后端：安装时平台进程加载它并把返回的路由**热挂载**到
+`/api/plugins/{id}/{插件路由}`，卸载/重装时原路摘除——前端与后端在同一个插件包里协同工作。
+
+### 5.1 manifest 声明
+
+```json
+{
+  "id": "my-plugin",
+  "backend": { "entry": "server/main.py" }
+}
+```
+
+- `backend` 整段**选填**；不写即为纯前端插件（与历史行为完全一致）。
+- `backend.entry` **必须**是包内相对 `.py` 路径（**禁止** `..`、反斜杠），文件**必须**存在于包内。
+
+### 5.2 模块契约
+
+入口模块**必须**导出 `create_router(ctx) -> fastapi.APIRouter`，在安装时被执行：
+
+```python
+from fastapi import APIRouter
+
+def create_router(ctx) -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/ping")          # 实际路径:/api/plugins/my-plugin/ping
+    def ping():
+        return {"ok": True, "plugin": ctx.plugin_id}
+
+    return router
+```
+
+安装时 `create_router` 抛错、返回非 `APIRouter`、或模块有语法错误 → **安装整体失败并回滚**（422 `plugin_backend_invalid`）。
+
+### 5.3 `ctx`（PluginContext，后端可用能力的全部边界）
+
+| 属性 | 类型 | 说明 |
+|---|---|---|
+| `plugin_id` / `name` / `version` | str | 来自 manifest |
+| `data_dir` | Path | 插件**私有数据目录**（`<数据目录>/plugins-data/<id>`），跨请求持久；重装保留、卸载后残留（不会随插件目录删除） |
+| `engine` | sqlalchemy Engine | 平台数据库引擎（当前 PostgreSQL） |
+| `session_factory` | sessionmaker | 平台数据库会话工厂，`with ctx.session_factory() as session:` |
+| `logger` | Logger | 独立日志器 `ywa.plugin.<id>`，进平台日志 |
+
+**必须**用 `ctx.session_factory()` 访问平台数据（表结构以平台模型为准）；**禁止**自建数据库连接或写平台管理目录之外的位置（插件自己的 `data_dir` 除外）。
+
+### 5.4 生命周期与限制（必须了解）
+
+- **热挂载/热摘除**：安装即挂载、卸载即摘除、同 id 重装即热升级，**无需重启平台**。
+- 平台**重启**时会自动重新加载所有已装插件的后端；单个插件加载失败只记日志跳过，不影响平台启动。
+- **信任模型**：后端插件与平台**同进程同权限**运行，等同平台自身代码——仅限管理员安装（与上传权限一致），**不要**安装不受信任来源的插件。
+- **依赖**：只能使用平台环境已预装的库（标准库、FastAPI、SQLAlchemy、Pydantic 等平台自带）；插件**不能**自带或触发安装第三方依赖。
+- **路径保留字**：插件路由**禁止**使用 `asset` 开头的路径（与静态资源端点 `/api/plugins/{id}/asset/...` 冲突）。
+- 兄弟模块：入口同目录的 `.py` 可直接 `import`；多插件间同名模块可能冲突，**建议**给辅助模块加插件前缀。
+- 长耗时/阻塞请求会占住平台工作线程——批量任务请分页或异步化。
+
+---
+
+## 6. 平台 REST API
 
 ### 5.1 插件管理接口
 
@@ -186,7 +249,7 @@ function api(path, options) {
 
 ---
 
-## 6. 安装、升级与卸载
+## 7. 安装、升级与卸载
 
 1. **dropins 自动装载（推荐）**：把 zip 放到 `<数据目录>/plugins/dropins/`，服务启动时或「插件管理 → 扫描 dropins」时自动安装；dropins 目录内容变化（mtime 改变）后再次扫描即增量安装。
 2. **界面上传**：插件管理页 → 安装插件包（.zip）。
@@ -196,15 +259,16 @@ function api(path, options) {
 
 ---
 
-## 7. 交付前自检清单（逐条核对，全部通过才交付）
+## 8. 交付前自检清单（逐条核对，全部通过才交付）
 
 - [ ] zip 解开后 `manifest.json` 位于根目录（或唯一顶层目录之下）。
 - [ ] `manifest.json` 为 UTF-8 合法 JSON，必填字段齐全。
 - [ ] `id` 匹配 `^[a-z0-9][a-z0-9-]{1,63}$`；`version` 形如 `x.y.z`（可带预发布后缀）。
 - [ ] `entry` 文件存在于包内；页面引用的所有资源都存在于包内且用相对路径。
+- [ ] 声明了 `backend` 时：入口 `.py` 存在于包内、模块导出 `create_router(ctx) -> APIRouter`、路由路径不以 `asset` 开头、只使用平台已预装的库、数据只写 `ctx.data_dir`。
 - [ ] 包内无绝对路径、无 `..`、无反斜杠路径分隔。
 - [ ] zip ≤ 200MB、解压总量 ≤ 200MB、单文件 ≤ 64MB、文件数 ≤ 4000。
-- [ ] 入口页包含 4.2 的 `__ctx` 解析样板；所有接口调用基于解析出的 `apiBase`，无硬编码地址。
+- [ ] 入口页包含 4.2 的 `__ctx` 解析样板；所有接口调用基于解析出的 `apiBase` / `pluginApiBase`，无硬编码地址。
 - [ ] 忽略 `__v` 查询参数。
 - [ ] 无认证头/登录逻辑（平台无登录态）。
 - [ ] `html, body` 占满容器（height:100%; margin:0），宽高自适应，内容溢出可滚动。
@@ -213,7 +277,7 @@ function api(path, options) {
 
 ---
 
-## 8. 最小可运行模板（可直接复制后修改）
+## 9. 最小可运行模板（可直接复制后修改）
 
 **manifest.json**
 
@@ -269,9 +333,10 @@ function api(path, options) {
 
 ---
 
-## 9. 仓库内参考实现
+## 10. 仓库内参考实现
 
 | 目录 | 定位 | 适合参考的部分 |
 |---|---|---|
 | `plugins/hello-demo/` | 最小可运行示例 | 单文件结构、`__ctx` 解析、健康检查调用 |
-| `plugins/training-dashboard/` | 完整工程示例 | 推荐工程结构（src/dist 分离 + npm build/pack 脚本）、多文件 assets 拆分、轮询业务接口、统计卡片/进度条 UI、加载/空/错误状态、15s 自动刷新 |
+| `plugins/backend-demo/` | **前后端一体示例** | manifest `backend` 声明、`create_router(ctx)` 契约、`ctx` 三件套（数据库会话/私有数据目录/日志）、`pluginApiBase` 前后端联调 |
+| `plugins/training-dashboard/` | 完整前端工程示例 | 推荐工程结构（src/dist 分离 + npm build/pack 脚本）、多文件 assets 拆分、轮询业务接口、统计卡片/进度条 UI、加载/空/错误状态、15s 自动刷新 |

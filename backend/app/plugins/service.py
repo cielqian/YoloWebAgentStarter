@@ -143,6 +143,18 @@ def install_zip(storage: Storage, payload: bytes) -> PluginOut:
         destination.parent.mkdir(parents=True, exist_ok=True)
         with archive.open(info) as source, destination.open("wb") as output:
             shutil.copyfileobj(source, output)
+
+    if manifest.backend is not None:
+        # 后端插件在安装时即时加载校验(create_router 可执行),失败则整体回滚
+        from app.plugins.runtime import plugin_runtime
+
+        if plugin_runtime.configured:
+            try:
+                plugin_runtime.load(manifest.id, manifest.model_dump())
+            except Exception as exc:
+                shutil.rmtree(target, ignore_errors=True)
+                plugin_runtime.unload(manifest.id)
+                raise exc
     return _read_installed(storage, manifest.id)
 
 
@@ -156,7 +168,7 @@ def _read_installed(storage: Storage, plugin_id: str) -> PluginOut:
     except Exception as exc:  # noqa: BLE001
         raise ConflictError("plugin_manifest_broken", f"插件 {plugin_id} 的 manifest.json 损坏：{exc}") from exc
     installed_at = datetime.fromtimestamp(manifest_path.stat().st_mtime, tz=timezone.utc)
-    return PluginOut(**manifest.model_dump(), installed_at=installed_at)
+    return PluginOut(**manifest.model_dump(), has_backend=manifest.backend is not None, installed_at=installed_at)
 
 
 def list_plugins(storage: Storage) -> list[PluginOut]:
@@ -175,6 +187,9 @@ def delete_plugin(storage: Storage, plugin_id: str) -> None:
     directory = plugin_dir(storage, plugin_id)
     if not directory.is_dir():
         raise NotFoundError("plugin_not_found", "插件不存在。")
+    from app.plugins.runtime import plugin_runtime
+
+    plugin_runtime.unload(plugin_id)
     shutil.rmtree(directory)
 
 

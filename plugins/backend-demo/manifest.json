@@ -1,0 +1,10 @@
+{
+  "id": "backend-demo",
+  "name": "全栈插件示例",
+  "version": "1.0.0",
+  "entry": "index.html",
+  "backend": {"entry": "server/main.py"},
+  "description": "前后端一体插件示例：Python 后端(路由热挂载)+ 前端页面调用自身 API。",
+  "author": "YWA",
+  "icon": "⚙️"
+}

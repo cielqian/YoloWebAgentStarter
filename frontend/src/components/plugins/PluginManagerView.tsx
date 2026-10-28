@@ -98,7 +98,7 @@ export function PluginManagerView({ onChanged }: { onChanged?: () => void }) {
             <div key={plugin.id} className="plugin-row">
               <span className="plugin-row-icon">{plugin.icon ?? "🧩"}</span>
               <div className="plugin-row-main">
-                <strong>{plugin.name} <em>v{plugin.version}</em></strong>
+                <strong>{plugin.name} <em>v{plugin.version}</em>{plugin.has_backend ? <em className="plugin-backend-badge">含后端</em> : null}</strong>
                 <small>{plugin.id}{plugin.author ? ` · ${plugin.author}` : ""}{plugin.description ? ` · ${plugin.description}` : ""}</small>
               </div>
               <button type="button" className="button class-library-delete" disabled={busy} onClick={() => setDeleteTarget(plugin)}>卸载</button>

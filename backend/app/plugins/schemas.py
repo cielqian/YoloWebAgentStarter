@@ -9,6 +9,20 @@ from pydantic import BaseModel, Field, field_validator
 PLUGIN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 
 
+class PluginBackendConfig(BaseModel):
+    """后端插件声明:入口 .py 模块须导出 create_router(ctx) -> APIRouter。"""
+
+    entry: str = Field(min_length=1, max_length=255)
+
+    @field_validator("entry")
+    @classmethod
+    def validate_entry(cls, value: str) -> str:
+        cleaned = value.strip().lstrip("/")
+        if not cleaned or ".." in cleaned.split("/") or "\\" in cleaned or not cleaned.endswith(".py"):
+            raise ValueError("backend.entry 必须是包内相对 .py 路径，不能包含 .. 或反斜杠。")
+        return cleaned
+
+
 class PluginManifest(BaseModel):
     """插件清单:zip 根目录 manifest.json 的结构契约。"""
 
@@ -16,6 +30,7 @@ class PluginManifest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     version: str = Field(min_length=1, max_length=32)
     entry: str = Field(default="index.html", min_length=1, max_length=255)
+    backend: PluginBackendConfig | None = None
     description: str | None = Field(default=None, max_length=2000)
     author: str | None = Field(default=None, max_length=100)
     icon: str | None = Field(default=None, max_length=8)
@@ -48,6 +63,8 @@ class PluginOut(BaseModel):
     name: str
     version: str
     entry: str
+    backend: PluginBackendConfig | None = None
+    has_backend: bool = False
     description: str | None = None
     author: str | None = None
     icon: str | None = None

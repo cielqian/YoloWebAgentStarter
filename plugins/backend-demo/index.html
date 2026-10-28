@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>全栈插件示例</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { font-family: system-ui, sans-serif; padding: 24px; color: #273248; background: #f7f9ff; }
+    h1 { font-size: 18px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+    .card { border: 1px solid #e1e6ef; border-radius: 10px; padding: 14px 18px; background: #fff; min-width: 180px; }
+    .card small { color: #7a8699; }
+    .card strong { display: block; font-size: 22px; margin-top: 4px; }
+    button { padding: 8px 16px; border: 1px solid #d5dcea; border-radius: 8px; background: #fff; cursor: pointer; font-size: 13px; }
+    button:hover { border-color: #3157d5; color: #3157d5; }
+    code { padding: 2px 6px; border-radius: 6px; background: #eef2fb; color: #3157d5; }
+    #msg { color: #b03a2e; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>⚙️ 全栈插件示例</h1>
+  <p>后端由平台进程加载（<code>server/main.py</code> → <code>create_router(ctx)</code>），前端通过
+    <code>__ctx.pluginApiBase</code> 调用自身 API：<code id="api-base">-</code></p>
+  <div class="row">
+    <div class="card"><small>平台数据集</small><strong id="datasets">…</strong></div>
+    <div class="card"><small>平台图片</small><strong id="images">…</strong></div>
+    <div class="card"><small>插件计数器（私有目录持久化）</small><strong id="counter">-</strong></div>
+  </div>
+  <div class="row">
+    <button type="button" id="refresh">刷新平台统计</button>
+    <button type="button" id="incr">计数 +1（POST 自身 API）</button>
+  </div>
+  <p id="msg"></p>
+  <script>
+    var context = {};
+    try { context = JSON.parse(atob(new URLSearchParams(location.search).get("__ctx") || "")); } catch (e) {}
+    var pluginApiBase = (context.pluginApiBase || (context.apiBase || "") + "/api/plugins/" + (context.pluginId || "")).replace(/\/$/, "");
+    document.getElementById("api-base").textContent = pluginApiBase;
+
+    function api(path, options) {
+      return fetch(pluginApiBase + path, options).then(function (response) {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+      });
+    }
+    function fail(error) { document.getElementById("msg").textContent = "请求失败：" + error.message; }
+
+    function loadStats() {
+      api("/platform-stats").then(function (data) {
+        document.getElementById("datasets").textContent = data.datasets;
+        document.getElementById("images").textContent = data.images;
+        document.getElementById("msg").textContent = "";
+      }).catch(fail);
+    }
+    function ping() { api("/ping").catch(fail); }
+
+    document.getElementById("refresh").addEventListener("click", loadStats);
+    document.getElementById("incr").addEventListener("click", function () {
+      api("/counter", { method: "POST" }).then(function (data) {
+        document.getElementById("counter").textContent = data.value;
+      }).catch(fail);
+    });
+
+    ping();
+    loadStats();
+  </script>
+</body>
+</html>

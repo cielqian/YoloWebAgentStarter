@@ -13,6 +13,7 @@ from app.core.migrations import upgrade_database
 from app.core.storage import Storage
 from app.training.runtime.queue import training_queue
 from app.training.runtime.remote_training import recover_interrupted_dispatches, remote_training_poller
+from app.plugins.runtime import plugin_runtime
 from app.training.webhooks import configure_webhooks
 from app.models.evaluation import YoloEvaluationRunner
 from app.logs.service import configure_runtime_logging
@@ -59,6 +60,12 @@ def create_app(settings: Settings | None = None, *, run_migrations: bool = True)
                 logging.getLogger("ywa").info("plugins auto-installed from dropins: %s", [item.id for item in installed])
         except Exception:  # noqa: BLE001 - 插件装载失败不阻塞主服务
             pass
+        try:
+            loaded_backends = plugin_runtime.load_installed()
+            if loaded_backends:
+                logging.getLogger("ywa").info("backend plugins mounted: %s", loaded_backends)
+        except Exception:  # noqa: BLE001 - 后端插件失败不阻塞主服务
+            logging.getLogger("ywa").exception("backend plugin startup failed")
         app.state.agent_executor = AgentRunExecutor()
         import logging
 
@@ -74,6 +81,7 @@ def create_app(settings: Settings | None = None, *, run_migrations: bool = True)
     app.state.settings = resolved
     app.state.database = database
     app.state.storage = storage
+    plugin_runtime.configure(app, storage, database)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(resolved.cors_origins),

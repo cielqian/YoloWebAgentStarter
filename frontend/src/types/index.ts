@@ -708,6 +708,8 @@ export interface PluginMeta {
   name: string;
   version: string;
   entry: string;
+  backend?: { entry: string } | null;
+  has_backend?: boolean;
   description: string | null;
   author: string | null;
   icon: string | null;

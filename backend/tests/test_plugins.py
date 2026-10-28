@@ -117,3 +117,113 @@ def test_dropins_auto_scan_installs_zip(client):
     # 再次列表不重复安装(mtime 幂等)
     again = client.get("/api/plugins").json()
     assert len(again["items"]) == 1
+
+
+BACKEND_MAIN = '''
+import json
+from pathlib import Path
+from fastapi import APIRouter
+
+def create_router(ctx) -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/ping")
+    def ping():
+        return {"ok": True, "plugin": ctx.plugin_id, "version": ctx.version}
+
+    @router.get("/stats")
+    def stats():
+        with ctx.session_factory() as session:
+            from sqlalchemy import text
+            count = session.execute(text("SELECT COUNT(*) FROM datasets")).scalar()
+        return {"datasets": count, "name": ctx.name}
+
+    @router.post("/counter")
+    def counter():
+        state_file = ctx.data_dir / "counter.json"
+        value = 0
+        if state_file.is_file():
+            value = json.loads(state_file.read_text(encoding="utf-8"))["value"]
+        value += 1
+        state_file.write_text(json.dumps({"value": value}), encoding="utf-8")
+        ctx.logger.info("counter -> %s", value)
+        return {"value": value}
+
+    return router
+'''
+
+
+def backend_plugin_zip(plugin_id: str = "backend-demo", main_source: str = BACKEND_MAIN) -> bytes:
+    manifest = {
+        **MANIFEST,
+        "id": plugin_id,
+        "backend": {"entry": "server/main.py"},
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("index.html", INDEX_HTML)
+        archive.writestr("server/main.py", main_source)
+    return buffer.getvalue()
+
+
+def test_backend_plugin_mounts_routes_and_unloads_on_delete(client):
+    installed = client.post(
+        "/api/plugins/install",
+        files={"file": ("backend-demo.zip", backend_plugin_zip(), "application/zip")},
+    )
+    assert installed.status_code == 201, installed.text
+    assert installed.json()["has_backend"] is True
+
+    # 前端静态页与后端 API 同时可用
+    assert client.get("/api/plugins/backend-demo/asset/index.html").status_code == 200
+    ping = client.get("/api/plugins/backend-demo/ping")
+    assert ping.status_code == 200, ping.text
+    assert ping.json() == {"ok": True, "plugin": "backend-demo", "version": "1.0.0"}
+
+    # ctx.session_factory 可访问平台数据库
+    stats = client.get("/api/plugins/backend-demo/stats")
+    assert stats.status_code == 200
+    assert stats.json() == {"datasets": 0, "name": "Hello 示例插件"}
+
+    # ctx.data_dir 私有目录持久化
+    assert client.post("/api/plugins/backend-demo/counter").json() == {"value": 1}
+    assert client.post("/api/plugins/backend-demo/counter").json() == {"value": 2}
+
+    # 卸载后路由即时摘除
+    assert client.delete("/api/plugins/backend-demo").status_code == 204
+    assert client.get("/api/plugins/backend-demo/ping").status_code in (404, 405)
+
+
+def test_backend_plugin_reinstall_hot_swaps_code(client):
+    marker_v1 = BACKEND_MAIN.replace('"version": ctx.version', '"version": "custom-v1"')
+    installed = client.post(
+        "/api/plugins/install",
+        files={"file": ("backend-demo.zip", backend_plugin_zip(main_source=marker_v1), "application/zip")},
+    )
+    assert installed.status_code == 201
+    assert client.get("/api/plugins/backend-demo/ping").json()["version"] == "custom-v1"
+
+    # 同 id 重装 = 覆盖升级,路由热切换到新代码
+    marker_v2 = BACKEND_MAIN.replace('"version": ctx.version', '"version": "custom-v2"')
+    upgraded = client.post(
+        "/api/plugins/install",
+        files={"file": ("backend-demo.zip", backend_plugin_zip(main_source=marker_v2), "application/zip")},
+    )
+    assert upgraded.status_code == 201
+    assert client.get("/api/plugins/backend-demo/ping").json()["version"] == "custom-v2"
+
+
+def test_install_rejects_broken_backend_and_rolls_back(client):
+    broken = backend_plugin_zip(main_source="def create_router(ctx):\n    return 42\n")
+    response = client.post("/api/plugins/install", files={"file": ("a.zip", broken, "application/zip")})
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "plugin_backend_invalid"
+    # 整体回滚:前端入口也不应存在
+    assert client.get("/api/plugins/backend-demo/asset/index.html").status_code == 404
+    assert client.get("/api/plugins/backend-demo/ping").status_code == 404
+
+    syntax_error = backend_plugin_zip(main_source="def broken(:\n")
+    response = client.post("/api/plugins/install", files={"file": ("a.zip", syntax_error, "application/zip")})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "plugin_backend_invalid"

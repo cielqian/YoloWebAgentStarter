@@ -6,7 +6,8 @@ import type { PluginMeta } from "../../types";
 export function PluginHostView({ plugin }: { plugin: PluginMeta }) {
   const [nonce, setNonce] = useState(0);
   const src = useMemo(() => {
-    const context = { apiBase: apiUrl("/api").replace(/\/api\/?$/, ""), pluginId: plugin.id };
+    const apiBase = apiUrl("/api").replace(/\/api\/?$/, "");
+    const context = { apiBase, pluginId: plugin.id, pluginApiBase: `${apiBase}/api/plugins/${plugin.id}` };
     const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(context))));
     return `${apiUrl(`/api/plugins/${plugin.id}/asset/${plugin.entry}`)}?__ctx=${encodeURIComponent(encoded)}&__v=${nonce}`;
   }, [plugin.id, plugin.entry, nonce]);
