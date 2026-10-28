@@ -5,6 +5,8 @@ from collections.abc import Iterator
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from app.core import pg_compat  # noqa: F401  # 导入即生效:瀚高 version() 兼容兜底
+
 
 class Base(DeclarativeBase):
     pass

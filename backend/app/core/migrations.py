@@ -6,6 +6,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 
+from app.core import pg_compat  # noqa: F401  # 导入即生效:瀚高 version() 兼容兜底
+
 
 def _ensure_version_table(database_url: str) -> None:
     """预建 alembic_version(把 version_num 加宽到 VARCHAR(255))。

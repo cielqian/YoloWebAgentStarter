@@ -7,13 +7,13 @@
 普通业务账号(如 `hguser`)通常没有建库权限,需要管理员执行一次:
 
 ```sql
-CREATE DATABASE label_stater OWNER hguser ENCODING 'UTF8';
+CREATE DATABASE label_starter OWNER hguser ENCODING 'UTF8';
 ```
 
 连接串(密码特殊字符需 URL 转义,`@` → `%40`):
 
 ```
-postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_stater
+postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_starter
 ```
 
 ## 2. 存量数据平滑升级(现场服务器)
@@ -21,7 +21,7 @@ postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_stater
 前提:新版镜像已构建、`docker load` 到服务器(包含 psycopg2 依赖与迁移脚本)。
 
 ```bash
-sudo bash scripts/upgrade-to-pg.sh 'postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_stater'
+sudo bash scripts/upgrade-to-pg.sh 'postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_starter'
 ```
 
 脚本自动执行:
@@ -43,7 +43,7 @@ sudo bash scripts/upgrade-to-pg.sh 'postgresql+psycopg2://hguser:Hgser%40123dps@
 
 ```bash
 # /opt/goldwind/yolo/.env
-YWA_DATABASE_URL=postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_stater
+YWA_DATABASE_URL=postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_starter
 ```
 
 ## 4. 迁移工具单独使用
@@ -65,5 +65,6 @@ python backend/scripts/migrate_sqlite_to_pg.py \
 | 迁移 0004/0026/0029/0030 `recreate="always"` 整表重建,PG 上被外键依赖挡住 | 按方言决定:SQLite 重建 / PG 直接 ALTER |
 | Alembic 硬编码 `alembic_version.version_num VARCHAR(32)`,33 字符的 revision id 写入失败 | 启动迁移前预建加宽到 VARCHAR(255) 的版本表(`app/core/migrations.py`) |
 | `model_versions.id` 声明 String(64),长血缘链 id 实际 69 字符(SQLite 不校验) | 迁移 0035 加宽到 String(128),含全部外键引用列 |
+| 瀚高 `version()` 返回营销字符串,SQLAlchemy PG 方言解析失败拒绝连接 | `app/core/pg_compat.py` 兜底:解析失败时改读 `server_version_num`(120007 → 12.0.7) |
 
 新增迁移请保持两方言兼容:布尔默认值用 `sa.true()/sa.false()`,批量改表用 `recreate="always" if sqlite else "auto"` 模式,revision id 控制在 32 字符内。
