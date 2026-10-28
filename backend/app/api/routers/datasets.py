@@ -661,8 +661,18 @@ def get_images(
     limit: int = Query(default=200, ge=1, le=500),
     session: Session = Depends(get_session),
 ) -> ImagePage:
-    items = list_images(session, dataset_id)
-    return ImagePage(items=[_image_response(item) for item in items[offset : offset + limit]], total=len(items))
+    # 分页下推到数据库:此前每次请求都整表加载再切片,大库下每页都要全量读。
+    get_dataset(session, dataset_id)
+    total = session.scalar(select(func.count()).select_from(ImageItem).where(ImageItem.dataset_id == dataset_id)) or 0
+    query = (
+        select(ImageItem)
+        .where(ImageItem.dataset_id == dataset_id)
+        .order_by(ImageItem.created_at, ImageItem.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    items = list(session.scalars(query))
+    return ImagePage(items=[_image_response(item) for item in items], total=total)
 
 
 @router.post("/{dataset_id}/images/upload", response_model=UploadImagesResponse, status_code=201, dependencies=[Depends(require_editable)])

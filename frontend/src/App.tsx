@@ -22,7 +22,7 @@ import { Toast } from "./components/Toast";
 import { UploadProgressToast } from "./components/UploadProgressToast";
 import { taskTypeLabel } from "./training/helpers";
 import { readLocale, saveLocale, type AppLocale } from "./locale";
-import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, ModelVersion, PluginMeta, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
+import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, ImagePage, ModelVersion, PluginMeta, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
 
 type View = "workspace" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources" | "plugin-manager" | "plugin";
 type CardReportKind = "validation" | "quality" | "duplicates";
@@ -35,6 +35,9 @@ function isHistoricalActive(dataset: Dataset): boolean {
 export default function App() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selected, setSelected] = useState<Dataset>();
+  // 后台图片补齐的过期判断:记录最新选中的数据集 id,切换后丢弃旧结果。
+  const selectedDatasetRef = useRef<string>();
+  useEffect(() => { selectedDatasetRef.current = selected?.id; }, [selected?.id]);
   const [classes, setClasses] = useState<ClassLabel[]>([]);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [selectedImage, setSelectedImage] = useState<ImageItem>();
@@ -75,16 +78,32 @@ export default function App() {
   };
 
   const loadDataset = async (dataset: Dataset, nextView: View = "workspace") => {
-    setNotice("");
     setSelected(dataset);
     setView(nextView);
     setSelectedImage(undefined);
-    const [nextClasses, nextImages] = await Promise.all([api.listClasses(dataset.id), api.listImages(dataset.id)]);
+    // 首屏只取第一页(侧栏分页展示),其余页后台补齐;进入大库不再整表等待。
+    const [nextClasses, firstPage] = await Promise.all([api.listClasses(dataset.id), api.listImagesPage(dataset.id, 0, 200)]);
     setClasses(nextClasses);
-    setImages(nextImages.items);
+    setImages(firstPage.items);
     // A class id belongs to one dataset. Reusing the previous dataset's
     // active id leaves the annotation canvas without a valid label.
     setActiveClassId(nextClasses[0]?.id || "");
+    if (firstPage.total > firstPage.items.length) void fillRemainingImages(dataset.id, firstPage);
+    return firstPage;
+  };
+
+  /** 后台补齐剩余图片页;数据集已切换则丢弃,避免污染新数据集的列表。 */
+  const fillRemainingImages = (datasetId: string, firstPage: ImagePage) => {
+    const pageSize = 500;
+    const offsets = Array.from({ length: Math.ceil((firstPage.total - firstPage.items.length) / pageSize) }, (_, index) => firstPage.items.length + index * pageSize);
+    return Promise.all(offsets.map((offset) => api.listImagesPage(datasetId, offset, pageSize))).then((pages) => {
+      if (selectedDatasetRef.current !== datasetId) return;
+      setImages((current) => {
+        const ids = new Set(current.map((item) => item.id));
+        const additions = pages.flatMap((page) => page.items).filter((item) => !ids.has(item.id));
+        return additions.length ? [...current, ...additions] : current;
+      });
+    }).catch(() => undefined); // 首屏已可用,补齐失败不打扰;刷新或重进可恢复
   };
 
   const createDatasetClass = async (name: string, color: string): Promise<ClassLabel | undefined> => {
@@ -253,9 +272,10 @@ export default function App() {
 
   const continueAnnotation = async (dataset: Dataset) => {
     await run(async () => {
-      await loadDataset(dataset);
-      const nextImages = await api.listImages(dataset.id);
-      const image = nextImages.items.find((item) => item.status === "unannotated") ?? nextImages.items[0];
+      // 立即给出反馈,再等首屏数据(类别+第一页图片+目标图标注);此前整表拉两遍才切视图,大库明显卡顿。
+      setNotice(`正在打开「${dataset.name}」的标注…`);
+      const firstPage = await loadDataset(dataset);
+      const image = firstPage.items.find((item) => item.status === "unannotated") ?? firstPage.items[0];
       if (!image) {
         setNotice("该数据集还没有图片可标注。");
         return;
@@ -263,6 +283,7 @@ export default function App() {
       setSelectedImage(image);
       setAnnotations(await api.getAnnotations(dataset.id, image.id));
       setView("annotation");
+      setNotice("");
     });
   };
 

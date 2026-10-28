@@ -295,6 +295,8 @@ export const api = {
     request<ClassTemplate>(`/api/class-templates/${templateId}`, json(payload, "PATCH")),
   deleteClassTemplate: (templateId: string) => request<void>(`/api/class-templates/${templateId}`, { method: "DELETE" }),
   translateSam3Prompt: (name: string) => request<{ sam3_prompt: string | null; source: string }>("/api/class-templates/translate", json({ name })),
+  listImagesPage: (datasetId: string, offset: number, limit: number) =>
+    request<ImagePage>(`/api/datasets/${datasetId}/images?offset=${offset}&limit=${limit}`),
   listImages: async (datasetId: string) => {
     const pageSize = 500;
     const first = await request<ImagePage>(`/api/datasets/${datasetId}/images?offset=0&limit=${pageSize}`);
