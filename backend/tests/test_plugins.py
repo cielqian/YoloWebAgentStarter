@@ -319,3 +319,69 @@ def test_plugin_runtime_logs_view_and_download(client):
     # 卸载后日志保留,可做事后排查
     assert client.delete("/api/plugins/backend-demo").status_code == 204
     assert client.get("/api/logs/plugins/backend-demo/download").status_code == 200
+
+
+def test_backend_plugin_startup_survives_real_uvicorn(tmp_path):
+    """回归:在 uvicorn lifespan 启动序列里 spawn 插件子进程曾触发竞态,
+    导致平台启动被静默中断(uvicorn exit 3、无任何堆栈)。TestClient 复现不了,
+    必须用真实 uvicorn 进程验证。"""
+    import os
+    import shutil
+    import socket
+    import subprocess
+    import sys
+    import urllib.request
+    from pathlib import Path
+
+    backend_root = Path(__file__).resolve().parents[1]
+    data_dir = tmp_path / "data"
+    shutil.copytree(backend_root.parent / "plugins" / "backend-demo", data_dir / "plugins" / "backend-demo")
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    environment = {
+        **os.environ,
+        "YWA_DATA_DIR": str(data_dir),
+        "YWA_IMPORT_ROOT": str(tmp_path / "imports"),
+        "PYTHONPATH": str(backend_root),
+    }
+    process = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                output = process.stdout.read() if process.stdout else ""
+                raise AssertionError(f"uvicorn 提前退出(exit {process.returncode}):\n{output[-1500:]}")
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/system/health", timeout=2) as response:
+                    if response.status == 200:
+                        break
+            except OSError:
+                time.sleep(0.5)
+        else:
+            raise AssertionError("uvicorn 健康检查超时")
+
+        # 后台线程延迟加载插件子进程;轮询到 ping 通为止
+        while time.monotonic() < deadline:
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/plugins/backend-demo/ping", timeout=3) as response:
+                    assert json.loads(response.read()) == {"ok": True, "plugin": "backend-demo", "version": "1.0.0"}
+                    break
+            except OSError:
+                time.sleep(0.5)
+        else:
+            raise AssertionError("插件后端在真实 uvicorn 下未就绪")
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()

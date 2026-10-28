@@ -60,12 +60,9 @@ def create_app(settings: Settings | None = None, *, run_migrations: bool = True)
                 logging.getLogger("ywa").info("plugins auto-installed from dropins: %s", [item.id for item in installed])
         except Exception:  # noqa: BLE001 - 插件装载失败不阻塞主服务
             pass
-        try:
-            loaded_backends = plugin_runtime.load_installed()
-            if loaded_backends:
-                logging.getLogger("ywa").info("backend plugins mounted: %s", loaded_backends)
-        except Exception:  # noqa: BLE001 - 后端插件失败不阻塞主服务
-            logging.getLogger("ywa").exception("backend plugin startup failed")
+        # 注意:绝不在 lifespan 启动序列里 spawn 插件子进程——uvicorn 事件循环线程
+        # 里的 fork 会触发竞态,导致启动被静默中断(exit 3)。改为启动完成后后台加载。
+        plugin_runtime.start_installed_in_background()
         app.state.agent_executor = AgentRunExecutor()
         import logging
 

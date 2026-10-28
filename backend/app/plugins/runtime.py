@@ -21,6 +21,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -283,7 +284,12 @@ class PluginRuntime:
         return True
 
     def load_installed(self) -> list[str]:
-        """启动时拉起所有已装插件子进程;单个失败只记日志,绝不影响平台。"""
+        """拉起所有已装插件子进程;单个失败只记日志,绝不影响平台。
+
+        历史教训:不要在 uvicorn lifespan 启动序列里调用本方法——事件循环
+        线程中 fork 子进程会触发竞态,使 uvicorn 启动被静默中断(exit 3)。
+        平台启动路径请使用 start_installed_in_background()。
+        """
         from app.plugins.service import list_plugins
 
         if not self.configured:
@@ -292,6 +298,8 @@ class PluginRuntime:
         for plugin in list_plugins(self._storage):
             if not plugin.has_backend:
                 continue
+            if plugin.id in self._children:
+                continue  # 已在运行(如安装时已拉起),避免后台加载与安装并发双起子进程
             manifest_path = self._plugin_root() / plugin.id / "manifest.json"
             try:
                 import json
@@ -319,6 +327,18 @@ class PluginRuntime:
         if ready:
             logger.info("后端插件子进程就绪:%s", ready)
         return ready
+
+    def start_installed_in_background(self) -> None:
+        """平台启动完成后由后台线程加载插件子进程(绝不能在 lifespan 里同步做)。"""
+
+        def run() -> None:
+            time.sleep(1.0)  # 让 uvicorn 启动序列先走完
+            try:
+                self.load_installed()
+            except Exception:  # noqa: BLE001 - 插件加载失败绝不影响平台
+                logger.exception("后端插件启动加载失败")
+
+        threading.Thread(target=run, daemon=True, name="plugin-runtime-loader").start()
 
     # ---- 请求代理 ----
 
