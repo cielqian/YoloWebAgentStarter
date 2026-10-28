@@ -144,7 +144,7 @@ const copy = {
     webhookUrlHint: "以 http:// 或 https:// 开头，例如 https://example.com/hook。",
     webhookMethod: "请求方法",
     webhookBody: "通用请求体模板（仅 POST 生效，留空发送默认 JSON）",
-    webhookBodyHint: "可用占位符：{title} 标题、{task_name}/{name} 任务名称、{status} 状态、{model} 模型名、{dataset} 数据集、{dataset_version} 数据集版本、{duration} 训练耗时；另有 {event}、{task_id}、{error_message}、{progress_percent}。",
+    webhookBodyHint: "可用占位符：{title} 标题、{task_name}/{name} 任务名称、{status} 状态、{model} 模型名、{dataset} 数据集、{dataset_version} 数据集版本、{duration} 训练耗时、{metrics} 关键指标(mAP50/mAP50-95/P/R)；另有 {event}、{task_id}、{error_message}、{progress_percent}。",
     webhookEventTemplate: "按事件模板",
     webhookEventTemplateHint: "为不同事件定制内容，留空使用上方通用模板。",
     webhookEventTemplateFallback: "留空使用通用模板",
@@ -304,7 +304,7 @@ const copy = {
     webhookUrlHint: "Must start with http:// or https://, e.g. https://example.com/hook.",
     webhookMethod: "HTTP method",
     webhookBody: "Shared body template (POST only; empty sends default JSON)",
-    webhookBodyHint: "Placeholders: {title}, {task_name}/{name}, {status}, {model}, {dataset}, {dataset_version}, {duration}; also {event}, {task_id}, {error_message}, {progress_percent}.",
+    webhookBodyHint: "Placeholders: {title}, {task_name}/{name}, {status}, {model}, {dataset}, {dataset_version}, {duration}, {metrics} key metrics (mAP50/mAP50-95/P/R); also {event}, {task_id}, {error_message}, {progress_percent}.",
     webhookEventTemplate: "Per-event templates",
     webhookEventTemplateHint: "Customise the message per event; empty falls back to the shared template above.",
     webhookEventTemplateFallback: "Empty = shared template",
@@ -1312,7 +1312,7 @@ function webhookEventLabel(text: SettingsText, event: WebhookEvent): string {
 
 const EVENT_TEMPLATE_PLACEHOLDERS: Record<WebhookEvent, string> = {
   started: '{"msgtype":"text","text":{"content":"🚀 训练启动：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n模型：{model}"}}',
-  completed: '{"msgtype":"text","text":{"content":"✅ 训练完成：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n耗时：{duration}"}}',
+  completed: '{"msgtype":"text","text":{"content":"✅ 训练完成：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n指标：{metrics}\\n耗时：{duration}"}}',
   failed: '{"msgtype":"text","text":{"content":"❌ 训练异常：{task_name}\\n错误：{error_message}"}}',
   stopped: '{"msgtype":"text","text":{"content":"⏹️ 训练已停止：{task_name}\\n耗时：{duration}"}}',
 };
@@ -1433,7 +1433,7 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
             className="settings-textarea"
             rows={4}
             value={form.body_template}
-            placeholder={'{"msgtype":"text","text":{"content":"{title}\n状态：{status}\n模型：{model}\n数据集：{dataset}（{dataset_version}）\n耗时：{duration}"}}'}
+            placeholder={'{"msgtype":"text","text":{"content":"{title}\n状态：{status}\n模型：{model}\n数据集：{dataset}（{dataset_version}）\n指标：{metrics}\n耗时：{duration}"}}'}
             onChange={(event) => setForm({ ...form, body_template: event.target.value })}
           />
           <small>{text.webhookBodyHint}</small>

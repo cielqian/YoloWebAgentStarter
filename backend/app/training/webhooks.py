@@ -76,6 +76,30 @@ def dataset_version_label(payload: dict[str, Any]) -> str:
     return f"v{number}" if number else "跟随数据集"
 
 
+# 指标摘要的展示顺序;mask_*/pose_* 仅对应任务类型的数据里才会出现。
+_METRIC_LABELS: tuple[tuple[str, str], ...] = (
+    ("map50", "mAP50"),
+    ("map50_95", "mAP50-95"),
+    ("precision", "P"),
+    ("recall", "R"),
+    ("mask_map50", "mask mAP50"),
+    ("mask_map50_95", "mask mAP50-95"),
+    ("pose_map50", "pose mAP50"),
+    ("pose_map50_95", "pose mAP50-95"),
+)
+
+
+def metrics_summary(payload: dict[str, Any]) -> str:
+    """关键指标一行摘要(mAP/P/R);训练未产出指标时为空串,模板可整行按需保留。"""
+    metrics = payload.get("metrics") or {}
+    parts: list[str] = []
+    for key, label in _METRIC_LABELS:
+        value = metrics.get(key)
+        if isinstance(value, (int, float)):
+            parts.append(f"{label} {float(value):.3f}")
+    return ", ".join(parts)
+
+
 def template_variables(event: str, payload: dict[str, Any]) -> dict[str, str]:
     """请求体模板可用的占位符（{key} 形式，纯文本替换，不影响 JSON 大括号）。"""
     name = str(payload.get("name") or "")
@@ -91,6 +115,7 @@ def template_variables(event: str, payload: dict[str, Any]) -> dict[str, str]:
         "dataset": str(payload.get("dataset_name") or ""),
         "dataset_version": dataset_version_label(payload),
         "duration": human_duration(payload.get("started_at"), payload.get("finished_at")),
+        "metrics": metrics_summary(payload),
         "name": name,
         "task_name": name,
         "task_id": str(payload.get("id") or ""),
@@ -246,6 +271,7 @@ class TrainingWebhookNotifier:
                 "dataset_version_number": 2,
                 "started_at": _iso(utc_now()),
                 "finished_at": _iso(utc_now()),
+                "metrics": {"precision": 0.912, "recall": 0.874, "map50": 0.905, "map50_95": 0.678},
             },
         )
 

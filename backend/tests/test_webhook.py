@@ -309,3 +309,42 @@ def test_deliver_webhook_logs_body_on_rejection(caplog):
     assert result.http_status == 400
     assert 'Webhook 请求被拒（HTTP 400）' in caplog.text
     assert '✅ 训练成功完成：冒烟' in caplog.text
+
+
+def test_metrics_summary_renders_into_template():
+    """飞书默认模板新增 {metrics}:completed 通知带 mAP/P/R 摘要,未产出指标时为空。"""
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content.decode("utf-8")
+        return httpx.Response(204)
+
+    config = WebhookSettingsOut(
+        enabled=True,
+        url="http://hook.test/notify",
+        method="POST",
+        body_templates={"completed": "✅ {task_name}\n指标：{metrics}\n耗时：{duration}"},
+    )
+    payload = {
+        "id": "train-1",
+        "name": "叶片检测训练",
+        "status": "completed",
+        "model_name": "yolov8n.pt",
+        "dataset_name": "叶片数据集",
+        "started_at": "2026-10-21T10:00:00",
+        "finished_at": "2026-10-21T10:03:24",
+        "metrics": {"precision": 0.912, "recall": 0.874, "map50": 0.9055, "map50_95": 0.678},
+    }
+    deliver_webhook(config, "completed", payload, transport=httpx.MockTransport(handler))
+    assert captured["body"] == "✅ 叶片检测训练\n指标：mAP50 0.905, mAP50-95 0.678, P 0.912, R 0.874\n耗时：3m 24s"
+
+    # pose 任务:只罗列实际存在的指标键
+    payload["metrics"] = {"pose_map50": 0.81, "pose_map50_95": 0.55}
+    deliver_webhook(config, "completed", payload, transport=httpx.MockTransport(handler))
+    assert captured["body"] == "✅ 叶片检测训练\n指标：pose mAP50 0.810, pose mAP50-95 0.550\n耗时：3m 24s"
+
+    # 启动事件尚无指标 → 占位符替换为空串,不残留 {metrics}
+    payload.pop("metrics")
+    deliver_webhook(config, "completed", payload, transport=httpx.MockTransport(handler))
+    assert captured["body"] == "✅ 叶片检测训练\n指标：\n耗时：3m 24s"
+    assert "{metrics}" not in captured["body"]
