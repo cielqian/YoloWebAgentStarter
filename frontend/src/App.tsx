@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AnnotationCanvas, type AnnotationDraft } from "./annotation/AnnotationCanvas";
-import { api, apiUrl } from "./api/client";
+import { api, apiUrl, type UploadProgress } from "./api/client";
 import { StarterShell, type StarterSection } from "./components/StarterShell";
 import { useLeaveConfirm } from "./components/useLeaveConfirm";
 import { ConfirmProvider } from "./components/confirm";
@@ -19,6 +19,7 @@ import { ClassLibraryPicker } from "./components/ClassLibraryPicker";
 import { ImportCenterModal } from "./components/ImportCenterModal";
 import { DatasetVersionDialog } from "./components/DatasetVersionDialog";
 import { Toast } from "./components/Toast";
+import { UploadProgressToast } from "./components/UploadProgressToast";
 import { readLocale, saveLocale, type AppLocale } from "./locale";
 import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, ModelVersion, PluginMeta, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
 
@@ -43,6 +44,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [upload, setUpload] = useState<{ label: string; progress: UploadProgress } | null>(null);
   const [samCapabilities, setSamCapabilities] = useState<SamCapabilities>();
   const [locale, setLocale] = useState<AppLocale>(() => readLocale());
   const [annotationDirty, setAnnotationDirty] = useState(false);
@@ -199,14 +201,20 @@ export default function App() {
     setBusy(true);
     setError("");
     setNotice("");
-    try { await action(); } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
+    try { await action(); } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); setUpload(null); }
   };
 
   const runResult = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
     setBusy(true);
     setError("");
     setNotice("");
-    try { return await action(); } catch (reason) { setError(errorMessage(reason)); return undefined; } finally { setBusy(false); }
+    try { return await action(); } catch (reason) { setError(errorMessage(reason)); return undefined; } finally { setBusy(false); setUpload(null); }
+  };
+
+  // 大文件上传期间的全局进度条：动作开始时创建回调，run/runResult 的 finally 统一卸载。
+  const trackUpload = (label: string) => {
+    setUpload({ label, progress: { loaded: 0, total: 0, percent: 0 } });
+    return (progress: UploadProgress) => setUpload((prev) => (prev ? { ...prev, progress } : prev));
   };
 
   const openImage = async (image: ImageItem, options?: { ignoreDirty?: boolean }) => {
@@ -369,6 +377,7 @@ export default function App() {
     <StarterShell active={activeSection} onNavigate={navigate} locale={locale} focusMode={view === "annotation" && focusMode} plugins={plugins}>
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <Toast kind="success" message={notice} onClose={() => setNotice("")} />
+      {upload && <UploadProgressToast label={upload.label} progress={upload.progress} />}
       {leaveDialog}
       {view === "annotation" && displayedDataset && selectedImage ? (
         <AnnotationView
@@ -481,7 +490,7 @@ export default function App() {
             await refreshDatasets();
             setNotice(`已克隆为“${result.dataset.name}”：复制 ${result.imported_images} 张图片、${result.imported_annotations} 条标注${result.skipped_images ? `，${result.skipped_images} 张因文件缺失被跳过` : ""}`);
           })}
-          onImport={(file, name, taskType, format, modelName) => run(async () => { const result = format === "coco" ? await api.importCoco(file, name, taskType, false, modelName) : await api.importYolo(file, name, taskType, false, modelName); await refreshDatasets(); setNotice(`已开始导入「${result.dataset.name}」，进度见数据集列表。`); })}
+          onImport={(file, name, taskType, format, modelName) => run(async () => { const onUploadProgress = trackUpload(file.name); const result = format === "coco" ? await api.importCoco(file, name, taskType, false, modelName, onUploadProgress) : await api.importYolo(file, name, taskType, false, modelName, onUploadProgress); await refreshDatasets(); setNotice(`已开始导入「${result.dataset.name}」，进度见数据集列表。`); })}
           onFtpImport={(path, name, taskType, format, source, modelName) => run(async () => { const result = await api.importDatasetFromFtp({ path, name, ...(modelName ? { model_name: modelName } : {}), task_type: taskType, format, source }, false); await refreshDatasets(); setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}导入「${result.dataset.name}」，进度见数据集列表。`); })}
           onCancelImport={(dataset) => run(async () => { await api.cancelDatasetImport(dataset.id); await refreshDatasets(); setNotice(`已请求停止「${dataset.name}」的导入。`); })}
           onQuality={(dataset) => runResult(() => api.qualityReport(dataset.id))}
@@ -497,7 +506,7 @@ export default function App() {
           })}
           onContinueAnnotation={(dataset) => void continueAnnotation(dataset)}
           onUpload={(dataset, files, split) => run(async () => {
-            const result = await api.uploadImages(dataset.id, files, split);
+            const result = await api.uploadImages(dataset.id, files, split, trackUpload(files.length === 1 ? files[0].name : `${files.length} 个文件`));
             await refreshDatasets();
             if (selected?.id === dataset.id) {
               const nextImages = await api.listImages(dataset.id);
@@ -511,7 +520,7 @@ export default function App() {
             setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}合并到「${dataset.name}」，进度见数据集列表。`);
           })}
           onMergeYolo={(dataset, file) => run(async () => {
-            await api.mergeDatasetYoloZip(dataset.id, file);
+            await api.mergeDatasetYoloZip(dataset.id, file, trackUpload(file.name));
             await refreshDatasets();
             if (selected?.id === dataset.id) {
               const nextImages = await api.listImages(dataset.id);

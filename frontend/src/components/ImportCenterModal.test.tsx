@@ -97,7 +97,7 @@ describe("ImportCenterModal", () => {
     await act(async () => { if (nameInput) setInputValue(nameInput, "ftp-dir-set"); });
     await act(async () => { findButton("开始导入")?.click(); });
 
-    expect(onFtpImport).toHaveBeenCalledWith("/export/export-v3", "ftp-dir-set", "detect", "yolo", "dir");
+    expect(onFtpImport).toHaveBeenCalledWith("/export/export-v3", "ftp-dir-set", "detect", "yolo", "dir", undefined);
   });
 
   it("keeps zip rows selectable in zip mode and passes source=zip", async () => {
@@ -118,6 +118,6 @@ describe("ImportCenterModal", () => {
     await act(async () => { if (nameInput) setInputValue(nameInput, "ftp-zip-set"); });
     await act(async () => { findButton("开始导入")?.click(); });
 
-    expect(onFtpImport).toHaveBeenCalledWith("/export/ds.zip", "ftp-zip-set", "detect", "yolo", "zip");
+    expect(onFtpImport).toHaveBeenCalledWith("/export/ds.zip", "ftp-zip-set", "detect", "yolo", "zip", undefined);
   });
 });

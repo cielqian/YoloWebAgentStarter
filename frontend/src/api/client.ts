@@ -55,6 +55,36 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
 
+export type UploadProgress = { loaded: number; total: number; percent: number };
+
+// fetch 无法报告请求体上传进度；需要 onProgress 的上传走 XHR，其余仍走 request()。
+function uploadForm<T>(path: string, form: FormData, onProgress?: (progress: UploadProgress) => void): Promise<T> {
+  if (!onProgress) return request<T>(path, { method: "POST", body: form });
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", apiUrl(path));
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress({ loaded: event.loaded, total: event.total, percent: Math.min(100, (event.loaded / event.total) * 100) });
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve((xhr.status === 204 ? undefined : xhr.response) as T);
+        return;
+      }
+      let message = `Request failed (${xhr.status})`;
+      const body = xhr.response as { error?: { message?: string } } | null;
+      if (body?.error?.message) message = body.error.message;
+      reject(new Error(message));
+    };
+    xhr.onerror = () => reject(new Error("网络错误，上传中断。"));
+    xhr.onabort = () => reject(new Error("上传已取消。"));
+    xhr.send(form);
+  });
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiUrl(path), init);
   if (!response.ok) {
@@ -106,11 +136,11 @@ export const api = {
   testWebhook: () => request<WebhookDeliveryResult>("/api/settings/webhook/test", json({})),
   listFtp: (path: string) => request<FtpListResult>(`/api/ftp/list?path=${encodeURIComponent(path)}`),
   ftpDownloadUrl: (path: string) => apiUrl(`/api/ftp/download?path=${encodeURIComponent(path)}`),
-  uploadFtp: async (directory: string, files: File[]) => {
+  uploadFtp: async (directory: string, files: File[], onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
     form.append("directory", directory);
     files.forEach((file) => form.append("files", file));
-    return request<{ uploaded: FtpEntry[] }>("/api/ftp/upload", { method: "POST", body: form });
+    return uploadForm<{ uploaded: FtpEntry[] }>("/api/ftp/upload", form, onProgress);
   },
   ftpMkdir: (path: string) => request<FtpEntry>("/api/ftp/mkdir", json({ path })),
   ftpRename: (source: string, target: string) => request<{ ok: boolean }>("/api/ftp/rename", json({ source, target })),
@@ -132,12 +162,12 @@ export const api = {
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<SourceImagePage>(`/api/source-datasets/${datasetId}/images${suffix}`);
   },
-  uploadSourceImages: async (datasetId: string, files: File[], tagIds: string[] = [], tagValues: Record<string, string> = {}) => {
+  uploadSourceImages: async (datasetId: string, files: File[], tagIds: string[] = [], tagValues: Record<string, string> = {}, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
     files.forEach((file) => form.append("files", file));
     tagIds.forEach((tagId) => form.append("tag_ids", tagId));
     if (Object.keys(tagValues).length) form.append("tag_values", JSON.stringify(tagValues));
-    return request<{ imported: number; invalid: number }>(`/api/source-datasets/${datasetId}/images/upload`, { method: "POST", body: form });
+    return uploadForm<{ imported: number; invalid: number }>(`/api/source-datasets/${datasetId}/images/upload`, form, onProgress);
   },
   batchUpdateSourceImageTags: (datasetId: string, imageIds: string[], tagIds: string[], remove = false, tagValues: Record<string, string> = {}) =>
     request<{ updated: number }>(`/api/source-datasets/${datasetId}/images/batch-tags`, json({ image_ids: imageIds, tag_ids: tagIds, remove, ...(Object.keys(tagValues).length ? { tag_values: tagValues } : {}) })),
@@ -273,14 +303,11 @@ export const api = {
     const pages = await Promise.all(offsets.map((offset) => request<ImagePage>(`/api/datasets/${datasetId}/images?offset=${offset}&limit=${pageSize}`)));
     return { total: first.total, items: [first, ...pages].flatMap((page) => page.items) };
   },
-  uploadImages: async (datasetId: string, files: File[], split: SplitName) => {
+  uploadImages: async (datasetId: string, files: File[], split: SplitName, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
     files.forEach((file) => form.append("files", file));
     form.append("split", split);
-    return request<{ imported: number; items: ImageItem[] }>(`/api/datasets/${datasetId}/images/upload`, {
-      method: "POST",
-      body: form,
-    });
+    return uploadForm<{ imported: number; items: ImageItem[] }>(`/api/datasets/${datasetId}/images/upload`, form, onProgress);
   },
   updateImageSplit: (datasetId: string, imageId: string, split: SplitName) =>
     request<ImageItem>(`/api/datasets/${datasetId}/images/${imageId}`, json({ split }, "PATCH")),
@@ -310,7 +337,7 @@ export const api = {
   validateDataset: (datasetId: string) => request<ValidationReport>(`/api/datasets/${datasetId}/validate`, { method: "POST" }),
   qualityReport: (datasetId: string) => request<DatasetQualityReport>(`/api/datasets/${datasetId}/quality/report`),
   duplicateReport: (datasetId: string) => request<DuplicateReport>(`/api/datasets/${datasetId}/duplicates`),
-  createVideoImport: async (payload: { file: File; name: string; taskType: TaskType; split: SplitName; samplingMode: "fps" | "interval_seconds" | "frame_interval"; samplingValue: number; startSeconds: number; endSeconds?: number; splitStrategy: "single" | "time_blocks"; timeBlockSeconds: number; trainRatio: number; valRatio: number; testRatio: number; kptCount?: number }) => {
+  createVideoImport: async (payload: { file: File; name: string; taskType: TaskType; split: SplitName; samplingMode: "fps" | "interval_seconds" | "frame_interval"; samplingValue: number; startSeconds: number; endSeconds?: number; splitStrategy: "single" | "time_blocks"; timeBlockSeconds: number; trainRatio: number; valRatio: number; testRatio: number; kptCount?: number }, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
     form.append("file", payload.file);
     form.append("name", payload.name);
@@ -326,43 +353,40 @@ export const api = {
     form.append("train_ratio", String(payload.trainRatio));
     form.append("val_ratio", String(payload.valRatio));
     form.append("test_ratio", String(payload.testRatio));
-    return request<VideoImportTask>("/api/video-imports", { method: "POST", body: form });
+    return uploadForm<VideoImportTask>("/api/video-imports", form, onProgress);
   },
   getVideoImport: (taskId: string) => request<VideoImportTask>(`/api/video-imports/${taskId}`),
   startVideoImport: (taskId: string) => request<VideoImportTask>(`/api/video-imports/${taskId}/start`, { method: "POST" }),
   retryVideoImport: (taskId: string) => request<VideoImportTask>(`/api/video-imports/${taskId}/retry`, { method: "POST" }),
-  importYolo: async (file: File, name: string, taskType: TaskType, wait = true, modelName?: string) => {
+  importYolo: async (file: File, name: string, taskType: TaskType, wait = true, modelName?: string, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
     form.append("file", file);
     form.append("name", name);
     form.append("task_type", taskType);
     if (modelName?.trim()) form.append("model_name", modelName.trim());
-    return request<DatasetImportResult>(`/api/datasets/import/yolo${wait ? "" : "?wait=false"}`, {
-      method: "POST",
-      body: form,
-    });
+    return uploadForm<DatasetImportResult>(`/api/datasets/import/yolo${wait ? "" : "?wait=false"}`, form, onProgress);
   },
   imageThumbnailUrl: (imageId: string) => apiUrl(`/api/images/${imageId}/thumbnail`),
   listWeights: () => request<{ items: BaseWeight[] }>("/api/weights"),
-  uploadWeight: async (file: File) => {
+  uploadWeight: async (file: File, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
     form.append("file", file);
-    return request<BaseWeight>("/api/weights", { method: "POST", body: form });
+    return uploadForm<BaseWeight>("/api/weights", form, onProgress);
   },
   deleteWeight: (name: string) => request<void>(`/api/weights/${encodeURIComponent(name)}`, { method: "DELETE" }),
   mergeDatasetFromFtp: (datasetId: string, payload: { path: string; source: "zip" | "dir" }) =>
     request<{ dataset: Dataset }>(`/api/datasets/${datasetId}/images/merge-from-ftp`, json(payload)),
-  mergeDatasetYoloZip: async (datasetId: string, file: File) => {
+  mergeDatasetYoloZip: async (datasetId: string, file: File, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
     form.append("file", file);
-    return request<{ dataset: Dataset }>(`/api/datasets/${datasetId}/images/upload-yolo`, { method: "POST", body: form });
+    return uploadForm<{ dataset: Dataset }>(`/api/datasets/${datasetId}/images/upload-yolo`, form, onProgress);
   },
   cancelDatasetImport: (datasetId: string) => request<Dataset>(`/api/datasets/${datasetId}/import/cancel`, json({})),
   importDatasetFromFtp: (payload: { path: string; name: string; model_name?: string; task_type: TaskType; format: "yolo" | "coco"; source?: "zip" | "dir"; description?: string }, wait = true) =>
     request<DatasetImportResult>(`/api/datasets/import/from-ftp${wait ? "" : "?wait=false"}`, json(payload)),
   exportYoloUrl: (datasetId: string) => apiUrl(`/api/datasets/${datasetId}/export/yolo`),
   exportCocoUrl: (datasetId: string) => apiUrl(`/api/datasets/${datasetId}/export/coco`),
-  importCoco: async (file: File, name: string, taskType: TaskType, wait = true, modelName?: string) => { const form = new FormData(); form.append("file", file); form.append("name", name); form.append("task_type", taskType); if (modelName?.trim()) form.append("model_name", modelName.trim()); return request<DatasetImportResult>(`/api/datasets/import/coco${wait ? "" : "?wait=false"}`, { method: "POST", body: form }); },
+  importCoco: async (file: File, name: string, taskType: TaskType, wait = true, modelName?: string, onProgress?: (progress: UploadProgress) => void) => { const form = new FormData(); form.append("file", file); form.append("name", name); form.append("task_type", taskType); if (modelName?.trim()) form.append("model_name", modelName.trim()); return uploadForm<DatasetImportResult>(`/api/datasets/import/coco${wait ? "" : "?wait=false"}`, form, onProgress); },
   tileDataset: (datasetId: string, data: { name: string; description?: string; tile_size: number; overlap: number; keep_empty_tiles: boolean }) => request<{ dataset_id: string; source_dataset_id: string; generated_images: number; generated_annotations: number; skipped_empty_tiles: number }>(`/api/datasets/${datasetId}/tile`, json(data)),
   listTrainingTasks: (datasetId?: string, datasetVersion?: number) => {
     const params = new URLSearchParams();
@@ -380,10 +404,10 @@ export const api = {
   listOmNodes: () => request<TrainingNode[]>("/api/om-convert/nodes"),
   listOmNodeStatuses: () => request<TrainingNodeStatus[]>("/api/om-convert/nodes/status"),
   listPlugins: () => request<{ items: PluginMeta[]; dropins_dir: string }>("/api/plugins"),
-  installPlugin: async (file: File) => {
+  installPlugin: async (file: File, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
     form.append("file", file);
-    return request<PluginMeta>("/api/plugins/install", { method: "POST", body: form });
+    return uploadForm<PluginMeta>("/api/plugins/install", form, onProgress);
   },
   scanPluginDropins: () => request<PluginMeta[]>("/api/plugins/dropins/scan", json({})),
   deletePlugin: (pluginId: string) => request<void>(`/api/plugins/${pluginId}`, { method: "DELETE" }),

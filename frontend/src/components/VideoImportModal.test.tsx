@@ -78,7 +78,8 @@ describe("VideoImportModal", () => {
       container?.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
     expect(api.createVideoImport).toHaveBeenCalled();
-    expect(api.createVideoImport).toHaveBeenCalledWith(expect.objectContaining({ samplingMode: "fps", samplingValue: 1 }));
+    // 上传进度回调是第二个参数,断言只针对第一个 payload 参数
+    expect(vi.mocked(api.createVideoImport).mock.calls[0][0]).toEqual(expect.objectContaining({ samplingMode: "fps", samplingValue: 1 }));
     expect(container?.textContent).toContain("导入失败");
 
     await act(async () => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "重试导入")?.click());
@@ -120,5 +121,33 @@ describe("VideoImportModal", () => {
     expect(api.getVideoImport).toHaveBeenCalledWith("vid_1");
     expect(onCompleted).toHaveBeenCalledWith(completedTask);
     expect(container?.textContent).toContain("导入完成");
+  });
+
+  it("shows an upload progress bar while the video is being uploaded", async () => {
+    let resolveTask: (task: VideoImportTask) => void = () => undefined;
+    vi.mocked(api.createVideoImport).mockImplementation((_payload, onProgress) => {
+      onProgress?.({ loaded: 5 * 1024 * 1024, total: 10 * 1024 * 1024, percent: 50 });
+      return new Promise<VideoImportTask>((resolve) => { resolveTask = resolve; });
+    });
+    await act(async () => {
+      root?.render(<VideoImportModal onClose={vi.fn()} onCompleted={vi.fn()} />);
+    });
+
+    const fileInput = container?.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(["video"], "traffic.mp4", { type: "video/mp4" });
+    await act(async () => {
+      Object.defineProperty(fileInput, "files", { value: [file], configurable: true });
+      fileInput?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      container?.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(container?.textContent).toContain("正在上传视频");
+    expect(container?.textContent).toContain("5.0 MB / 10.0 MB · 50%");
+
+    // 上传完成后进入预检结果视图,上传进度条消失
+    await act(async () => { resolveTask({ ...failedTask, status: "pending", start_requested: false, error_message: null }); });
+    expect(container?.textContent).not.toContain("正在上传视频");
+    expect(container?.textContent).toContain("预检完成");
   });
 });

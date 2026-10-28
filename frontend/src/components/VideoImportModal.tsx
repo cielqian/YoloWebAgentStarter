@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import { api } from "../api/client";
+import { api, type UploadProgress } from "../api/client";
 import type { SplitName, TaskType, VideoImportTask } from "../types";
 
 type SamplingMode = "fps" | "interval_seconds" | "frame_interval";
@@ -32,6 +32,7 @@ export function VideoImportContent({ onClose, onCompleted }: { onClose: () => vo
   const [endSeconds, setEndSeconds] = useState("");
   const [task, setTask] = useState<VideoImportTask>();
   const [busy, setBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress>();
   const [error, setError] = useState("");
   const [draggingVideo, setDraggingVideo] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +59,7 @@ export function VideoImportContent({ onClose, onCompleted }: { onClose: () => vo
     if (!file || !name.trim()) return;
     setBusy(true);
     setError("");
+    setUploadProgress(undefined);
     try {
       setTask(await api.createVideoImport({
         file,
@@ -74,7 +76,7 @@ export function VideoImportContent({ onClose, onCompleted }: { onClose: () => vo
         trainRatio: Number(trainRatio),
         valRatio: Number(valRatio),
         testRatio: Number(testRatio),
-      }));
+      }, setUploadProgress));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "视频预检失败。");
     } finally {
@@ -106,6 +108,9 @@ export function VideoImportContent({ onClose, onCompleted }: { onClose: () => vo
         {splitStrategy === "single" ? <div className="exchange-fields"><label>初始 split<select value={split} onChange={(event) => setSplit(event.target.value as SplitName)}><option value="train">train · 训练集</option><option value="val">val · 验证集</option><option value="test">test · 测试集</option></select></label></div> : <div className="exchange-fields video-sampling-fields"><label>时间块（秒）<input type="number" min="0.1" step="0.1" value={timeBlockSeconds} onChange={(event) => setTimeBlockSeconds(event.target.value)} /></label><label>train 比例<input type="number" min="0" max="1" step="0.05" value={trainRatio} onChange={(event) => setTrainRatio(event.target.value)} /></label><label>val 比例<input type="number" min="0" max="1" step="0.05" value={valRatio} onChange={(event) => setValRatio(event.target.value)} /></label><label>test 比例<input type="number" min="0" max="1" step="0.05" value={testRatio} onChange={(event) => setTestRatio(event.target.value)} /></label></div>}
         <div className="exchange-fields video-sampling-fields"><label>抽帧方式<select value={mode} onChange={(event) => setMode(event.target.value as SamplingMode)}><option value="fps">按 FPS</option><option value="interval_seconds">按时间间隔</option><option value="frame_interval">按帧间隔</option></select></label><label>{modeLabel}<input type="number" min={mode === "frame_interval" ? "1" : "0.001"} step={mode === "frame_interval" ? "1" : "any"} value={samplingValue} onChange={(event) => setSamplingValue(event.target.value)} /></label><label>开始（秒）<input type="number" min="0" step="0.1" value={startSeconds} onChange={(event) => setStartSeconds(event.target.value)} /></label><label>结束（秒，可选）<input type="number" min="0" step="0.1" value={endSeconds} onChange={(event) => setEndSeconds(event.target.value)} /></label></div>
         <p className="video-sampling-hint">{mode === "fps" ? "FPS=1 表示从所选开始时间起每秒生成 1 张；0.5 表示约每 2 秒 1 张。" : mode === "interval_seconds" ? "例如填 1 表示每隔 1 秒生成 1 张。" : "例如填 30 表示每隔 30 个源视频帧生成 1 张。"}</p>
+        {busy && uploadProgress && uploadProgress.percent > 0 && (
+          <div className="video-import-progress"><div><strong>{uploadProgress.percent >= 100 ? "上传完成，服务端预检中…" : "正在上传视频"}</strong><span>{formatBytes(uploadProgress.loaded)} / {formatBytes(uploadProgress.total)} · {Math.round(uploadProgress.percent)}%</span></div><div className="progress-track"><i style={{ width: `${uploadProgress.percent}%` }} /></div></div>
+        )}
         {error && <p className="video-import-error">{error}</p>}
         <footer className="data-exchange-footer"><span>核心版支持预检、进度、失败重试和帧来源记录。</span><div><button type="button" className="button" onClick={onClose}>取消</button><button className="button primary" disabled={busy || !file || !name.trim()}>预检视频</button></div></footer>
       </form> : <section className="video-import-result">

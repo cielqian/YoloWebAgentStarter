@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./client";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -36,5 +36,71 @@ describe("syncSourceFromFtp request body", () => {
       tag_ids: ["stag-a"],
       tag_values: { "stag-a": "强" },
     });
+  });
+});
+
+describe("upload progress via XHR", () => {
+  class FakeXHR {
+    static instances: FakeXHR[] = [];
+    upload = { onprogress: null as ((event: { lengthComputable: boolean; loaded: number; total: number }) => void) | null };
+    responseType = "";
+    status = 0;
+    response: unknown = null;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onabort: (() => void) | null = null;
+    openedUrl = "";
+    constructor() { FakeXHR.instances.push(this); }
+    open(_method: string, url: string) { this.openedUrl = url; }
+    send(_body: FormData) { /* test drives the callbacks manually */ }
+  }
+
+  const file = new File(["zip"], "set.zip", { type: "application/zip" });
+
+  beforeEach(() => { FakeXHR.instances = []; });
+
+  it("reports upload percent and resolves with the parsed body", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeXHR);
+    const onProgress = vi.fn();
+    const pending = api.importYolo(file, "set", "detect", false, undefined, onProgress);
+    const xhr = FakeXHR.instances[FakeXHR.instances.length - 1]!;
+    expect(xhr.openedUrl).toContain("/api/datasets/import/yolo?wait=false");
+    xhr.upload.onprogress?.({ lengthComputable: true, loaded: 25, total: 100 });
+    xhr.upload.onprogress?.({ lengthComputable: true, loaded: 100, total: 100 });
+    expect(onProgress).toHaveBeenLastCalledWith({ loaded: 100, total: 100, percent: 100 });
+    xhr.status = 200;
+    xhr.response = { dataset: { id: "ds-1", name: "set" } };
+    xhr.onload?.();
+    await expect(pending).resolves.toEqual({ dataset: { id: "ds-1", name: "set" } });
+  });
+
+  it("ignores non-computable progress events", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeXHR);
+    const onProgress = vi.fn();
+    const pending = api.importYolo(file, "set", "detect", false, undefined, onProgress);
+    const xhr = FakeXHR.instances[FakeXHR.instances.length - 1]!;
+    xhr.upload.onprogress?.({ lengthComputable: false, loaded: 50, total: 0 });
+    expect(onProgress).not.toHaveBeenCalled();
+    xhr.status = 500;
+    xhr.response = null;
+    xhr.onload?.();
+    await expect(pending).rejects.toThrow("Request failed (500)");
+  });
+
+  it("surfaces the backend error message on failure", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeXHR);
+    const pending = api.importYolo(file, "set", "detect", false, undefined, vi.fn());
+    const xhr = FakeXHR.instances[FakeXHR.instances.length - 1]!;
+    xhr.status = 400;
+    xhr.response = { error: { message: "invalid_archive" } };
+    xhr.onload?.();
+    await expect(pending).rejects.toThrow("invalid_archive");
+  });
+
+  it("falls back to fetch when no progress callback is given", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ dataset: { id: "ds-2", name: "set" } }) });
+    vi.stubGlobal("fetch", fetch);
+    await api.importYolo(file, "set", "detect", false);
+    expect(fetch).toHaveBeenCalled();
   });
 });
