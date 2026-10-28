@@ -641,6 +641,7 @@ export function DatasetHome(props: {
   const [duplicateReports, setDuplicateReports] = useState<Record<string, DuplicateReport>>({});
   const [expandedReports, setExpandedReports] = useState<Record<string, CardReportKind | undefined>>({});
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [datasetSearch, setDatasetSearch] = useState("");
   const uploadFileRef = useRef<HTMLInputElement>(null);
   const [draggingImages, setDraggingImages] = useState(false);
   const [autoAnnotationTarget, setAutoAnnotationTarget] = useState<Dataset>();
@@ -818,17 +819,22 @@ export function DatasetHome(props: {
     return () => { cancelled = true; };
   }, [uploadMode, sourceId, sourceTagIds, sourceTagValues, sourceTagMatch]);
 
+  const searchKeyword = datasetSearch.trim().toLowerCase();
+  const visibleDatasets = searchKeyword
+    ? props.datasets.filter((dataset) => dataset.name.toLowerCase().includes(searchKeyword))
+    : props.datasets;
+
   return <main className="dataset-home-page">
     <header className="dataset-home-header">
       <div><h1>数据集</h1><p>在这里创建、导入和管理你的数据集。</p></div>
       <div className="header-actions"><button className="button" onClick={() => setDialog("import")}>导入数据</button><button className="button primary" onClick={() => setDialog("create")}>新建数据集</button></div>
     </header>
     <section className="dataset-overview">
-      <div className="section-title-row"><div><span className="eyebrow">ALL DATASETS</span><h2>所有数据集</h2></div><span className="dataset-total">{props.datasets.length} 个数据集</span></div>
+      <div className="section-title-row"><div><span className="eyebrow">ALL DATASETS</span><h2>所有数据集</h2></div><div className="dataset-list-tools"><input className="dataset-search" aria-label="搜索数据集" placeholder="搜索数据集名称…" value={datasetSearch} onChange={(event) => setDatasetSearch(event.target.value)} />{datasetSearch.trim() && <button type="button" className="icon-button" aria-label="清空搜索" onClick={() => setDatasetSearch("")}>×</button>}<span className="dataset-total">{datasetSearch.trim() ? `${visibleDatasets.length} / ${props.datasets.length}` : props.datasets.length} 个数据集</span></div></div>
       <div className="dataset-list-wrap">
         <div className="dataset-list">
           <div className="dataset-list-head"><span>名称</span><span>类型</span><span>状态</span><span>图片</span><span>类别</span><span>标注进度</span><span>版本</span><span>创建时间</span><span className="dataset-list-head-actions">操作</span></div>
-          {props.datasets.map((dataset, index) => { const importing = dataset.import_state === "importing"; const merging = dataset.import_state === "merging"; const inFlight = importing || merging; const expanded = Boolean(expandedRows[dataset.id]); const annotatedPercent = dataset.image_count ? Math.round(dataset.annotated_image_count / dataset.image_count * 100) : 0; const historical = dataset.active_version_number != null && dataset.latest_version_number != null && dataset.active_version_number !== dataset.latest_version_number; return <div key={dataset.id} className={`dataset-row${expanded ? " expanded" : ""}`}>
+          {visibleDatasets.map((dataset, index) => { const importing = dataset.import_state === "importing"; const merging = dataset.import_state === "merging"; const inFlight = importing || merging; const expanded = Boolean(expandedRows[dataset.id]); const annotatedPercent = dataset.image_count ? Math.round(dataset.annotated_image_count / dataset.image_count * 100) : 0; const historical = dataset.active_version_number != null && dataset.latest_version_number != null && dataset.active_version_number !== dataset.latest_version_number; return <div key={dataset.id} className={`dataset-row${expanded ? " expanded" : ""}`}>
             <div className="dataset-row-name"><span className={`dataset-icon tone-${index % 3}`}>{dataset.task_type === "segment" || dataset.task_type === "obb" ? "◇" : dataset.task_type === "classify" ? "○" : dataset.task_type === "pose" ? "✥" : "□"}</span><div><strong title={dataset.name}>{dataset.name}</strong><small>{taskDescription(dataset.task_type)}{dataset.task_type === "pose" && dataset.pose_config ? ` · ${dataset.pose_config.kpt_count} 关键点` : ""}</small></div></div>
             <span className="dataset-row-type">{taskTypeLabel(dataset.task_type)}</span>
             <span className={`status ${dataset.import_state === "failed" || dataset.import_state === "merge_failed" ? "failed" : dataset.import_state === "stopped" || dataset.import_state === "merge_stopped" ? "stopped" : inFlight ? "running" : "ready"}`}>{merging ? "合并中" : importing ? `导入中 ${Math.round(dataset.import_progress ?? 0)}%` : dataset.import_state === "failed" ? "导入失败" : dataset.import_state === "stopped" ? "已停止" : dataset.import_state === "merge_failed" ? "合并失败" : dataset.import_state === "merge_stopped" ? "已停止" : "就绪"}</span>
@@ -839,6 +845,7 @@ export function DatasetHome(props: {
             <span className="dataset-row-num">{formatDatasetDate(dataset.created_at)}</span>
             <div className="dataset-row-actions">
               <button className="button primary" disabled={props.busy || inFlight || !dataset.image_count} onClick={() => props.onContinueAnnotation(dataset)}>继续标注</button>
+              <button className="button" disabled={props.busy || inFlight || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>添加图片</button>
               <button className="button" disabled={props.busy || inFlight} onClick={() => props.onTrain(dataset)}>训练</button>
               <button className="button" aria-expanded={expanded} onClick={() => setExpandedRows((current) => ({ ...current, [dataset.id]: !current[dataset.id] }))}>{expanded ? "收起" : "更多"}</button>
             </div>
@@ -850,7 +857,6 @@ export function DatasetHome(props: {
               <div className="dataset-row-detail-actions">
                 {inFlight ? <button className="button danger" disabled={props.busy} onClick={() => props.onCancelImport?.(dataset)}>{importing ? "停止导入" : "停止合并"}</button> : null}
                 {props.onAskAgent ? <button className="button" disabled={props.busy || inFlight} onClick={() => props.onAskAgent?.(dataset)}>{props.agentLabel ?? "询问助手"}</button> : null}
-                <button className="button" disabled={props.busy || inFlight || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>添加图片</button>
                 <button className="button" disabled={props.busy || inFlight} onClick={() => openBasicInfo(dataset)}>基础信息维护</button>
                 <button className="button dataset-auto-annotation-action" disabled={props.busy || inFlight || !dataset.image_count || isHistoricalActive(dataset)} onClick={() => setAutoAnnotationTarget(dataset)}>自动标注</button>
                 <button className="button" disabled={props.busy || inFlight || !dataset.image_count} onClick={() => openExport(dataset)}>导出数据</button>
@@ -865,6 +871,7 @@ export function DatasetHome(props: {
           </div>; })}
         </div>
         {!props.datasets.length && <section className="dataset-empty-card"><span className="dataset-empty-icon">□</span><h2>还没有数据集</h2><p>新建一个空数据集，或导入已有的 YOLO ZIP 数据集。</p><div><button className="button" onClick={() => setDialog("import")}>导入数据</button><button className="button primary" onClick={() => setDialog("create")}>新建数据集</button></div></section>}
+        {Boolean(props.datasets.length) && !visibleDatasets.length && <section className="dataset-empty-card"><span className="dataset-empty-icon">⌕</span><h2>没有匹配的数据集</h2><p>没有名称包含「{datasetSearch.trim()}」的数据集，换个关键词试试。</p><div><button className="button" onClick={() => setDatasetSearch("")}>清空搜索</button></div></section>}
       </div>
     </section>
     {autoAnnotationTarget && <AutoAnnotationModal dataset={autoAnnotationTarget} onClose={() => setAutoAnnotationTarget(undefined)} onChanged={() => props.onAutoAnnotationComplete?.()} />}
