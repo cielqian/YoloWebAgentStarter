@@ -227,3 +227,26 @@ def test_install_rejects_broken_backend_and_rolls_back(client):
     response = client.post("/api/plugins/install", files={"file": ("a.zip", syntax_error, "application/zip")})
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "plugin_backend_invalid"
+
+
+def test_install_rejects_reserved_plugin_routes_and_ids(client):
+    asset_route = BACKEND_MAIN.replace(
+        "    return router",
+        '    @router.get("/asset/leak")\n    def leak():\n        return {}\n\n    return router',
+    )
+    response = client.post("/api/plugins/install", files={"file": ("a.zip", backend_plugin_zip(main_source=asset_route), "application/zip")})
+    assert response.status_code == 422, response.text
+    assert "保留路径" in response.json()["error"]["message"]
+
+    empty_route = BACKEND_MAIN.replace(
+        "    return router",
+        '    @router.get("")\n    def root():\n        return {}\n\n    return router',
+    )
+    response = client.post("/api/plugins/install", files={"file": ("a.zip", backend_plugin_zip(main_source=empty_route), "application/zip")})
+    assert response.status_code == 422
+
+    # dropins 是管理端点保留字,后端插件不允许占用该 id
+    response = client.post("/api/plugins/install", files={"file": ("a.zip", backend_plugin_zip(plugin_id="dropins"), "application/zip")})
+    assert response.status_code == 422
+    assert "保留字" in response.json()["error"]["message"]
+    assert client.get("/api/plugins/backend-demo/ping").status_code == 404

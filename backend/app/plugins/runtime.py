@@ -27,7 +27,14 @@ from app.core.storage import Storage
 
 logger = logging.getLogger("ywa")
 
-CONTEXT_MODULE_SUFFIX = "_main"
+# /api/plugins/dropins/scan 是平台管理端点,后端插件不允许占用该 id
+RESERVED_PLUGIN_IDS = {"dropins"}
+
+
+def _reserved_route_path(path: str) -> bool:
+    """插件相对路由不允许空路径(与 /api/plugins/{id} 管理端点重叠)和 asset 段(静态资源端点)。"""
+    cleaned = path.strip("/")
+    return cleaned == "" or cleaned == "asset" or cleaned.startswith("asset/")
 
 
 class PluginBackendError(ValidationError):
@@ -93,6 +100,8 @@ class PluginRuntime:
         """按 manifest 加载后端;无 backend 段则原样跳过,失败抛 PluginBackendError。"""
         if self._app is None:
             return False
+        if plugin_id in RESERVED_PLUGIN_IDS:
+            raise PluginBackendError(f"插件 id {plugin_id} 是平台保留字,后端插件不可使用。")
         if plugin_id in self._loaded:
             self.unload(plugin_id)
         backend = manifest.get("backend") or {}
@@ -140,6 +149,13 @@ class PluginRuntime:
             sys.modules.pop(module_name, None)
             self._remove_sys_path(server_dir)
             raise PluginBackendError("create_router 必须返回 fastapi.APIRouter。")
+        reserved = sorted({route.path for route in router.routes if _reserved_route_path(route.path)})
+        if reserved:
+            sys.modules.pop(module_name, None)
+            self._remove_sys_path(server_dir)
+            raise PluginBackendError(
+                f"插件路由使用了保留路径(空路径或 asset 段):{'、'.join(reserved)}。请调整路由前缀后重试。"
+            )
 
         prefix = f"/api/plugins/{plugin_id}"
         before = len(self._app.router.routes)
