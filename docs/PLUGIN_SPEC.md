@@ -1,10 +1,10 @@
-# YWA 插件开发规范（AI 执行版 v1.1）
+# YWA 插件开发规范（AI 执行版 v1.2）
 
 > 本文档面向**AI 代理与开发者**，是开发 YWA 插件的**唯一依据**。阅读本文档后，无需查阅平台源码即可产出可被平台接受的插件包。
 >
 > 规范用语约定：**必须**（违反即被平台拒绝或功能不可用）、**禁止**（同上）、**建议**（不强制，但偏离可能带来体验问题）。
 >
-> v1.1 仅重组文档结构使其可被 AI 直接执行，运行时契约与 v1 完全一致。
+> 变更记录：v1.2 新增**后端插件**（Python，第 5 节）与 `__ctx.pluginApiBase`；v1.1 重组为 AI 可执行版。
 
 ---
 
@@ -72,16 +72,20 @@ my-plugin/
 ├── manifest.json          # 插件清单（源；打包时复制进 dist 根）
 ├── src/                   # 源码，任意框架（Vue/React/原生均可）
 │   ├── index.html
-│   └── assets/
-│       ├── app.js
-│       └── app.css
+│   ├── assets/
+│   │   ├── app.js
+│   │   └── app.css
+│   └── server/            # 后端源码（可选，见第 5 节）
+│       └── main.py
 └── dist/                  # 构建产物 = zip 根
     ├── manifest.json
     ├── index.html
-    └── assets/…
+    ├── assets/…
+    └── server/
+        └── main.py
 ```
 
-原生无构建方案允许不区分 src/dist，直接把 `manifest.json` + `index.html` + 资源放在同一目录打成 zip。
+原生无构建方案允许不区分 src/dist，直接把 `manifest.json` + `index.html` + 资源（含可选的 `server/`）放在同一目录打成 zip。
 
 ---
 
@@ -139,6 +143,7 @@ try {
   context = JSON.parse(atob(new URLSearchParams(location.search).get("__ctx") || ""));
 } catch (error) { context = {}; }
 var apiBase = context.apiBase || ""; // 兜底为空串 = 同源相对路径
+var pluginApiBase = context.pluginApiBase || ""; // 本插件后端 API 基地址(带后端的插件用)
 ```
 
 调用平台接口的统一封装（**建议**使用）：
@@ -225,17 +230,19 @@ def create_router(ctx) -> APIRouter:
 
 ## 6. 平台 REST API
 
-### 5.1 插件管理接口
+### 6.1 插件管理接口
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/plugins` | 已安装插件列表（`items`）与 dropins 目录路径（`dropins_dir`） |
+| GET | `/api/plugins` | 已安装插件列表（`items`，含 `has_backend`）与 dropins 目录路径（`dropins_dir`） |
 | POST | `/api/plugins/install` | multipart 上传 zip 安装（字段名 `file`） |
 | POST | `/api/plugins/dropins/scan` | 立即扫描 dropins 目录 |
 | DELETE | `/api/plugins/{id}` | 卸载插件 |
 | GET | `/api/plugins/{id}/asset/{path}` | 插件静态资源（宿主内部使用，插件一般无需调用） |
 
-### 5.2 常用业务接口（供插件读取平台数据）
+带后端的插件：**自身 API 走 `/api/plugins/{id}/{插件路由}`**，前端用 `__ctx.pluginApiBase` 拼接（见第 5 节），同样无跨域。
+
+### 6.2 常用业务接口（供插件读取平台数据）
 
 | 方法 | 路径 | 返回要点 |
 |---|---|---|
@@ -330,6 +337,38 @@ def create_router(ctx) -> APIRouter:
 ```
 
 把这两个文件放在同一目录，`zip -r my-plugin.zip .` 即得到可安装的插件包。
+
+**后端最小模板**（在上方前端模板基础上加一个文件 + manifest 一段即成全栈插件）
+
+manifest.json 增加一段：
+
+```json
+"backend": { "entry": "server/main.py" }
+```
+
+server/main.py：
+
+```python
+from fastapi import APIRouter
+from sqlalchemy import text
+
+
+def create_router(ctx) -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/ping")  # 实际路径:{pluginApiBase}/ping
+    def ping():
+        return {"ok": True, "plugin": ctx.plugin_id}
+
+    @router.get("/datasets-count")
+    def datasets_count():
+        with ctx.session_factory() as session:
+            return {"count": session.execute(text("SELECT COUNT(*) FROM datasets")).scalar()}
+
+    return router
+```
+
+前端把 `api("/api/system/health")` 换成 `fetch(pluginApiBase + "/ping")` 即完成联调。
 
 ---
 
