@@ -590,10 +590,11 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
                     key={index}
                     x={point[0]}
                     y={point[1]}
-                    radius={snapped ? Math.max(7 / zoom, 3) : Math.max(3.5 / zoom, 1.5)}
+                    radius={snapped ? Math.max(8 / zoom, 3.5) : Math.max(4.5 / zoom, 2)}
                     fill={snapped ? "#22c55e" : "#fff"}
                     stroke={snapped ? "#22c55e" : draftColor}
                     strokeWidth={1.5}
+                    hitFunc={vertexHitFunc(zoom)}
                     strokeScaleEnabled={false}
                     draggable={!panModifier}
                     onMouseDown={(event) => {
@@ -624,6 +625,16 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
       </div>
     </section>
   );
+}
+
+/** 顶点/关键点的可点击区域比可视圆点大一圈（屏幕像素恒定），密集点也容易选中。 */
+function vertexHitFunc(zoom: number) {
+  return (context: Konva.Context, shape: Konva.Shape) => {
+    context.beginPath();
+    context.arc(0, 0, Math.max(12 / zoom, 6), 0, Math.PI * 2, false);
+    context.closePath();
+    context.fillStrokeShape(shape);
+  };
 }
 
 function EditableObb({ annotation, stageObb, selected, panModifier, setNodeRef, onSelect, onChange }: { annotation: Annotation; stageObb: OBB; selected: boolean; panModifier: boolean; setNodeRef: (node: Konva.Rect | null) => void; onSelect: () => void; onChange: (obb: OBB) => void }) {
@@ -686,10 +697,11 @@ function EditablePolygon({ annotation, scale, zoom, panModifier, onSelect, onMov
           key={index}
           x={vertex[0] * scale.x}
           y={vertex[1] * scale.y}
-          radius={Math.max(3.5 / zoom, 1.5)}
+          radius={Math.max(4.5 / zoom, 2)}
           fill="#fff"
           stroke={annotation.color}
           strokeWidth={1.5}
+          hitFunc={vertexHitFunc(zoom)}
           strokeScaleEnabled={false}
           draggable={!panModifier}
           onMouseDown={(event) => { if (panModifierActive(event.evt)) return; event.cancelBubble = true; onSelect(); }}
@@ -777,10 +789,11 @@ function PoseShape({ annotation, scale, zoom, selected, panModifier, skeleton, k
             key={`kpt-${index}`}
             x={keypoint[0] * scale.x}
             y={keypoint[1] * scale.y}
-            radius={Math.max(4 / zoom, 2)}
+            radius={Math.max(4.5 / zoom, 2)}
             {...style}
             strokeWidth={selected ? 2 : 1.5}
             strokeScaleEnabled={false}
+            hitFunc={vertexHitFunc(zoom)}
             draggable={editable}
             onMouseDown={(event) => { if (panModifierActive(event.evt)) return; event.cancelBubble = true; onSelect(); }}
             onDragEnd={editable ? (event) => onMoveKeypoint(index, [event.target.x(), event.target.y()]) : undefined}
