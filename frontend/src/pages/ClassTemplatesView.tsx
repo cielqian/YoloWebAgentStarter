@@ -221,7 +221,7 @@ function TagLibraryPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [color, setColor] = useState(TAG_COLORS[0]);
   const [valuesInput, setValuesInput] = useState("");
@@ -233,6 +233,23 @@ function TagLibraryPanel() {
   useEffect(() => { refresh().finally(() => setLoading(false)); }, []);
 
   const parseValues = (raw: string) => raw.split(/[,，、\s]+/).map((item) => item.trim()).filter(Boolean);
+
+  const openCreate = () => {
+    setEditState(null);
+    setName(""); setColor(TAG_COLORS[tags.length % TAG_COLORS.length]); setValuesInput(""); setDescription("");
+    setDialogOpen(true);
+  };
+
+  const openEdit = (tag: TagTemplate) => {
+    setEditState({ id: tag.id, name: tag.name, color: tag.color, values: (tag.values ?? []).join(", "), description: tag.description ?? "" });
+    setDialogOpen(true);
+  };
+
+  const closeDialog = () => {
+    if (busy) return;
+    setDialogOpen(false);
+    setEditState(null);
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -248,7 +265,7 @@ function TagLibraryPanel() {
         await api.createTagTemplate({ name: trimmed, color, values: values.length ? values : null, description: description.trim() || null });
         setNotice(`已新增标签“${trimmed}”`);
       }
-      setEditState(null); setShowForm(false); setName(""); setValuesInput(""); setDescription("");
+      setEditState(null); setDialogOpen(false);
       await refresh();
     } catch (reason) {
       setError(errorMessage(reason));
@@ -271,29 +288,8 @@ function TagLibraryPanel() {
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <Toast kind="success" message={notice} onClose={() => setNotice("")} />
       <div className="header-actions">
-        <button className="button primary" onClick={() => { setShowForm((value) => !value); setEditState(null); resetTagForm(tags.length); }}>{showForm && !editState ? "收起" : "+ 新增标签"}</button>
+        <button className="button primary" onClick={openCreate}>+ 新增标签</button>
       </div>
-
-      {showForm || editState ? (
-        <form className="class-library-form panel" onSubmit={(event) => void submit(event)}>
-          <label><span>标签名</span><input autoFocus value={editState ? editState.name : name} placeholder="例如：光线" onChange={(event) => (editState ? setEditState({ ...editState, name: event.target.value }) : setName(event.target.value))} /></label>
-          <div className="class-library-form-row">
-            <label><span>颜色</span>
-              <div className="class-color-palette" role="radiogroup" aria-label="标签颜色">
-                {TAG_COLORS.map((item) => (
-                  <button type="button" key={item} role="radio" aria-checked={(editState ? editState.color : color) === item} className={`class-color-swatch${(editState ? editState.color : color) === item ? " selected" : ""}`} style={{ background: item }} onClick={() => (editState ? setEditState({ ...editState, color: item }) : setColor(item))} aria-label={item} />
-                ))}
-              </div>
-            </label>
-          </div>
-          <label><span>枚举取值<small>选填,逗号/顿号分隔。填写后打标时可选具体取值(如 强/弱)。</small></span><input value={editState ? editState.values : valuesInput} placeholder="例如：强, 弱" onChange={(event) => (editState ? setEditState({ ...editState, values: event.target.value }) : setValuesInput(event.target.value))} /></label>
-          <label><span>备注</span><input value={editState ? editState.description : description} placeholder="选填" onChange={(event) => (editState ? setEditState({ ...editState, description: event.target.value }) : setDescription(event.target.value))} /></label>
-          <div className="class-library-form-actions">
-            <button type="button" className="button" onClick={() => { setShowForm(false); setEditState(null); }}>取消</button>
-            <button className="button primary" type="submit" disabled={busy || !(editState ? editState.name : name).trim()}>保存</button>
-          </div>
-        </form>
-      ) : null}
 
       {loading ? <p className="muted">正在加载标签库…</p> : tags.length ? (
         <div className="model-table-wrap">
@@ -317,7 +313,7 @@ function TagLibraryPanel() {
                   <td title={tag.description ?? undefined}>{tag.description || <span className="muted">—</span>}</td>
                   <td className="model-table-time">{formatTagTime(tag.updated_at)}</td>
                   <td className="model-table-actions">
-                    <button className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => { setEditState({ id: tag.id, name: tag.name, color: tag.color, values: (tag.values ?? []).join(", "), description: tag.description ?? "" }); setShowForm(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>编辑</button>
+                    <button className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openEdit(tag)}>编辑</button>
                     <button className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => setDeleteTarget(tag)}>删除</button>
                   </td>
                 </tr>
@@ -326,6 +322,33 @@ function TagLibraryPanel() {
           </table>
         </div>
       ) : <p className="muted">标签库还是空的。新增标签(如“光线=强/弱”)后,数据源打标界面会直接使用。</p>}
+
+      {dialogOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeDialog}>
+          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="tag-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><span className="eyebrow">{editState ? "EDIT TAG" : "NEW TAG"}</span><h2 id="tag-dialog-title">{editState ? "编辑标签" : "新增标签"}</h2></div>
+              <button className="icon-button" onClick={closeDialog} aria-label="关闭">×</button>
+            </header>
+            <form className="tag-dialog-form" onSubmit={(event) => void submit(event)}>
+              <label><span>标签名</span><input autoFocus value={editState ? editState.name : name} placeholder="例如：光线" onChange={(event) => (editState ? setEditState({ ...editState, name: event.target.value }) : setName(event.target.value))} /></label>
+              <label><span>颜色</span>
+                <div className="class-color-palette" role="radiogroup" aria-label="标签颜色">
+                  {TAG_COLORS.map((item) => (
+                    <button type="button" key={item} role="radio" aria-checked={(editState ? editState.color : color) === item} className={`class-color-swatch${(editState ? editState.color : color) === item ? " selected" : ""}`} style={{ background: item }} onClick={() => (editState ? setEditState({ ...editState, color: item }) : setColor(item))} aria-label={item} />
+                  ))}
+                </div>
+              </label>
+              <label><span>枚举取值<small>选填,逗号/顿号分隔。填写后打标时可选具体取值(如 强/弱)。</small></span><input value={editState ? editState.values : valuesInput} placeholder="例如：强, 弱" onChange={(event) => (editState ? setEditState({ ...editState, values: event.target.value }) : setValuesInput(event.target.value))} /></label>
+              <label><span>备注</span><input value={editState ? editState.description : description} placeholder="选填" onChange={(event) => (editState ? setEditState({ ...editState, description: event.target.value }) : setDescription(event.target.value))} /></label>
+              <footer>
+                <button type="button" className="button" disabled={busy} onClick={closeDialog}>取消</button>
+                <button className="button primary" type="submit" disabled={busy || !(editState ? editState.name : name).trim()}>保存</button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
 
       {deleteTarget && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
@@ -340,8 +363,4 @@ function TagLibraryPanel() {
       )}
     </>
   );
-
-  function resetTagForm(count: number) {
-    setName(""); setColor(TAG_COLORS[count % TAG_COLORS.length]); setValuesInput(""); setDescription("");
-  }
 }

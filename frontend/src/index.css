@@ -777,3 +777,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .source-tag-chip.batch > select { max-width: 90px; padding: 4px 6px; border: 0; border-left: 1px solid rgba(0,0,0,.12); border-radius: 0 999px 999px 0; background: rgba(255,255,255,.85); color: #3157d5; font-size: 12px; font-weight: 650; cursor: pointer; }
 
 .settings-webhook-events-head { display: grid; gap: 4px; color: #536077; font-size: 12px; font-weight: 650; }
+
+.tag-dialog-form { display: grid; gap: 14px; }
+.tag-dialog-form input { width: 100%; padding: 9px 10px; border: 1px solid #d5dcea; border-radius: 7px; font-size: 12px; }
+.tag-dialog-form label small { color: #8994a8; font-size: 10px; font-weight: 400; }
