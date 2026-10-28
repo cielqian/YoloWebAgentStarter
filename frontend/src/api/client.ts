@@ -423,6 +423,7 @@ export const api = {
   getTrainingLogs: (taskId: string, tail = 200) => request<TrainingLog>(`/api/training/tasks/${taskId}/logs?tail=${tail}`),
   getTrainingSummary: (taskId: string) => request<import("../types").TrainingSummary>(`/api/training/tasks/${taskId}/summary`),
   downloadCheckpointUrl: (taskId: string, checkpoint: "best" | "last") => apiUrl(`/api/training/tasks/${taskId}/checkpoints/${checkpoint}`),
+  downloadTrainingLogsUrl: (taskId: string) => apiUrl(`/api/training/tasks/${taskId}/logs/file`),
   listModels: (datasetId?: string, includeArchived = true, datasetVersion?: number) => {
     const params = new URLSearchParams();
     if (datasetId) params.set("dataset_id", datasetId);

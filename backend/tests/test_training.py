@@ -170,6 +170,13 @@ def test_training_task_runs_and_persists_checkpoints(client, tmp_path, monkeypat
     assert task["last_model_path"].endswith("last.pt")
     assert client.get(f"/api/training/tasks/{task['id']}/checkpoints/best").status_code == 200
     assert client.get(f"/api/training/tasks/{task['id']}/logs").json()["line_count"] >= 3
+    # 完整日志文件下载:attachment 头 + 内容与日志接口一致
+    log_file = client.get(f"/api/training/tasks/{task['id']}/logs/file")
+    assert log_file.status_code == 200, log_file.text
+    assert "attachment" in log_file.headers.get("content-disposition", "")
+    assert "smoke" in log_file.headers.get("content-disposition", "")
+    assert len(log_file.text) > 0
+    assert client.get("/api/training/tasks/missing/logs/file").status_code == 404
     summary = client.get(f"/api/training/tasks/{task['id']}/summary")
     assert summary.status_code == 200
     assert summary.json()["status"] == "completed"

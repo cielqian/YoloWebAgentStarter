@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shlex
 import zipfile
 from pathlib import Path
@@ -587,6 +588,17 @@ class TrainingService:
         if path is None:
             raise NotFoundError("checkpoint_not_found", f"The {name}.pt checkpoint is not available.")
         return Path(path)
+
+    def log_file(self, session: Session, task_id: str) -> tuple[Path, str]:
+        """完整训练日志文件路径 + 下载文件名(本地与远程任务的平台侧镜像日志)。"""
+        task = self.get_task(session, task_id)
+        if not task.logs_path:
+            raise NotFoundError("training_log_not_found", "该任务没有日志文件。")
+        path = Path(task.logs_path)
+        if not path.is_file():
+            raise NotFoundError("training_log_not_found", "该任务的日志文件不存在。")
+        safe_name = re.sub(r"[^\w一-鿿-]+", "_", task.name).strip("_") or task_id
+        return path, f"{safe_name}_train.log"
 
     def create_profile(self, session: Session, payload: TrainingProfileCreate) -> TrainingProfileResponse:
         dataset = get_dataset(session, payload.dataset_id)

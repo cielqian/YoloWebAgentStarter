@@ -31,6 +31,7 @@ vi.mock("../api/client", () => ({
       next_steps: [],
     }),
     downloadCheckpointUrl: vi.fn().mockReturnValue("#"),
+    downloadTrainingLogsUrl: vi.fn().mockReturnValue("#"),
     autoSplitImages: vi.fn(),
   },
 }));

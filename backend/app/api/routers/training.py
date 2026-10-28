@@ -157,6 +157,16 @@ def get_logs(
     return service.logs(session, task_id, tail)
 
 
+@router.get("/tasks/{task_id}/logs/file")
+def download_task_log(
+    task_id: str,
+    session: Session = Depends(get_session),
+    service: TrainingService = Depends(get_training_service),
+) -> FileResponse:
+    path, filename = service.log_file(session, task_id)
+    return FileResponse(path, media_type="text/plain; charset=utf-8", filename=filename)
+
+
 @router.get("/tasks/{task_id}/summary", response_model=TrainingSummaryResponse)
 def get_summary(
     task_id: str,

@@ -59,6 +59,7 @@ export function TrainingTaskDetailCard({ task, summary, logs, busy, onClose, onS
               {task.last_model_path && <a className="button" href={api.downloadCheckpointUrl(task.id, "last")}>last.pt</a>}
             </>
           )}
+          <a className="button" href={api.downloadTrainingLogsUrl(task.id)} title="下载该任务的完整训练日志">下载日志</a>
           <button className="button" onClick={onClose}>收起</button>
         </div>
       </div>
