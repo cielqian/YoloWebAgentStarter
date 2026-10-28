@@ -10,6 +10,9 @@ services:
       YWA_PORT: "8000"
       YWA_DATA_DIR: /app/data
       YWA_IMPORT_ROOT: /app/data/imports
+      # 切换 PostgreSQL:在 .env 写 YWA_DATABASE_URL=postgresql+psycopg2://…
+      # 留空则回落到卷内 SQLite(/app/data/yolowebagent-starter.db)
+      YWA_DATABASE_URL: ${YWA_DATABASE_URL:-}
       # SAM 辅助标注：远程 SAM3 服务优先；地址不通时可注释掉回退本地权重
       YWA_SAM_BACKEND: http://10.12.42.125:7860
       YWA_SAM_DEVICE: auto

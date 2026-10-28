@@ -18,9 +18,13 @@ depends_on: str | Sequence[str] | None = None
 _TASKS = "'detect', 'segment', 'obb', 'classify', 'pose'"
 _PREV_TASKS = "'detect', 'segment', 'obb', 'classify'"
 
+def _recreate() -> str:
+    # SQLite 删不了内联约束必须整表重建;PG 直接 ALTER,重建会被外部外键依赖挡住。
+    return "always" if op.get_bind().dialect.name == "sqlite" else "auto"
+
 
 def _replace_task_constraint(table: str, constraint: str, values: str) -> None:
-    with op.batch_alter_table(table, recreate="always") as batch:
+    with op.batch_alter_table(table, recreate=_recreate()) as batch:
         batch.drop_constraint(constraint, type_="check")
         batch.create_check_constraint(constraint, f"task_type IN ({values})")
 
@@ -34,14 +38,14 @@ def upgrade() -> None:
     _replace_task_constraint("auto_annotation_tasks", "ck_auto_annotation_task_type", _TASKS)
     with op.batch_alter_table("datasets") as batch:
         batch.add_column(sa.Column("pose_config_json", sa.JSON(), nullable=True))
-    with op.batch_alter_table("annotations", recreate="always") as batch:
+    with op.batch_alter_table("annotations", recreate=_recreate()) as batch:
         batch.add_column(sa.Column("keypoints", sa.JSON(), nullable=True))
         batch.drop_constraint("ck_annotation_type", type_="check")
         batch.create_check_constraint("ck_annotation_type", "type IN ('bbox', 'polygon', 'obb', 'classify', 'pose')")
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("annotations", recreate="always") as batch:
+    with op.batch_alter_table("annotations", recreate=_recreate()) as batch:
         batch.drop_constraint("ck_annotation_type", type_="check")
         batch.drop_column("keypoints")
         batch.create_check_constraint("ck_annotation_type", f"type IN ({_PREV_TASKS})")

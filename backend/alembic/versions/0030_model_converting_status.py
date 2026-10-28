@@ -17,14 +17,18 @@ depends_on: str | Sequence[str] | None = None
 _STATUSES = "'active', 'archived', 'converting', 'failed'"
 _PREV_STATUSES = "'active', 'archived'"
 
+def _recreate() -> str:
+    # SQLite 删不了内联约束必须整表重建;PG 直接 ALTER,重建会被外部外键依赖挡住。
+    return "always" if op.get_bind().dialect.name == "sqlite" else "auto"
+
 
 def upgrade() -> None:
-    with op.batch_alter_table("model_versions", recreate="always") as batch:
+    with op.batch_alter_table("model_versions", recreate=_recreate()) as batch:
         batch.drop_constraint("ck_model_version_status", type_="check")
         batch.create_check_constraint("ck_model_version_status", f"status IN ({_STATUSES})")
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("model_versions", recreate="always") as batch:
+    with op.batch_alter_table("model_versions", recreate=_recreate()) as batch:
         batch.drop_constraint("ck_model_version_status", type_="check")
         batch.create_check_constraint("ck_model_version_status", f"status IN ({_PREV_STATUSES})")

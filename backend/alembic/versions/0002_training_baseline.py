@@ -84,7 +84,7 @@ def upgrade() -> None:
         sa.Column("progress_percent", sa.Float(), nullable=False, server_default="0"),
         sa.Column("metrics_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("stop_requested", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("stop_requested", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("started_at", sa.DateTime(), nullable=True),
         sa.Column("finished_at", sa.DateTime(), nullable=True),
         *_timestamps(),

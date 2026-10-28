@@ -268,7 +268,7 @@ class ModelVersion(Base, TimestampMixin):
         CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify', 'pose')", name="ck_model_version_task_type"),
     )
 
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[str] = mapped_column(String(64), default="v1", nullable=False)
     dataset_id: Mapped[str | None] = mapped_column(ForeignKey("datasets.id", ondelete="SET NULL"), index=True, nullable=True)
@@ -300,7 +300,7 @@ class ModelTestRecord(Base, TimestampMixin):
     __tablename__ = "model_test_records"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    model_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id", ondelete="CASCADE"), index=True, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), ForeignKey("model_versions.id", ondelete="CASCADE"), index=True, nullable=False)
     file_name: Mapped[str] = mapped_column(String(512), nullable=False)
     image_path: Mapped[str] = mapped_column(Text, nullable=False)
     result_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
@@ -312,7 +312,7 @@ class ModelEvaluationRecord(Base, TimestampMixin):
     __tablename__ = "model_evaluation_records"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    model_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id", ondelete="CASCADE"), index=True, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), ForeignKey("model_versions.id", ondelete="CASCADE"), index=True, nullable=False)
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True, nullable=False)
     split: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True, nullable=False)
@@ -339,7 +339,7 @@ class AutoAnnotationTask(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True, nullable=False)
-    model_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id", ondelete="CASCADE"), index=True, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), ForeignKey("model_versions.id", ondelete="CASCADE"), index=True, nullable=False)
     task_type: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True, nullable=False)
     clean_old_annotations: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

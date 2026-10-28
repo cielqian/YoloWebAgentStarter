@@ -19,9 +19,13 @@ _ARTIFACTS = "'best', 'last', 'onnx', 'om'"
 _PREV_FORMATS = "'pt', 'onnx'"
 _PREV_ARTIFACTS = "'best', 'last', 'onnx'"
 
+def _recreate() -> str:
+    # SQLite 删不了内联约束必须整表重建;PG 直接 ALTER,重建会被外部外键依赖挡住。
+    return "always" if op.get_bind().dialect.name == "sqlite" else "auto"
+
 
 def _replace(table: str, constraint: str, condition: str) -> None:
-    with op.batch_alter_table(table, recreate="always") as batch:
+    with op.batch_alter_table(table, recreate=_recreate()) as batch:
         batch.drop_constraint(constraint, type_="check")
         batch.create_check_constraint(constraint, condition)
 

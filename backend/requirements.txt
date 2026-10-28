@@ -22,3 +22,5 @@ onnx_ir==0.2.1
 onnxslim>=0.1.82
 ml_dtypes==0.5.4
 httpx==0.28.1
+# PostgreSQL 后端(可选):设置 YWA_DATABASE_URL=postgresql+psycopg2://… 时使用
+psycopg2-binary==2.9.13
