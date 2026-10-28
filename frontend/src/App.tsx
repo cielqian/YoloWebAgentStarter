@@ -20,6 +20,7 @@ import { ImportCenterModal } from "./components/ImportCenterModal";
 import { DatasetVersionDialog } from "./components/DatasetVersionDialog";
 import { Toast } from "./components/Toast";
 import { UploadProgressToast } from "./components/UploadProgressToast";
+import { taskTypeLabel } from "./training/helpers";
 import { readLocale, saveLocale, type AppLocale } from "./locale";
 import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityReport, DatasetVersion, DuplicateReport, ImageItem, ModelVersion, PluginMeta, SamCapabilities, SamPrediction, SourceDataset, SourceTag, SplitName, TaskType, ValidationReport } from "./types";
 
@@ -639,6 +640,7 @@ export function DatasetHome(props: {
   const [qualityReports, setQualityReports] = useState<Record<string, DatasetQualityReport>>({});
   const [duplicateReports, setDuplicateReports] = useState<Record<string, DuplicateReport>>({});
   const [expandedReports, setExpandedReports] = useState<Record<string, CardReportKind | undefined>>({});
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const uploadFileRef = useRef<HTMLInputElement>(null);
   const [draggingImages, setDraggingImages] = useState(false);
   const [autoAnnotationTarget, setAutoAnnotationTarget] = useState<Dataset>();
@@ -823,37 +825,45 @@ export function DatasetHome(props: {
     </header>
     <section className="dataset-overview">
       <div className="section-title-row"><div><span className="eyebrow">ALL DATASETS</span><h2>所有数据集</h2></div><span className="dataset-total">{props.datasets.length} 个数据集</span></div>
-      <div className="dataset-grid">
-        {props.datasets.map((dataset, index) => { const importing = dataset.import_state === "importing"; const merging = dataset.import_state === "merging"; const failedImport = dataset.import_state === "failed" || dataset.import_state === "stopped"; const mergeIssue = dataset.import_state === "merge_failed" || dataset.import_state === "merge_stopped"; const importBlocked = importing || merging || failedImport; return <article key={dataset.id} className="dataset-card">
-          <header><span className={`dataset-icon tone-${index % 3}`}>{dataset.task_type === "segment" || dataset.task_type === "obb" ? "◇" : dataset.task_type === "classify" ? "○" : dataset.task_type === "pose" ? "✥" : "□"}</span><div><h2>{dataset.name}</h2><small>{taskDescription(dataset.task_type)}{dataset.task_type === "pose" && dataset.pose_config ? ` · ${dataset.pose_config.kpt_count} 关键点` : ""}</small></div><div className="dataset-card-header-actions"><span className={`status ${dataset.import_state === "failed" || dataset.import_state === "merge_failed" ? "failed" : dataset.import_state === "stopped" || dataset.import_state === "merge_stopped" ? "stopped" : importing || merging ? "" : "ready"}`}>{merging ? "合并中" : importing ? "导入中" : dataset.import_state === "failed" ? "导入失败" : dataset.import_state === "stopped" ? "已停止" : dataset.import_state === "merge_failed" ? "合并失败" : dataset.import_state === "merge_stopped" ? "已停止" : "就绪"}</span></div></header>
-          {(importing || merging) && <div className="dataset-import-progress" role="status"><div className="dataset-import-progress-top"><span>{dataset.import_message ?? "正在导入…"}</span><span>{Math.round(dataset.import_progress ?? 0)}%</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, Math.max(2, dataset.import_progress ?? 0))}%` }} /></div></div>}
-          {dataset.import_state === "failed" && <div className="validation invalid"><span>导入失败：{dataset.import_message ?? "未知错误"}</span></div>}
-          {dataset.import_state === "merge_failed" && <div className="validation invalid"><span>合并失败：{dataset.import_message ?? "未知错误"}</span><small>数据集仍可正常使用；重新上传压缩包会跳过已合并的同名图片。</small></div>}
-          {dataset.import_state === "merge_stopped" && <div className="validation valid"><span>合并已停止：已合并部分保留，可重新上传继续。</span></div>}
-          <div className="dataset-metrics"><span><small>图片</small><strong>{dataset.image_count.toLocaleString()}</strong></span><span><small>类别</small><strong>{dataset.class_count.toLocaleString()}</strong></span></div>
-          <div className="dataset-version-line">
-            {dataset.latest_version_number ? <><span>版本</span><strong>{dataset.latest_version_label || `v${dataset.latest_version_number}`}</strong>{dataset.active_version_number != null && dataset.active_version_number !== dataset.latest_version_number && <em>只读 · 已激活 {dataset.active_version_label || `v${dataset.active_version_number}`}（非最新）</em>}</> : <span className="muted">未创建版本</span>}
-          </div>
-          <div className="dataset-progress"><span>标注进度</span><strong>{dataset.image_count ? `${Math.round(dataset.annotated_image_count / dataset.image_count * 100)}%` : "等待导入"}</strong></div>
-          <div className="progress-track"><i style={{ width: `${dataset.image_count ? dataset.annotated_image_count / dataset.image_count * 100 : 0}%` }} /></div>
-          {!importBlocked && <button className="button primary dataset-primary-action" disabled={props.busy || importing || !dataset.image_count} onClick={() => props.onContinueAnnotation(dataset)}>继续标注</button>}
-          <div className="dataset-card-actions">
-            {importing || merging ? <button className="button danger" disabled={props.busy} onClick={() => props.onCancelImport?.(dataset)}>{importing ? "停止导入" : "停止合并"}</button> : failedImport ? <button className="button dataset-delete-action" disabled={props.busy} onClick={() => setDeleteTarget(dataset)}>删除</button> : <>
-            {props.onAskAgent ? <button className="button" disabled={props.busy || importing} onClick={() => props.onAskAgent?.(dataset)}>{props.agentLabel ?? "询问助手"}</button> : null}
-            <button className="button" disabled={props.busy || importing || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>添加图片</button>
-            <button className="button" disabled={props.busy || importing} onClick={() => openBasicInfo(dataset)}>基础信息维护</button>
-            <button className="button" disabled={props.busy || importing} onClick={() => props.onTrain(dataset)}>训练</button>
-            <button className="button dataset-auto-annotation-action" disabled={props.busy || importing || !dataset.image_count || isHistoricalActive(dataset)} onClick={() => setAutoAnnotationTarget(dataset)}>自动标注</button>
-            <button className="button" disabled={props.busy || importing || !dataset.image_count} onClick={() => openExport(dataset)}>导出数据</button>
-            <button className="button" disabled={props.busy || importing || !dataset.image_count} onClick={() => void toggleDuplicates(dataset)}>{isReportOpen(dataset.id, "duplicates") ? "收起重复图" : "重复/相似图"}</button>
-            <button className="button" disabled={props.busy || importing} onClick={() => void toggleQuality(dataset)}>{isReportOpen(dataset.id, "quality") ? "收起报告" : "质量报告"}</button>
-            <button className="button" disabled={props.busy || importing} onClick={() => setVersionTarget(dataset)}>版本管理</button>
-            <button className="button dataset-delete-action" disabled={props.busy} onClick={() => setDeleteTarget(dataset)}>删除</button>
-            </>}
-          </div>
-          {isReportOpen(dataset.id, "quality") && qualityReports[dataset.id] && <CardReport onClose={() => closeReport(dataset.id)}><QualityPanel report={qualityReports[dataset.id]} compact /></CardReport>}
-          {isReportOpen(dataset.id, "duplicates") && duplicateReports[dataset.id] && <CardReport onClose={() => closeReport(dataset.id)}><DuplicatePanel report={duplicateReports[dataset.id]} compact /></CardReport>}
-        </article>; })}
+      <div className="dataset-list-wrap">
+        <div className="dataset-list">
+          <div className="dataset-list-head"><span>名称</span><span>类型</span><span>状态</span><span>图片</span><span>类别</span><span>标注进度</span><span>版本</span><span>创建时间</span><span className="dataset-list-head-actions">操作</span></div>
+          {props.datasets.map((dataset, index) => { const importing = dataset.import_state === "importing"; const merging = dataset.import_state === "merging"; const inFlight = importing || merging; const expanded = Boolean(expandedRows[dataset.id]); const annotatedPercent = dataset.image_count ? Math.round(dataset.annotated_image_count / dataset.image_count * 100) : 0; const historical = dataset.active_version_number != null && dataset.latest_version_number != null && dataset.active_version_number !== dataset.latest_version_number; return <div key={dataset.id} className={`dataset-row${expanded ? " expanded" : ""}`}>
+            <div className="dataset-row-name"><span className={`dataset-icon tone-${index % 3}`}>{dataset.task_type === "segment" || dataset.task_type === "obb" ? "◇" : dataset.task_type === "classify" ? "○" : dataset.task_type === "pose" ? "✥" : "□"}</span><div><strong title={dataset.name}>{dataset.name}</strong><small>{taskDescription(dataset.task_type)}{dataset.task_type === "pose" && dataset.pose_config ? ` · ${dataset.pose_config.kpt_count} 关键点` : ""}</small></div></div>
+            <span className="dataset-row-type">{taskTypeLabel(dataset.task_type)}</span>
+            <span className={`status ${dataset.import_state === "failed" || dataset.import_state === "merge_failed" ? "failed" : dataset.import_state === "stopped" || dataset.import_state === "merge_stopped" ? "stopped" : inFlight ? "running" : "ready"}`}>{merging ? "合并中" : importing ? `导入中 ${Math.round(dataset.import_progress ?? 0)}%` : dataset.import_state === "failed" ? "导入失败" : dataset.import_state === "stopped" ? "已停止" : dataset.import_state === "merge_failed" ? "合并失败" : dataset.import_state === "merge_stopped" ? "已停止" : "就绪"}</span>
+            <span className="dataset-row-num">{dataset.image_count.toLocaleString()}</span>
+            <span className="dataset-row-num">{dataset.class_count.toLocaleString()}</span>
+            <div className="dataset-row-progress"><strong>{dataset.image_count ? `${annotatedPercent}%` : "等待导入"}</strong><div className="progress-track"><i style={{ width: `${annotatedPercent}%` }} /></div></div>
+            <span className="dataset-row-version" title={historical ? `只读 · 已激活 ${dataset.active_version_label || `v${dataset.active_version_number}`}（非最新）` : undefined}>{dataset.latest_version_number ? <>{dataset.latest_version_label || `v${dataset.latest_version_number}`}{historical ? <em>只读</em> : null}</> : <span className="muted">未创建</span>}</span>
+            <span className="dataset-row-num">{formatDatasetDate(dataset.created_at)}</span>
+            <div className="dataset-row-actions">
+              <button className="button primary" disabled={props.busy || inFlight || !dataset.image_count} onClick={() => props.onContinueAnnotation(dataset)}>继续标注</button>
+              <button className="button" disabled={props.busy || inFlight} onClick={() => props.onTrain(dataset)}>训练</button>
+              <button className="button" aria-expanded={expanded} onClick={() => setExpandedRows((current) => ({ ...current, [dataset.id]: !current[dataset.id] }))}>{expanded ? "收起" : "更多"}</button>
+            </div>
+            {inFlight && <div className="dataset-row-sub" role="status"><div className="dataset-import-progress-top"><span>{dataset.import_message ?? "正在导入…"}</span><span>{Math.round(dataset.import_progress ?? 0)}%</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, Math.max(2, dataset.import_progress ?? 0))}%` }} /></div></div>}
+            {dataset.import_state === "failed" && <div className="dataset-row-sub"><div className="validation invalid"><span>导入失败：{dataset.import_message ?? "未知错误"}</span></div></div>}
+            {dataset.import_state === "merge_failed" && <div className="dataset-row-sub"><div className="validation invalid"><span>合并失败：{dataset.import_message ?? "未知错误"}</span><small>数据集仍可正常使用；重新上传压缩包会跳过已合并的同名图片。</small></div></div>}
+            {dataset.import_state === "merge_stopped" && <div className="dataset-row-sub"><div className="validation valid"><span>合并已停止：已合并部分保留，可重新上传继续。</span></div></div>}
+            <div className={`dataset-row-detail${expanded ? " open" : ""}`}>
+              <div className="dataset-row-detail-actions">
+                {inFlight ? <button className="button danger" disabled={props.busy} onClick={() => props.onCancelImport?.(dataset)}>{importing ? "停止导入" : "停止合并"}</button> : null}
+                {props.onAskAgent ? <button className="button" disabled={props.busy || inFlight} onClick={() => props.onAskAgent?.(dataset)}>{props.agentLabel ?? "询问助手"}</button> : null}
+                <button className="button" disabled={props.busy || inFlight || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>添加图片</button>
+                <button className="button" disabled={props.busy || inFlight} onClick={() => openBasicInfo(dataset)}>基础信息维护</button>
+                <button className="button dataset-auto-annotation-action" disabled={props.busy || inFlight || !dataset.image_count || isHistoricalActive(dataset)} onClick={() => setAutoAnnotationTarget(dataset)}>自动标注</button>
+                <button className="button" disabled={props.busy || inFlight || !dataset.image_count} onClick={() => openExport(dataset)}>导出数据</button>
+                <button className="button" disabled={props.busy || inFlight || !dataset.image_count} onClick={() => void toggleDuplicates(dataset)}>{isReportOpen(dataset.id, "duplicates") ? "收起重复图" : "重复/相似图"}</button>
+                <button className="button" disabled={props.busy || inFlight} onClick={() => void toggleQuality(dataset)}>{isReportOpen(dataset.id, "quality") ? "收起报告" : "质量报告"}</button>
+                <button className="button" disabled={props.busy || inFlight} onClick={() => setVersionTarget(dataset)}>版本管理</button>
+                <button className="button dataset-delete-action" disabled={props.busy} onClick={() => setDeleteTarget(dataset)}>删除</button>
+              </div>
+              {isReportOpen(dataset.id, "quality") && qualityReports[dataset.id] && <CardReport onClose={() => closeReport(dataset.id)}><QualityPanel report={qualityReports[dataset.id]} compact /></CardReport>}
+              {isReportOpen(dataset.id, "duplicates") && duplicateReports[dataset.id] && <CardReport onClose={() => closeReport(dataset.id)}><DuplicatePanel report={duplicateReports[dataset.id]} compact /></CardReport>}
+            </div>
+          </div>; })}
+        </div>
         {!props.datasets.length && <section className="dataset-empty-card"><span className="dataset-empty-icon">□</span><h2>还没有数据集</h2><p>新建一个空数据集，或导入已有的 YOLO ZIP 数据集。</p><div><button className="button" onClick={() => setDialog("import")}>导入数据</button><button className="button primary" onClick={() => setDialog("create")}>新建数据集</button></div></section>}
       </div>
     </section>
@@ -1235,6 +1245,11 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
 function errorMessage(reason: unknown): string { return reason instanceof Error ? reason.message : "操作失败，请检查后端服务。"; }
 function annotationLabel(type: Annotation["type"]): string { return ({ bbox: "Bounding box", polygon: "Polygon", obb: "Oriented bounding box", classify: "Image classification", pose: "Pose keypoints" })[type]; }
 function taskDescription(taskType: TaskType): string { return ({ detect: "目标检测 · Bounding Box", segment: "实例分割 · Polygon / SAM", obb: "旋转框检测 · OBB", classify: "图像分类", pose: "关键点检测 · Pose" })[taskType]; }
+
+function formatDatasetDate(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("zh-CN");
+}
 function draftId(draft: AnnotationDraft, index: number): string { return draft.id ?? `draft-${index}`; }
 function stripDraftId(draft: AnnotationDraft): Omit<AnnotationDraft, "id"> { const { id: _id, ...payload } = draft; return payload; }
 function newDraftId(): string { return `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
