@@ -13,7 +13,7 @@ CREATE DATABASE label_starter OWNER hguser ENCODING 'UTF8';
 连接串(密码特殊字符需 URL 转义,`@` → `%40`):
 
 ```
-postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_starter
+postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.123:8101/label_starter
 ```
 
 ## 2. 存量数据平滑升级(现场服务器)
@@ -21,7 +21,7 @@ postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_starter
 前提:新版镜像已构建、`docker load` 到服务器(包含 psycopg2 依赖与迁移脚本)。
 
 ```bash
-sudo bash scripts/upgrade-to-pg.sh 'postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_starter'
+sudo bash scripts/upgrade-to-pg.sh 'postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.123:8101/label_starter'
 ```
 
 脚本自动执行:
@@ -43,7 +43,7 @@ sudo bash scripts/upgrade-to-pg.sh 'postgresql+psycopg2://hguser:Hgser%40123dps@
 
 ```bash
 # /opt/goldwind/yolo/.env
-YWA_DATABASE_URL=postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.121:8101/label_starter
+YWA_DATABASE_URL=postgresql+psycopg2://hguser:Hgser%40123dps@10.12.42.123:8101/label_starter
 ```
 
 ## 4. 迁移工具单独使用
