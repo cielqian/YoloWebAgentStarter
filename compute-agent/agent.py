@@ -34,7 +34,7 @@ from urllib.parse import parse_qs
 from typing import Any, Callable
 
 AGENT_NAME = "ywa-compute-agent"
-AGENT_VERSION = "0.4.9"
+AGENT_VERSION = "0.4.10"
 DEVICE_CACHE_TTL_SECONDS = 10.0
 WORKSPACE_ROOT = Path(__file__).resolve().parent / "agent-workspace"
 # 基础权重缓存：命中则不再向中心端拉取，训练任务共享
@@ -555,21 +555,24 @@ class TaskManager:
         process_env = dict(os.environ)
         # 兼容 "0,2" 与 "cuda:0,cuda:2" 两种设备写法
         device_ids = [part for part in re.split(r"[,\s]+", device) if re.fullmatch(r"(?:cuda|npu):\d+|\d+", part)]
-        if len(device_ids) > 1 and os.environ.get("YWA_KEEP_DDP_WORKERS", "").strip() != "1":
-            # DDP + DataLoader 多进程在此环境会死锁(卡在第一个 batch 前)，多卡强制单进程加载
+        if len(device_ids) > 1 and os.environ.get("YWA_FORCE_DDP_WORKERS0", "").strip() == "1":
+            # 兜底开关:多卡 + DataLoader 多进程若再遇死锁,agent 环境设 YWA_FORCE_DDP_WORKERS0=1 回退单进程加载。
+            # (历史上那次死锁实为设备写法不匹配正则导致 NCCL 环境变量未生效,误归因于 workers;
+            #  强制 workers=0 会让每个 rank 单线程加载数据,4 卡训练实测慢约 3 倍。)
             args = [item for item in args if not item.startswith("workers=")]
             args.append("workers=0")
             spec = {**spec, "workers": 0}
-            log("Multi-GPU detected: workers forced to 0 (DDP dataloader deadlock workaround; set YWA_KEEP_DDP_WORKERS=1 to keep).")
+            log("Multi-GPU: workers forced to 0 (YWA_FORCE_DDP_WORKERS0=1 fallback).")
         log("Command: " + " ".join(args))
-        if len(device_ids) > 1 and os.environ.get("YWA_KEEP_NCCL_P2P", "").strip() != "1":
-            # 部分 GPU 组合 P2P 不通时 NCCL 初始化会死锁(多卡卡在第一个 epoch 前)；禁用 P2P 走共享内存
-            if "NCCL_P2P_DISABLE" not in process_env:
-                process_env["NCCL_P2P_DISABLE"] = "1"
-                log("Multi-GPU detected: NCCL_P2P_DISABLE=1 (set YWA_KEEP_NCCL_P2P=1 to keep P2P).")
+        if len(device_ids) > 1:
+            # P2P 默认开启(梯度同步走 GPU 直连);禁用会绕行主机内存,明显拖慢多卡训练。
+            # 兜底开关:该机型 GPU 直连不通导致 NCCL 初始化死锁时,agent 环境设 YWA_DISABLE_NCCL_P2P=1。
+            if os.environ.get("YWA_DISABLE_NCCL_P2P", "").strip() == "1":
+                process_env.setdefault("NCCL_P2P_DISABLE", "1")
+                log("Multi-GPU: NCCL_P2P_DISABLE=1 (YWA_DISABLE_NCCL_P2P=1 fallback).")
             process_env.setdefault("NCCL_IB_DISABLE", "1")
-            process_env.setdefault("NCCL_DEBUG", os.environ.get("NCCL_DEBUG", "INFO"))
-            log("NCCL env: P2P=disabled IB=disabled debug=INFO")
+            process_env.setdefault("NCCL_DEBUG", os.environ.get("NCCL_DEBUG", "WARN"))
+            log(f"NCCL env: P2P={'disabled' if process_env.get('NCCL_P2P_DISABLE') == '1' else 'enabled'} IB=disabled")
         return_code = -1
         try:
             process = subprocess.Popen(
