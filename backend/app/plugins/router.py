@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from app.api.dependencies import get_settings, get_storage
 from app.core.config import Settings
 from app.core.storage import Storage
 from app.plugins import service
+from app.plugins.runtime import plugin_runtime
 from app.plugins.schemas import PluginOut
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
@@ -47,3 +48,11 @@ def delete_plugin(plugin_id: str, storage: Storage = Depends(get_storage)) -> No
 def plugin_asset(plugin_id: str, file_path: str, storage: Storage = Depends(get_storage)) -> FileResponse:
     path, media_type = service.resolve_asset(storage, plugin_id, file_path)
     return FileResponse(path, media_type=media_type)
+
+
+# 兜底代理:后端插件路由全部转发到各自子进程。必须定义在本文件末尾——
+# install/dropins/asset 等平台端点先注册、优先匹配,不会被它遮蔽。
+@router.api_route("/{plugin_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def proxy_plugin_backend(plugin_id: str, path: str, request: Request) -> Response:
+    body = await request.body()
+    return plugin_runtime.proxy(plugin_id, "/" + path, request, body)

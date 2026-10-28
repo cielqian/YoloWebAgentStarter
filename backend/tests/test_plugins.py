@@ -250,3 +250,43 @@ def test_install_rejects_reserved_plugin_routes_and_ids(client):
     assert response.status_code == 422
     assert "保留字" in response.json()["error"]["message"]
     assert client.get("/api/plugins/backend-demo/ping").status_code == 404
+
+
+CRASH_MAIN = BACKEND_MAIN + '''
+
+
+def _register_crash(router):
+    @router.get("/boom")
+    def boom():
+        import os
+
+        os._exit(9)  # 模拟插件进程崩溃
+'''
+
+
+def test_plugin_process_crash_never_affects_platform_and_self_heals(client, monkeypatch):
+    monkeypatch.setenv("YWA_PLUGIN_RESTART_COOLDOWN", "0")
+    crash_source = BACKEND_MAIN.replace(
+        "    return router",
+        '    @router.get("/boom")\n    def boom():\n        import os\n        os._exit(9)\n\n    return router',
+    )
+    installed = client.post(
+        "/api/plugins/install",
+        files={"file": ("backend-demo.zip", backend_plugin_zip(main_source=crash_source), "application/zip")},
+    )
+    assert installed.status_code == 201, installed.text
+
+    # 插件子进程请求中自杀:代理层兜住,返回 503 而非拖垮平台
+    boom = client.get("/api/plugins/backend-demo/boom")
+    assert boom.status_code == 503
+
+    # 平台核心接口全程健康
+    assert client.get("/api/system/health").json()["status"] == "ok"
+    assert client.get("/api/plugins").status_code == 200
+
+    # 自愈:下一次请求自动重启子进程并恢复服务
+    revived = client.get("/api/plugins/backend-demo/ping")
+    assert revived.status_code == 200, revived.text
+    assert revived.json()["ok"] is True
+
+    assert client.delete("/api/plugins/backend-demo").status_code == 204

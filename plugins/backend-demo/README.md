@@ -19,6 +19,6 @@ zip -r backend-demo.zip manifest.json index.html server/
 
 ## 关键约束
 
-- 后端插件与平台**同进程同权限**运行，属受信代码，仅管理员安装
+- 后端插件运行在**独立子进程**中（进程隔离）：崩溃/卡死/泄漏不影响平台，自动重启自愈，日志在 `plugins-data/backend-demo/runner.log`；仍属受信代码（同主机同库凭证），仅管理员安装
 - 依赖的第三方库必须已预装在平台环境；建议只用标准库 + FastAPI/SQLAlchemy
 - 路由路径不要使用 `asset`（与静态资源端点冲突）
