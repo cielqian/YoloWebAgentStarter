@@ -57,6 +57,7 @@ export function TrainingView({
   const [logs, setLogs] = useState<TrainingLog>();
   const [summary, setSummary] = useState<TrainingSummary>();
   const [form, setForm] = useState<TrainingFormState>(() => defaultForm(activeDataset?.task_type ?? "detect"));
+  const [pendingApply, setPendingApply] = useState<{ task: TrainingTask; datasetId: string } | null>(null);
   const [datasetVersions, setDatasetVersions] = useState<DatasetVersion[]>([]);
   const [splitCounts, setSplitCounts] = useState<Record<string, number>>({});
   const [historyDatasetId, setHistoryDatasetId] = useState("");
@@ -130,11 +131,19 @@ export function TrainingView({
     api.getDatasetSplitCounts(activeDataset.id)
       .then((counts) => { if (!cancelled) setSplitCounts(counts ?? {}); })
       .catch(() => { if (!cancelled) setSplitCounts({}); });
-    setForm((prev) => {
-      const base = { ...defaultForm(activeDataset.task_type), name: defaultTaskName(activeDataset.name) };
-      const selection = defaultRemoteSelection(devicesRef.current);
-      return selection ? { ...base, ...selection } : base;
-    });
+    if (pendingApply && pendingApply.datasetId === activeDataset.id) {
+      // 跨数据集复用配置切换完成:回填任务参数,替代默认重置。
+      const task = pendingApply.task;
+      setPendingApply(null);
+      setForm(applyTaskToForm(task, defaultTaskName(activeDataset.name)));
+    } else {
+      if (pendingApply) setPendingApply(null);
+      setForm((prev) => {
+        const base = { ...defaultForm(activeDataset.task_type), name: defaultTaskName(activeDataset.name) };
+        const selection = defaultRemoteSelection(devicesRef.current);
+        return selection ? { ...base, ...selection } : base;
+      });
+    }
     setError("");
     setNotice("");
     setSplitRecovery(false);
@@ -363,8 +372,14 @@ export function TrainingView({
   const openCreateWithTask = (task: TrainingTask) => {
     // 从任务记录复用配置时切到该任务的数据集，任务类型才能与提交的数据集匹配。
     const taskDataset = datasets.find((item) => item.id === task.dataset_id);
-    if (taskDataset && taskDataset.id !== activeDataset?.id) onDatasetChange(taskDataset);
-    setForm(applyTaskToForm(task, defaultTaskName(taskDataset?.name ?? task.dataset_id)));
+    if (taskDataset && taskDataset.id !== activeDataset?.id) {
+      // 跨数据集:切换是异步的,表单先挂起;等切换完成后的 effect 回填,
+      // 否则"切换数据集重置表单"的联动会把刚填入的参数全部冲掉。
+      setPendingApply({ task, datasetId: task.dataset_id });
+      onDatasetChange(taskDataset);
+    } else {
+      setForm(applyTaskToForm(task, defaultTaskName(taskDataset?.name ?? task.dataset_id)));
+    }
     setAdvancedOpen(true);
     setMode("create");
     setNotice(`已填入「${task.name}」的配置，可直接调整后提交。`);

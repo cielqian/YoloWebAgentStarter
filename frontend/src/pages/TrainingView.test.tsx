@@ -184,4 +184,64 @@ describe("TrainingView list-first workspace", () => {
     expect(container?.querySelector("#training-config-anchor")).toBeTruthy();
     expect(container?.textContent).toContain("detect-set");
   });
+
+  it("跨数据集复用配置:切换完成后回填任务参数,不被默认值重置冲掉", async () => {
+    const { api } = await import("../api/client");
+    const crossDatasetTask: TrainingTask = {
+      ...finishedTask,
+      id: "train-cross",
+      dataset_id: "ds-segment",
+      task_type: "segment",
+      model_name: "yolov8s-seg.pt",
+      device: "cuda:0,cuda:1,cuda:2,cuda:3",
+      node_id: "node-1",
+      epochs: 77,
+      workers: 5,
+      seed: 7,
+      val_ratio: 0.25,
+      patience: 42,
+      optimizer: "AdamW",
+      lr0: 0.001,
+      dataset_version_number: 3,
+      include_unannotated: false,
+      hsv_h: 0.02,
+      degrees: 15,
+      mixup: 0.2,
+      fliplr: 0.3,
+    };
+    (api.listTrainingTasks as ReturnType<typeof vi.fn>).mockResolvedValue({ items: [crossDatasetTask] });
+    const onDatasetChange = vi.fn();
+    await act(async () => {
+      root?.render(<TrainingView datasets={[detect, segment]} dataset={detect} onDatasetChange={onDatasetChange} />);
+    });
+    await act(async () => {});
+
+    const reuse = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+      .find((item) => item.textContent?.includes("重试配置"));
+    expect(reuse).toBeDefined();
+    await act(async () => { reuse?.click(); });
+    // 跨数据集:先触发切换,表单等切换完成后再回填
+    expect(onDatasetChange).toHaveBeenCalledWith(segment);
+
+    // 模拟父组件异步加载完成后的数据集切换
+    await act(async () => {
+      root?.render(<TrainingView datasets={[detect, segment]} dataset={segment} onDatasetChange={onDatasetChange} />);
+    });
+    await act(async () => {});
+
+    const field = (label: string): HTMLInputElement | null => {
+      const labelEl = Array.from(container?.querySelectorAll("label") ?? []).find((el) => el.textContent?.includes(label));
+      return (labelEl?.querySelector("input, select") ?? null) as HTMLInputElement | null;
+    };
+    expect(field("Epochs")?.value).toBe("77");
+    expect(field("旋转角度")?.value).toBe("15");
+    expect(field("Mixup 概率")?.value).toBe("0.2");
+    expect(field("水平翻转")?.value).toBe("0.3");
+    // 未标注图片 = 跳过(任务里 include_unannotated=false)
+    const skipBtn = Array.from(container?.querySelectorAll("button") ?? [])
+      .find((item) => item.textContent === "跳过");
+    expect(skipBtn?.className).toContain("active");
+    // 高级参数面板展开且 workers 回填
+    expect(field("Workers")?.value).toBe("5");
+  });
 });
