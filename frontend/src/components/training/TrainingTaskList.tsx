@@ -1,4 +1,17 @@
 import { useMemo } from "react";
+import {
+  Button as AntdButton,
+  Empty,
+  Flex,
+  Input as AntdInput,
+  Progress,
+  Segmented,
+  Select as AntdSelect,
+  Space,
+  Tag as AntdTag,
+  Typography,
+} from "antd";
+import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { Dataset, DatasetVersion, TrainingTask } from "../../types";
 import {
   formatDuration,
@@ -7,7 +20,6 @@ import {
   statusLabel,
   type HistoryFilter,
 } from "../../training/helpers";
-import { IconPlus, IconSearch, IconStop } from "./icons";
 
 interface Props {
   tasks: TrainingTask[];
@@ -29,6 +41,15 @@ interface Props {
   onDelete: (task: TrainingTask) => void;
   onOpenModels: (() => void) | undefined;
 }
+
+const STATUS_COLOR: Record<string, string> = {
+  pending: "default",
+  dispatching: "processing",
+  running: "processing",
+  completed: "success",
+  failed: "error",
+  stopped: "warning",
+};
 
 export function TrainingTaskList({
   tasks,
@@ -58,21 +79,13 @@ export function TrainingTaskList({
   const counts = useMemo(
     () => ({
       all: tasks.length,
-      running: tasks.filter((task) => ["pending", "dispatching", "running"].includes(task.status)).length,
-      completed: tasks.filter((task) => task.status === "completed").length,
-      failed: tasks.filter((task) => task.status === "failed").length,
-      stopped: tasks.filter((task) => task.status === "stopped").length,
+      running: tasks.filter((t) => ["pending", "dispatching", "running"].includes(t.status)).length,
+      completed: tasks.filter((t) => t.status === "completed").length,
+      failed: tasks.filter((t) => t.status === "failed").length,
+      stopped: tasks.filter((t) => t.status === "stopped").length,
     }),
     [tasks],
   );
-
-  const filters: Array<{ id: HistoryFilter; label: string; count: number }> = [
-    { id: "all", label: "全部", count: counts.all },
-    { id: "running", label: "运行中", count: counts.running },
-    { id: "completed", label: "已完成", count: counts.completed },
-    { id: "failed", label: "失败", count: counts.failed },
-    { id: "stopped", label: "已停止", count: counts.stopped },
-  ];
 
   const filteredTasks = useMemo(() => {
     const q = expSearch.trim().toLowerCase();
@@ -93,82 +106,67 @@ export function TrainingTaskList({
       .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   }, [tasks, expSearch, expFilter, datasetName, historyDatasetId, historyVersion]);
 
-  const searchQuery = expSearch.trim();
-  const emptyFilteredMessage = (() => {
-    if (searchQuery && expFilter !== "all") return "没有同时匹配筛选与搜索的训练记录。";
-    if (searchQuery) return `没有名称包含「${searchQuery}」的训练记录。`;
-    return "当前筛选下没有训练记录。";
-  })();
-
   return (
-    <section id="experiment-history" className="training-ws-card training-ws-history">
-      <div className="training-ws-history-head">
-        <div className="training-ws-history-head-row">
-          <div>
-            <h2>训练记录</h2>
-            <p className="training-ws-muted">全部数据集的训练任务；运行中任务自动刷新，点击行查看详情。</p>
-          </div>
-          <button type="button" className="button primary" onClick={onCreate}>
-            <IconPlus /> 新建训练
-          </button>
-        </div>
+    <section id="experiment-history">
+      <Flex justify="space-between" align="center" style={{ marginBottom: 12 }}>
+        <Space size={12}>
+          <strong style={{ fontSize: 16 }}>训练记录</strong>
+          <Typography.Text type="secondary">{counts.all} 条</Typography.Text>
+        </Space>
+        <AntdButton type="primary" icon={<PlusOutlined />} onClick={onCreate}>新建训练</AntdButton>
+      </Flex>
 
-        <div className="training-ws-history-toolbar">
-          <div className="training-ws-history-filters" role="tablist" aria-label="训练记录筛选">
-            {filters.map((filter) => (
-              <button
-                key={filter.id}
-                type="button"
-                role="tab"
-                aria-selected={expFilter === filter.id}
-                className={`training-ws-history-filter${expFilter === filter.id ? " active" : ""}`}
-                onClick={() => onFilterChange(filter.id)}
-              >
-                {filter.label}
-                <em>{filter.count}</em>
-              </button>
-            ))}
-          </div>
-          <label className="training-ws-history-search">
-            <IconSearch size={15} />
-            <input
-              type="search"
-              value={expSearch}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="搜索名称、模型或数据集…"
-              autoComplete="off"
-            />
-          </label>
-          <select aria-label="按数据集筛选" value={historyDatasetId} onChange={(event) => onHistoryDatasetChange(event.target.value)}>
-            <option value="">全部数据集</option>
-            {datasets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-          <select aria-label="按数据集版本筛选" value={historyVersion} disabled={!historyDatasetId} onChange={(event) => onHistoryVersionChange(event.target.value)}>
-            <option value="">全部版本</option>
-            {historyVersions.map((version) => <option key={version.id} value={String(version.version_number)}>v{version.version_number}</option>)}
-          </select>
-        </div>
-      </div>
+      {/* 工具栏:筛选+搜索+数据集/版本下拉 */}
+      <Flex gap={8} wrap style={{ marginBottom: 12 }}>
+        <Segmented
+          value={expFilter}
+          onChange={(v) => onFilterChange(v as HistoryFilter)}
+          options={[
+            { value: "all", label: `全部 ${counts.all}` },
+            { value: "running", label: `运行中 ${counts.running}` },
+            { value: "completed", label: `完成 ${counts.completed}` },
+            { value: "failed", label: `失败 ${counts.failed}` },
+            { value: "stopped", label: `停止 ${counts.stopped}` },
+          ]}
+        />
+        <AntdInput.Search
+          placeholder="搜索名称、模型或数据集…"
+          value={expSearch}
+          onChange={(e) => onSearchChange(e.target.value)}
+          allowClear
+          style={{ width: 200 }}
+        />
+        <AntdSelect
+          value={historyDatasetId || undefined}
+          placeholder="全部数据集"
+          allowClear
+          onChange={(v) => onHistoryDatasetChange(v ?? "")}
+          options={datasets.map((d) => ({ value: d.id, label: d.name }))}
+          style={{ minWidth: 140 }}
+        />
+        <AntdSelect
+          value={historyVersion || undefined}
+          placeholder="全部版本"
+          allowClear
+          disabled={!historyDatasetId}
+          onChange={(v) => onHistoryVersionChange(v ?? "")}
+          options={historyVersions.map((v) => ({ value: String(v.version_number), label: v.version_label || `v${v.version_number}` }))}
+          style={{ minWidth: 100 }}
+        />
+      </Flex>
 
       {!tasks.length ? (
-        <div className="training-ws-history-empty">
-          <div className="training-ws-history-empty-icon" aria-hidden>+</div>
-          <strong>还没有训练记录</strong>
-          <p>新建训练任务并下发执行，记录会出现在这里（下发到训练节点执行）。</p>
-          <button type="button" className="button primary" onClick={onCreate}>新建训练</button>
-        </div>
+        <Empty description="还没有训练记录。新建训练任务并下发执行，记录会出现在这里。">
+          <AntdButton type="primary" icon={<PlusOutlined />} onClick={onCreate}>新建训练</AntdButton>
+        </Empty>
       ) : !filteredTasks.length ? (
-        <div className="training-ws-history-empty training-ws-history-empty--filtered">
-          <strong>没有匹配的训练记录</strong>
-          <p>{emptyFilteredMessage}</p>
-          <button type="button" className="button" onClick={() => { onFilterChange("all"); onSearchChange(""); }}>
-            清除筛选
-          </button>
-        </div>
+        <Empty description="没有匹配的训练记录。">
+          <AntdButton onClick={() => { onFilterChange("all"); onSearchChange(""); }}>清除筛选</AntdButton>
+        </Empty>
       ) : (
-        <div className="training-record-list">
+        <Flex vertical gap={8}>
           {filteredTasks.map((task) => (
-            <RecordRow
+            <TaskCard
               key={task.id}
               task={task}
               datasetLabel={datasetName(task.dataset_id)}
@@ -180,15 +178,13 @@ export function TrainingTaskList({
               onOpenModels={onOpenModels}
             />
           ))}
-        </div>
+        </Flex>
       )}
-
-      <span className="training-ws-history-count">{counts.all} 条记录</span>
     </section>
   );
 }
 
-function RecordRow({
+function TaskCard({
   task,
   datasetLabel,
   selected,
@@ -210,80 +206,74 @@ function RecordRow({
   const map50 = metricNumber(task.metrics_json?.map50);
   const precision = metricNumber(task.metrics_json?.precision);
   const recall = metricNumber(task.metrics_json?.recall);
-  const hasMetrics = map50 !== undefined || precision !== undefined || recall !== undefined;
   const duration = formatDuration(task.started_at, task.finished_at);
   const when = formatRelativeTime(task.finished_at || task.started_at || task.created_at);
   const progress = Math.min(100, Math.max(0, task.progress_percent || 0));
-  const isRunning = task.status === "running" || task.status === "pending" || task.status === "dispatching";
-  const isDispatching = task.status === "dispatching";
+  const isRunning = ["pending", "dispatching", "running"].includes(task.status);
   const showProgress = isRunning || task.status === "stopped" || task.status === "failed";
 
-
   return (
-    <article
-      className={`training-record-row ${task.status}${selected ? " selected" : ""}`}
+    <div
       onClick={() => onOpenDetail(task)}
+      style={{
+        display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+        border: selected ? "2px solid #3157d5" : "1px solid #e7eaf0",
+        borderRadius: 8, background: selected ? "#f0f4ff" : "#fff", cursor: "pointer",
+      }}
     >
-      <span className={`training-ws-badge ${task.status}`}>{statusLabel(task.status)}</span>
+      <AntdTag color={STATUS_COLOR[task.status] ?? "default"}>{statusLabel(task.status)}</AntdTag>
 
-      <div className="training-record-main">
-        <div className="training-record-title">
-          <strong title={task.name}>{task.name}</strong>
-          <span className="training-record-dataset" title={datasetLabel}>{datasetLabel}{task.dataset_version_number != null ? ` · v${task.dataset_version_number}` : ""}</span>
-        </div>
-        <div className="training-record-chips">
-          <span>{task.model_name}</span>
-          <span>{task.epochs} ep</span>
-          <span>batch {task.batch_size}</span>
-          <span>{task.img_size}px</span>
-          <span>{task.node_id ? "训练节点" : "管理端"} · {task.device}</span>
-        </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Flex align="center" gap={8}>
+          <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.name}</strong>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {datasetLabel}{task.dataset_version_number != null ? ` · v${task.dataset_version_number}` : ""}
+          </Typography.Text>
+        </Flex>
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+          {task.model_name} · {task.epochs} ep · batch {task.batch_size} · {task.img_size}px · {task.device}
+        </Typography.Text>
         {task.status === "failed" && task.error_message && (
-          <p className="training-record-error" title={task.error_message}>{task.error_message}</p>
+          <Typography.Text type="danger" style={{ fontSize: 11, display: "block", marginTop: 2 }}>
+            {task.error_message.slice(0, 80)}{task.error_message.length > 80 ? "…" : ""}
+          </Typography.Text>
         )}
       </div>
 
-      {hasMetrics && (
-        <div className="training-record-metrics">
-          <div><span>mAP50</span><strong>{fmt(map50)}</strong></div>
-          <div><span>P</span><strong>{fmt(precision)}</strong></div>
-          <div><span>R</span><strong>{fmt(recall)}</strong></div>
-        </div>
+      {map50 !== undefined && (
+        <Space size={12} style={{ flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: "#7d8799" }}>mAP50 <strong style={{ color: "#273248" }}>{fmt(map50)}</strong></span>
+          <span style={{ fontSize: 11, color: "#7d8799" }}>P <strong style={{ color: "#273248" }}>{fmt(precision)}</strong></span>
+          <span style={{ fontSize: 11, color: "#7d8799" }}>R <strong style={{ color: "#273248" }}>{fmt(recall)}</strong></span>
+        </Space>
       )}
 
       {showProgress && (
-        <div className="training-record-progress">
-          <div className="training-record-progress-top">
-            <span>{isDispatching ? "数据下发" : `${task.progress_epoch}/${task.progress_total_epochs || task.epochs} ep`}</span>
-            <span>{progress.toFixed(0)}%</span>
-          </div>
-          <div className="training-progress-track">
-            <span style={{ width: `${progress}%` }} />
-          </div>
-        </div>
+        <Progress
+          percent={progress}
+          size="small"
+          style={{ width: 100, margin: 0, flexShrink: 0 }}
+          format={() => `${task.progress_epoch}/${task.progress_total_epochs || task.epochs}`}
+        />
       )}
 
-      <div className="training-record-time">
-        <span>{when}</span>
-        {duration && <small>{duration}</small>}
-      </div>
+      <Typography.Text type="secondary" style={{ fontSize: 11, flexShrink: 0, textAlign: "right" }}>
+        <div>{when}</div>
+        {duration && <div style={{ fontSize: 10 }}>{duration}</div>}
+      </Typography.Text>
 
-      <div className="training-record-actions" onClick={(event) => event.stopPropagation()}>
-        <button type="button" className="training-record-btn training-record-btn--primary" onClick={() => onOpenDetail(task)}>详情</button>
-        {isRunning && (
-          <button type="button" className="training-record-btn training-record-btn--danger" onClick={() => onStop(task)}>
-            <IconStop size={13} /> 停止
-          </button>
-        )}
-        <button type="button" className="training-record-btn" onClick={() => onApplyTask(task)}>重试配置</button>
+      <Space size={4} onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+        <AntdButton type="link" size="small" onClick={() => onOpenDetail(task)}>详情</AntdButton>
+        {isRunning && <AntdButton type="link" size="small" danger onClick={() => onStop(task)}>停止</AntdButton>}
+        <AntdButton type="link" size="small" onClick={() => onApplyTask(task)}>重试配置</AntdButton>
         {task.status === "completed" && onOpenModels && (
-          <button type="button" className="training-record-btn" onClick={onOpenModels}>模型库</button>
+          <AntdButton type="link" size="small" onClick={onOpenModels}>模型库</AntdButton>
         )}
         {task.status !== "running" && (
-          <button type="button" className="training-record-btn training-record-btn--danger" onClick={() => onDelete(task)}>删除</button>
+          <AntdButton type="link" size="small" danger onClick={() => onDelete(task)}>删除</AntdButton>
         )}
-      </div>
-    </article>
+      </Space>
+    </div>
   );
 }
 

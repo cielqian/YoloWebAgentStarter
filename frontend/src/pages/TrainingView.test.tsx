@@ -77,7 +77,7 @@ describe("TrainingView list-first workspace", () => {
   it("shows the record list by default with a create entry", async () => {
     await act(async () => { root?.render(<TrainingView datasets={[detect]} dataset={detect} onDatasetChange={vi.fn()} />); });
     expect(container?.querySelector("#experiment-history")).toBeTruthy();
-    expect(container?.querySelector(".training-ws-history-empty")).toBeTruthy();
+    expect(container?.textContent).toContain("还没有训练记录");
     expect(container?.textContent).toContain("新建训练");
     expect(container?.querySelector("#training-config-anchor")).toBeFalsy();
   });
