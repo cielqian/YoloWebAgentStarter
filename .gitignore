@@ -17,6 +17,7 @@ frontend/vite.config.d.ts
 npm-debug.log*
 
 .idea/
+.claude/
 
 # Local model and training artifacts
 runs/
