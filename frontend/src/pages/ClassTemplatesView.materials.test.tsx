@@ -64,7 +64,7 @@ async function renderMaterialsTab() {
     root?.render(<ClassTemplatesView />);
   });
   await act(async () => {});
-  const tab = Array.from(container!.querySelectorAll<HTMLButtonElement>("button[role='tab']")).find((el) => el.textContent === "素材类型");
+  const tab = Array.from(container!.querySelectorAll<HTMLElement>("[role='tab']")).find((el) => el.textContent === "素材类型");
   await act(async () => { tab?.click(); });
   await act(async () => {});
 }
