@@ -1,4 +1,20 @@
 import { useEffect, useState, type FormEvent } from "react";
+import {
+  Button as AntdButton,
+  Card,
+  Collapse,
+  Flex,
+  Input as AntdInput,
+  InputNumber,
+  Progress,
+  Radio,
+  Segmented,
+  Select as AntdSelect,
+  Space,
+  Tag as AntdTag,
+  Tooltip,
+  Typography,
+} from "antd";
 import { api } from "../../api/client";
 import type { BaseWeight, Dataset, DatasetVersion, TaskType } from "../../types";
 import {
@@ -10,7 +26,6 @@ import {
   type PresetId,
   type TrainingFormState,
 } from "../../training/helpers";
-import { IconBox, IconChevron, IconGrid, IconPose, IconScan, IconShapes, IconSpark } from "./icons";
 
 interface Props {
   datasets: Dataset[];
@@ -35,14 +50,6 @@ const PRESET_COPY: Record<PresetId, { title: string; body: string; meta: string 
   high: { title: "高精度", body: "更长收敛与更稳指标", meta: "100 ep · batch 8" },
 };
 
-const TASK_META: Record<TaskType, { Icon: typeof IconBox }> = {
-  detect: { Icon: IconBox },
-  segment: { Icon: IconShapes },
-  obb: { Icon: IconScan },
-  classify: { Icon: IconGrid },
-  pose: { Icon: IconPose },
-};
-
 export function TrainingConfigPanel({
   datasets,
   dataset,
@@ -61,11 +68,6 @@ export function TrainingConfigPanel({
 }: Props) {
   const setForm = onFormChange;
   const selectedVersion = datasetVersions.find((version) => version.version_number === form.dataset_version_number);
-  const splitSummaryText = (() => {
-    const total = (splitCounts.train ?? 0) + (splitCounts.val ?? 0) + (splitCounts.test ?? 0);
-    const ratio = (count: number) => (total > 0 ? Math.round((count / total) * 100) : 0);
-    return `训练 ${(splitCounts.train ?? 0)}（${ratio(splitCounts.train ?? 0)}%）· 验证 ${(splitCounts.val ?? 0)}（${ratio(splitCounts.val ?? 0)}%）· 测试 ${(splitCounts.test ?? 0)}（${ratio(splitCounts.test ?? 0)}%）`;
-  })();
   const [baseWeights, setBaseWeights] = useState<BaseWeight[]>([]);
   useEffect(() => {
     if (typeof api.listWeights === "function") api.listWeights().then((result) => setBaseWeights(result.items)).catch(() => undefined);
@@ -74,253 +76,151 @@ export function TrainingConfigPanel({
     ...modelChoicesFor(dataset.task_type),
     ...baseWeights.map((weight) => ({ value: weight.name, label: `基础权重库 · ${weight.name}` })),
   ];
-  const modelInList = modelChoices.some((item) => item.value === form.model);
-  const taskMeta = TASK_META[dataset.task_type];
+  const annotatedPercent = dataset.image_count ? Math.round(dataset.annotated_image_count / dataset.image_count * 100) : 0;
 
   return (
-    <section id="training-config-anchor" className="training-ws-card training-ws-config">
+    <section id="training-config-anchor">
+      {onExit && (
+        <Flex justify="flex-end" style={{ marginBottom: 12 }}>
+          <AntdButton onClick={onExit}>← 返回记录列表</AntdButton>
+        </Flex>
+      )}
 
-      <form id="dataset-training-ws-form" className="training-ws-form" onSubmit={onSubmit}>
-        <section className="training-config-block">
-          <div className="training-config-block-head">
-            <h3>数据集</h3>
-            <p>任务类型由数据集锁定；切换数据集会重置表单默认值。</p>
-          </div>
-          <div className="tcc-dataset-pick-grid">
-            <label className="training-ws-field">
-              <span>选择数据集</span>
-              <select
-                value={dataset.id}
-                onChange={(event) => {
-                  const next = datasets.find((item) => item.id === event.target.value);
-                  if (next) onDatasetChange(next);
-                }}
-              >
-                {datasets.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} · {taskTypeLabel(item.task_type)} · {item.image_count} 张
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="training-ws-field">
-              <span>数据集版本</span>
-              <select
-                value={form.dataset_version_number ?? ""}
-                onChange={(event) => setForm((prev) => ({ ...prev, dataset_version_number: event.target.value ? Number(event.target.value) : null }))}
-              >
-                <option value="">跟随数据集</option>
-                {datasetVersions.map((version) => (
-                  <option key={version.id} value={version.version_number}>
-                    {version.version_label || `v${version.version_number}`}{version.is_active ? "（激活）" : ""} · {version.image_count} 张
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="tcc-dataset-info-row">
-            <span>{taskTypeLabel(dataset.task_type)}</span>
+      <form onSubmit={onSubmit}>
+        {/* 数据集选择 */}
+        <Card size="small" title="数据集" style={{ marginBottom: 16 }}>
+          <Flex gap={12} wrap style={{ marginBottom: 12 }}>
+            <AntdSelect
+              value={dataset.id}
+              onChange={(id) => { const next = datasets.find((item) => item.id === id); if (next) onDatasetChange(next); }}
+              options={datasets.map((item) => ({
+                value: item.id,
+                label: `${item.name} · ${taskTypeLabel(item.task_type)} · ${item.image_count} 张`,
+              }))}
+              style={{ minWidth: 220, flex: 1 }}
+            />
+            <AntdSelect
+              value={form.dataset_version_number ?? undefined}
+              placeholder="跟随数据集"
+              onChange={(v) => setForm((prev) => ({ ...prev, dataset_version_number: v ?? null }))}
+              options={[
+                { value: undefined as unknown as string, label: "跟随数据集" },
+                ...datasetVersions.map((v) => ({
+                  value: v.version_number as unknown as string,
+                  label: `${v.version_label || `v${v.version_number}`}${v.is_active ? "（激活）" : ""} · ${v.image_count} 张`,
+                })),
+              ]}
+              style={{ minWidth: 180, flex: 1 }}
+            />
+          </Flex>
+          <Space size={8} wrap>
+            <AntdTag>{taskTypeLabel(dataset.task_type)}</AntdTag>
             {selectedVersion ? (
               <>
-                <span>{selectedVersion.version_label || `v${selectedVersion.version_number}`} · {selectedVersion.image_count} 张图片</span>
-                <span>{selectedVersion.class_count} 类</span>
-                <span>{selectedVersion.annotation_count} 条标注</span>
+                <AntdTag color="blue">{selectedVersion.version_label || `v${selectedVersion.version_number}`}</AntdTag>
+                <Typography.Text type="secondary">{selectedVersion.image_count} 张 · {selectedVersion.class_count} 类 · {selectedVersion.annotation_count} 条标注</Typography.Text>
               </>
             ) : (
               <>
-                <span>{dataset.image_count} 张图片</span>
-                <span>{dataset.class_count} 类</span>
-                <span>{splitSummaryText}</span>
+                <Typography.Text type="secondary">{dataset.image_count} 张 · {dataset.class_count} 类</Typography.Text>
+                {dataset.image_count > 0 && <Progress percent={annotatedPercent} size="small" style={{ width: 100 }} />}
               </>
             )}
-          </div>
-          <div className="tcc-task-type-seg tcc-task-type-seg--wrap" role="group" aria-label="任务类型">
-            {(["detect", "segment", "obb", "classify", "pose"] as const).map((kind) => {
-              const { Icon } = TASK_META[kind];
-              return (
-                <button
-                  key={kind}
-                  type="button"
-                  className={`tcc-task-type-seg-btn${dataset.task_type === kind ? " active" : ""}`}
-                  disabled={dataset.task_type !== kind}
-                  aria-pressed={dataset.task_type === kind}
-                >
-                  <Icon size={15} />
-                  <span>{taskTypeLabel(kind)}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+          </Space>
+        </Card>
 
-        <section className="training-config-block">
-          <div className="training-dataset-ai-card" role="region" aria-label="推荐配置">
-            <div className="training-dataset-ai-head">
-              <IconSpark size={16} />
-              <span className="training-dataset-ai-badge">推荐起点</span>
-            </div>
-            <div className="training-recommend-grid">
-              <div>
-                <small>任务</small>
-                <strong>{taskTypeLabel(dataset.task_type)}</strong>
-              </div>
-              <div>
-                <small>权重</small>
-                <strong>{form.model || "yolov8n.pt"}</strong>
-              </div>
-              <div>
-                <small>预设</small>
-                <strong>均衡训练</strong>
-              </div>
-              <div>
-                <small>数据</small>
-                <strong>{dataset.image_count} 图 · {dataset.class_count} 类</strong>
-              </div>
-            </div>
-            <p className="training-dataset-ai-reason">默认复用已保存的 train / val split；可随时覆盖下方参数。</p>
-          </div>
-        </section>
+        {/* 训练预设 */}
+        <Card size="small" title="训练预设" style={{ marginBottom: 16 }}>
+          <Segmented
+            value={preset ?? "balanced"}
+            onChange={(v) => onPreset(v as PresetId)}
+            options={(["fast", "balanced", "high"] as const).map((id) => ({
+              value: id,
+              label: (
+                <div style={{ padding: "4px 12px", textAlign: "center" }}>
+                  <div style={{ fontWeight: 700 }}>{PRESET_COPY[id].title}</div>
+                  <div style={{ fontSize: 11, color: "#7d8799" }}>{PRESET_COPY[id].meta}</div>
+                </div>
+              ),
+            }))}
+            block
+          />
+        </Card>
 
-        <section className="training-config-block">
-          <div className="training-config-block-head">
-            <h3>训练预设</h3>
-          </div>
-          <div className="training-dataset-preset-cards" role="group" aria-label="训练预设">
-            {(["fast", "balanced", "high"] as const).map((id) => (
-              <button
-                key={id}
-                type="button"
-                className={`training-dataset-preset-card${preset === id ? " active" : ""}`}
-                onClick={() => onPreset(id)}
-              >
-                <strong>{PRESET_COPY[id].title}</strong>
-                <span className="training-preset-meta">{PRESET_COPY[id].meta}</span>
-                <span>{PRESET_COPY[id].body}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="training-config-block">
-          <div className="training-config-block-head">
-            <h3>模型与基础参数</h3>
-          </div>
-          <div className="training-ws-form-grid training-ws-form-grid--base">
-            <label className="training-ws-field">
-              <span>任务名称</span>
-              <input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} required />
-            </label>
-            <label className="training-ws-field">
-              <span>基础权重</span>
-              <select
-                value={modelInList ? form.model : "__custom__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (value === "__custom__") return;
-                  setForm((prev) => ({ ...prev, model: value }));
-                }}
-              >
-                {modelChoices.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-                {!modelInList && <option value="__custom__">{form.model}</option>}
-              </select>
-            </label>
-            {!modelInList && (
-              <label className="training-ws-field">
-                <span>自定义权重名</span>
-                <input value={form.model} onChange={(event) => setForm((prev) => ({ ...prev, model: event.target.value }))} />
-              </label>
+        {/* 模型与基础参数 */}
+        <Card size="small" title="模型与基础参数" style={{ marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+            <AntdInput addonBefore="任务名称" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} required />
+            <AntdSelect
+              value={modelChoices.some((c) => c.value === form.model) ? form.model : undefined}
+              placeholder="选择权重"
+              showSearch
+              onChange={(v) => setForm((prev) => ({ ...prev, model: v }))}
+              options={modelChoices}
+              style={{ width: "100%" }}
+            />
+            {!modelChoices.some((c) => c.value === form.model) && form.model && (
+              <AntdInput addonBefore="自定义权重" value={form.model} onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))} />
             )}
-            <label className="training-ws-field">
-              <span>Epochs</span>
-              <input type="number" min={1} value={form.epochs} onChange={(event) => setForm((prev) => ({ ...prev, epochs: Number(event.target.value) }))} />
-            </label>
-            <label className="training-ws-field">
-              <span>Batch size</span>
-              <select value={String(form.batch_size)} onChange={(event) => setForm((prev) => ({ ...prev, batch_size: Number(event.target.value) }))}>
-                {!BATCH_OPTIONS.includes(form.batch_size) && <option value={form.batch_size}>{form.batch_size}</option>}
-                {BATCH_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
-            <label className="training-ws-field">
-              <span>Image size</span>
-              <select value={String(form.img_size)} onChange={(event) => setForm((prev) => ({ ...prev, img_size: Number(event.target.value) }))}>
-                {!IMG_SIZE_OPTIONS.includes(form.img_size) && <option value={form.img_size}>{form.img_size}px</option>}
-                {IMG_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}px</option>)}
-              </select>
-            </label>
-            <label className="training-ws-field">
-              <span>HSV 色调 (hsv_h)</span>
-              <input type="number" step="0.001" min={0} max={1} value={form.hsv_h} placeholder="0.015" onChange={(event) => setForm((prev) => ({ ...prev, hsv_h: event.target.value }))} />
-            </label>
-            <label className="training-ws-field">
-              <span>旋转角度 (degrees)</span>
-              <input type="number" step="1" min={0} max={180} value={form.degrees} placeholder="10" onChange={(event) => setForm((prev) => ({ ...prev, degrees: event.target.value }))} />
-            </label>
-            <label className="training-ws-field">
-              <span>Mixup 概率</span>
-              <input type="number" step="0.05" min={0} max={1} value={form.mixup} placeholder="0.1" onChange={(event) => setForm((prev) => ({ ...prev, mixup: event.target.value }))} />
-            </label>
-            <label className="training-ws-field">
-              <span>水平翻转 (fliplr)</span>
-              <input type="number" step="0.05" min={0} max={1} value={form.fliplr} placeholder="0" onChange={(event) => setForm((prev) => ({ ...prev, fliplr: event.target.value }))} />
-            </label>
-            <div className="training-ws-field">
-              <span className="tcc-field-label-help">未标注图片
-                <i className="tcc-help-icon" tabIndex={0} role="img" aria-label="提示">!
-                  <span className="tcc-help-tip" role="tooltip">包含时未标注图片以空标签参与训练与验证（YOLO 背景样本）</span>
-                </i>
-              </span>
-              <div className="tcc-seg-toggle" role="radiogroup" aria-label="未标注图片处理方式">
-                <button type="button" role="radio" aria-checked={!form.include_unannotated} className={!form.include_unannotated ? "active" : ""} title="只使用已标注图片训练" onClick={() => setForm((prev) => ({ ...prev, include_unannotated: false }))}>跳过</button>
-                <button type="button" role="radio" aria-checked={form.include_unannotated} className={form.include_unannotated ? "active" : ""} title="未标注图片生成空标签文件作为背景样本" onClick={() => setForm((prev) => ({ ...prev, include_unannotated: true }))}>包含·空标签</button>
-              </div>
-            </div>
+            <InputNumber addonBefore="Epochs" min={1} value={form.epochs} onChange={(v) => setForm((prev) => ({ ...prev, epochs: v ?? 1 }))} style={{ width: "100%" }} />
+            <AntdSelect
+              value={form.batch_size as unknown as string}
+              onChange={(v) => setForm((prev) => ({ ...prev, batch_size: Number(v) }))}
+              options={BATCH_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
+              style={{ width: "100%" }}
+              placeholder="Batch"
+            />
+            <AntdSelect
+              value={form.img_size as unknown as string}
+              onChange={(v) => setForm((prev) => ({ ...prev, img_size: Number(v) }))}
+              options={IMG_SIZE_OPTIONS.map((n) => ({ value: String(n), label: `${n}px` }))}
+              style={{ width: "100%" }}
+              placeholder="Image size"
+            />
+            <InputNumber addonBefore="hsv_h" step={0.001} min={0} max={1} value={Number(form.hsv_h) || undefined} placeholder="0.015" onChange={(v) => setForm((prev) => ({ ...prev, hsv_h: v != null ? String(v) : "" }))} style={{ width: "100%" }} />
+            <InputNumber addonBefore="旋转" step={1} min={0} max={180} value={Number(form.degrees) || undefined} placeholder="10" onChange={(v) => setForm((prev) => ({ ...prev, degrees: v != null ? String(v) : "" }))} style={{ width: "100%" }} />
+            <InputNumber addonBefore="Mixup" step={0.05} min={0} max={1} value={Number(form.mixup) || undefined} placeholder="0.1" onChange={(v) => setForm((prev) => ({ ...prev, mixup: v != null ? String(v) : "" }))} style={{ width: "100%" }} />
+            <InputNumber addonBefore="翻转" step={0.05} min={0} max={1} value={Number(form.fliplr) || undefined} placeholder="0" onChange={(v) => setForm((prev) => ({ ...prev, fliplr: v != null ? String(v) : "" }))} style={{ width: "100%" }} />
           </div>
-        </section>
-
-        <div className="training-ws-advanced">
-          <button type="button" className="training-ws-advanced-trigger" onClick={() => onAdvancedOpenChange(!advancedOpen)}>
-            <span className={`training-ws-chevron${advancedOpen ? " flip" : ""}`} aria-hidden>
-              <IconChevron size={16} />
-            </span>
-            <span className="training-ws-advanced-trigger-text">
-              <strong>高级参数</strong>
-              <span className="training-ws-muted-inline">优化器、学习率、patience、workers</span>
-            </span>
-          </button>
-          {advancedOpen && (
-            <div className="training-ws-advanced-grid">
-              <label className="training-ws-field">
-                <span>Val ratio（元数据）</span>
-                <input type="number" step={0.05} min={0} max={0.9} value={form.val_ratio} onChange={(event) => setForm((prev) => ({ ...prev, val_ratio: Number(event.target.value) }))} />
-              </label>
-              <label className="training-ws-field">
-                <span>Seed</span>
-                <input type="number" value={form.seed} onChange={(event) => setForm((prev) => ({ ...prev, seed: Number(event.target.value) }))} />
-              </label>
-              <label className="training-ws-field">
-                <span>学习率 lr0</span>
-                <input value={form.lr0} placeholder="留空 = 默认" onChange={(event) => setForm((prev) => ({ ...prev, lr0: event.target.value }))} />
-              </label>
-              <label className="training-ws-field">
-                <span>Optimizer</span>
-                <input value={form.optimizer} placeholder="auto / AdamW / SGD" onChange={(event) => setForm((prev) => ({ ...prev, optimizer: event.target.value }))} />
-              </label>
-              <label className="training-ws-field">
-                <span>Patience</span>
-                <input value={form.patience} placeholder={String(PRESETS.balanced.patience)} onChange={(event) => setForm((prev) => ({ ...prev, patience: event.target.value }))} />
-              </label>
-              <label className="training-ws-field">
-                <span>Workers</span>
-                <input type="number" min={0} value={form.workers} onChange={(event) => setForm((prev) => ({ ...prev, workers: Number(event.target.value) }))} />
-              </label>
+          <Tooltip title="包含时未标注图片以空标签参与训练与验证（YOLO 背景样本）">
+            <div style={{ marginTop: 12 }}>
+              <Typography.Text type="secondary" style={{ marginRight: 8, fontSize: 12 }}>未标注图片:</Typography.Text>
+              <Radio.Group
+                value={form.include_unannotated ? "include" : "skip"}
+                onChange={(e) => setForm((prev) => ({ ...prev, include_unannotated: e.target.value === "include" }))}
+                optionType="button"
+                size="small"
+              >
+                <Radio.Button value="skip">跳过</Radio.Button>
+                <Radio.Button value="include">包含·空标签</Radio.Button>
+              </Radio.Group>
             </div>
-          )}
-        </div>
+          </Tooltip>
+        </Card>
 
-        <div className="training-config-summary-bar">
+        {/* 高级参数 */}
+        <Collapse
+          size="small"
+          activeKey={advancedOpen ? ["advanced"] : []}
+          onChange={(keys) => onAdvancedOpenChange(keys.includes("advanced"))}
+          items={[{
+            key: "advanced",
+            label: <span><strong>高级参数</strong> <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>优化器、学习率、patience、workers</Typography.Text></span>,
+            children: (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
+                <InputNumber addonBefore="Val ratio" step={0.05} min={0} max={0.9} value={form.val_ratio} onChange={(v) => setForm((prev) => ({ ...prev, val_ratio: v ?? 0.2 }))} style={{ width: "100%" }} />
+                <InputNumber addonBefore="Seed" value={form.seed} onChange={(v) => setForm((prev) => ({ ...prev, seed: v ?? 42 }))} style={{ width: "100%" }} />
+                <AntdInput addonBefore="lr0" value={form.lr0} placeholder="默认" onChange={(e) => setForm((prev) => ({ ...prev, lr0: e.target.value }))} />
+                <AntdInput addonBefore="Optimizer" value={form.optimizer} placeholder="auto" onChange={(e) => setForm((prev) => ({ ...prev, optimizer: e.target.value }))} />
+                <AntdInput addonBefore="Patience" value={form.patience} placeholder={String(PRESETS.balanced.patience)} onChange={(e) => setForm((prev) => ({ ...prev, patience: e.target.value }))} />
+                <InputNumber addonBefore="Workers" min={0} value={form.workers} onChange={(v) => setForm((prev) => ({ ...prev, workers: v ?? 2 }))} style={{ width: "100%" }} />
+              </div>
+            ),
+          }]}
+          style={{ marginBottom: 16 }}
+        />
+
+        <div className="training-config-summary-bar" style={{ padding: "10px 14px", background: "#f5f7fc", borderRadius: 8 }}>
           <span>{summaryBottomBar}</span>
         </div>
       </form>
