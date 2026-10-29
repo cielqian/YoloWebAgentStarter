@@ -97,8 +97,10 @@ describe("DataSourceView batch tags and upload tags", () => {
     expect(container?.querySelector(".source-image-meta small")?.textContent).toMatch(/导入 \d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/);
 
     await clickButton("批量选择");
-    await clickButton("one.png");
-    await clickButton("two.png");
+    const imageCard = Array.from(container?.querySelectorAll('.source-image-card') ?? []).find((el) => el.textContent?.includes('one.png'));
+    await act(async () => { imageCard?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const card2 = Array.from(container?.querySelectorAll('.source-image-card') ?? []).find((el) => el.textContent?.includes('two.png'));
+    await act(async () => { card2?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(container?.querySelector(".source-image-card.selected")?.textContent).toContain("one.png");
 
     await clickButton("+ 白天");
