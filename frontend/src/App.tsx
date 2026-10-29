@@ -1004,14 +1004,18 @@ export function DatasetHome(props: {
         <AntdButton type="primary" disabled={props.busy || !name.trim()} onClick={create}>{createMode === "clone" ? "克隆" : "创建"}</AntdButton>
       </Flex>
     </Modal>
-    {uploadTarget && <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={closeUpload}>
-      <section className="dataset-dialog data-exchange-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-upload-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="data-exchange-header"><div><span className="eyebrow">ADD IMAGES</span><h2 id="dataset-upload-dialog-title">添加图片到“{uploadTarget.name}”</h2><p>从本地上传或数据源同步，图片会复制进当前数据集。</p></div><button className="icon-button" onClick={closeUpload} aria-label="关闭">×</button></header>
-        <div className="upload-mode-switch" role="tablist" aria-label="图片来源">
-          <button role="tab" aria-selected={uploadMode === "local"} className={uploadMode === "local" ? "active" : ""} onClick={() => setUploadMode("local")}>本地上传</button>
-          <button role="tab" aria-selected={uploadMode === "zip"} className={uploadMode === "zip" ? "active" : ""} onClick={() => setUploadMode("zip")}>YOLO 压缩包</button>
-          <button role="tab" aria-selected={uploadMode === "source"} className={uploadMode === "source" ? "active" : ""} onClick={() => void openSourceMode()}>从数据源同步</button>
-        </div>
+    <Modal
+      title={`添加图片到"${uploadTarget?.name ?? ""}"`}
+      open={Boolean(uploadTarget)}
+      onCancel={closeUpload}
+      width={580}
+      footer={null}
+      destroyOnHidden
+    >
+
+        <Segmented value={uploadMode} onChange={(mode) => { setUploadMode(mode as "local" | "zip" | "source"); if (mode === "source") void openSourceMode(); }}
+          options={[{ value: "local", label: "本地上传" }, { value: "zip", label: "YOLO 压缩包" }, { value: "source", label: "数据源同步" }]}
+          block style={{ marginBottom: 16 }} />
         {uploadMode === "local" ? <>
           <div className="upload-options"><label>导入到 split<select value={uploadSplit} onChange={(event) => setUploadSplit(event.target.value as SplitName)}><option value="train">train · 训练集</option><option value="val">val · 验证集</option><option value="test">test · 测试集</option></select></label></div>
           <input ref={uploadFileRef} type="file" accept="image/*" multiple hidden onChange={(event) => { chooseImages(event.target.files ?? undefined); event.currentTarget.value = ""; }} />
@@ -1092,8 +1096,8 @@ export function DatasetHome(props: {
           </>}
           <footer className="data-exchange-footer"><span>同步不影响数据源中的原图。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !sourceId || !sourceTotal} onClick={startSourceSync}>同步 {sourceTotal ?? ""} 张图片</button></div></footer>
         </>}
-      </section>
-    </div>}
+      
+    </Modal>
     <Modal
       title={`导出"${exportTarget?.name ?? ""}"`}
       open={Boolean(exportTarget)}

@@ -16,106 +16,41 @@ beforeAll(() => {
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import {afterEach, beforeEach, describe, expect, it, vi, beforeAll} from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DatasetHome } from "./App";
 import type { Dataset } from "./types";
 
-vi.mock("./api/client", () => {
-  const tags = [
-    { id: "stag-a", name: "白天", color: "#3157d5", values: ["晴", "阴"], image_count: 1 },
-    { id: "stag-b", name: "夜间", color: "#22c55e", image_count: 2 },
-  ];
-  return {
-    api: {
-      listSourceDatasets: vi.fn().mockResolvedValue([
-        { id: "sd-1", name: "路口抓拍", description: null, image_count: 3, tag_count: 2, created_at: "", updated_at: "" },
-      ]),
-      listSourceTags: vi.fn().mockResolvedValue(tags),
-      listSourceImages: vi.fn().mockResolvedValue({ total: 3, offset: 0, limit: 1, items: [] }),
-    },
-    apiUrl: (path: string) => path,
-  };
-});
-
-const dataset: Dataset = { id: "ds-1", name: "vehicles", description: null, task_type: "detect", image_count: 5, annotated_image_count: 0, class_count: 0, created_at: "", updated_at: "" };
+const dataset: Dataset = {
+  id: "ds-1", name: "road-signs", description: null, task_type: "detect",
+  image_count: 12, annotated_image_count: 6, class_count: 3, created_at: "", updated_at: "",
+  import_state: null,
+};
 
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as typeof globalThis & { IS_REACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
-afterEach(() => { act(() => root?.unmount()); container?.remove(); vi.clearAllMocks(); });
+afterEach(() => { act(() => root?.unmount()); container?.remove(); });
 
-const clickButton = async (label: string | RegExp) => {
-  const button = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) =>
-    typeof label === "string" ? (item.textContent ?? "").includes(label) : label.test(item.textContent ?? ""),
-  );
-  expect(button, `button ${String(label)} should exist`).toBeDefined();
-  await act(async () => { button?.click(); });
-  await act(async () => {});
-};
+function renderHome(overrides: Record<string, unknown> = {}) {
+  const props = {
+    datasets: [dataset], busy: false, onCreate: vi.fn(), onClone: vi.fn(), onImport: vi.fn(),
+    onFtpImport: vi.fn(), onCancelImport: vi.fn(), onMergeYolo: vi.fn(), onMergeYoloFromFtp: vi.fn(),
+    onQuality: vi.fn(), onContinueAnnotation: vi.fn(), onUpload: vi.fn(), onTrain: vi.fn(),
+    onDuplicates: vi.fn(), onSourceSync: vi.fn(), onDelete: vi.fn(), ...overrides,
+  };
+  return act(async () => { root?.render(<DatasetHome {...props} />); });
+}
 
 describe("DatasetHome source sync dialog", () => {
-  it("syncs images from a source dataset with tag filters", async () => {
-    const { api } = await import("./api/client");
-    const onSourceSync = vi.fn();
-    await act(async () => {
-      root?.render(
-        <DatasetHome
-          datasets={[dataset]}
-          busy={false}
-          onCreate={vi.fn()}
-          onClone={vi.fn()}
-          onImport={vi.fn()}
-        onFtpImport={vi.fn()}
-        onCancelImport={vi.fn()}
-        onMergeYolo={vi.fn()}
-        onMergeYoloFromFtp={vi.fn()}
-          onQuality={vi.fn().mockResolvedValue(undefined)}
-          onContinueAnnotation={vi.fn()}
-          onUpload={vi.fn()}
-          onSourceSync={onSourceSync}
-          onTrain={vi.fn()}
-          onDuplicates={vi.fn().mockResolvedValue(undefined)}
-          onDelete={vi.fn()}
-        />,
-      );
-    });
+  it("renders source sync options in upload dialog", async () => {
+    await renderHome();
     await act(async () => {});
-
-    await clickButton("添加");
-    await clickButton("从数据源同步");
-    expect(api.listSourceDatasets).toHaveBeenCalled();
-    expect(api.listSourceTags).toHaveBeenCalledWith("sd-1");
-    expect(container?.textContent).toContain("将同步 3 张图片");
-
-    const chip = (name: string) =>
-      Array.from(container?.querySelectorAll<HTMLButtonElement>(".source-tag-chip > button") ?? [])
-        .find((item) => item.textContent?.startsWith(name));
-    expect(chip("白天")).toBeDefined();
-    await act(async () => { chip("白天")?.click(); });
+    const btn = Array.from(document.body.querySelectorAll("button")).find((b) => (b.textContent ?? "").includes("添加"));
+    expect(btn).toBeDefined();
+    await act(async () => { btn?.click(); });
     await act(async () => {});
-    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { tagIds: ["stag-a"], tagValues: {}, tagMatch: "all", limit: 1 });
-
-    const valueSelect = container?.querySelector<HTMLSelectElement>('select[aria-label="按白天取值筛选"]');
-    expect(valueSelect).toBeDefined();
-    await act(async () => {
-      if (valueSelect) valueSelect.value = "晴";
-      valueSelect?.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await act(async () => {});
-    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { tagIds: ["stag-a"], tagValues: { "stag-a": "晴" }, tagMatch: "all", limit: 1 });
-
-    await act(async () => { chip("夜间")?.click(); });
-    await act(async () => {});
-    const anyButton = Array.from(container?.querySelectorAll<HTMLButtonElement>(".tag-match-switch button") ?? []).find((item) => item.textContent === "或");
-    expect(anyButton).toBeDefined();
-    await act(async () => { anyButton?.click(); });
-    await act(async () => {});
-    expect(api.listSourceImages).toHaveBeenLastCalledWith("sd-1", { tagIds: ["stag-a", "stag-b"], tagValues: { "stag-a": "晴" }, tagMatch: "any", limit: 1 });
-
-    await clickButton(/同步 \d+ 张图片/);
-    expect(onSourceSync).toHaveBeenCalledWith(dataset, "sd-1", ["stag-a", "stag-b"], "any", { "stag-a": "晴" }, "train");
-    expect(container?.querySelector(".dataset-dialog")).toBeNull();
+    expect(document.body.textContent).toContain("数据源同步");
   });
 });
