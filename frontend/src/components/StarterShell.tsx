@@ -61,7 +61,7 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
   const menuItems = [
     { type: "group" as const, label: text.workspaceGroup, children: workspaceItems },
     ...(pluginItems.length ? [{ type: "group" as const, label: text.pluginsGroup, children: pluginItems }] : []),
-    { type: "group" as const, label: text.settingsGroup, children: [{ key: "settings-group", label: text.settingsGroup, children: settingsItems }] },
+    { type: "group" as const, label: text.settingsGroup, children: settingsItems },
   ];
 
   return (
