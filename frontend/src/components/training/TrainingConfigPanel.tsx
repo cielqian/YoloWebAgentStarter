@@ -79,15 +79,6 @@ export function TrainingConfigPanel({
 
   return (
     <section id="training-config-anchor" className="training-ws-card training-ws-config">
-      <div className="training-ws-card-head">
-        <div>
-          <h2>训练配置</h2>
-          <p className="training-ws-muted">选择权重与超参后提交，任务将下发到选定的训练节点执行。</p>
-        </div>
-        {onExit && (
-          <button type="button" className="button" onClick={onExit}>← 返回记录列表</button>
-        )}
-      </div>
 
       <form id="dataset-training-ws-form" className="training-ws-form" onSubmit={onSubmit}>
         <section className="training-config-block">

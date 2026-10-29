@@ -526,14 +526,6 @@ function LlmSettingsPanel({ text }: { locale: AppLocale; text: SettingsText }) {
 
   return (
     <form className="panel settings-card" onSubmit={(event) => void save(event)}>
-      <header className="settings-card-head">
-        <div className="settings-card-icon"><LlmIcon /></div>
-        <div>
-          <h2>{text.llmTitle}</h2>
-          <p>{text.llmSubtitle}</p>
-        </div>
-        <span className={`settings-status ${form.enabled ? "ready" : "disabled"}`}>{status}</span>
-      </header>
       {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
       {message && !error ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
 
@@ -710,14 +702,6 @@ function SamSettingsPanel({ locale, text, onSamSettingsChange }: { locale: AppLo
   const status = settings.enabled ? (settings.model_configured ? text.ready : text.fallbackReady) : text.disabledStatus;
   return (
     <section className="panel settings-card">
-      <header className="settings-card-head">
-        <div className="settings-card-icon"><SamIcon /></div>
-        <div>
-          <h2>{text.samTitle}</h2>
-          <p>{text.samSubtitle}</p>
-        </div>
-        <span className={`settings-status ${settings.enabled ? "ready" : "disabled"}`}>{status}</span>
-      </header>
       {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
       {message ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
       <div className="settings-form-grid">
@@ -842,16 +826,6 @@ function FtpSettingsPanel({ text }: { text: SettingsText }) {
   if (busy) return <section className="panel settings-card"><p className="muted settings-loading">{text.loading}</p></section>;
   return (
     <form className="panel settings-card" onSubmit={(event) => void save(event)}>
-      <header className="settings-card-head">
-        <div className="settings-card-icon"><FtpIcon /></div>
-        <div>
-          <h2>{text.ftpTitle}</h2>
-          <p>{text.ftpSubtitle}</p>
-        </div>
-        <span className={`settings-status ${form.host ? "ready" : "disabled"}`}>
-          {form.host ? text.ftpConfigured : text.ftpNotConfigured}
-        </span>
-      </header>
       {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
       {message ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
       <div className="settings-form-grid">
@@ -964,14 +938,6 @@ function BaseWeightsPanel({ text }: { text: SettingsText }) {
 
   return (
     <section className="panel settings-card">
-      <header className="settings-card-head">
-        <div className="settings-card-icon"><NodeIcon /></div>
-        <div>
-          <h2>{text.weightsTitle}</h2>
-          <p>{text.weightsSubtitle}</p>
-        </div>
-        <span className="settings-status ready">{weights.length} 个</span>
-      </header>
       {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
       {message && !error ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
 
@@ -1118,16 +1084,6 @@ function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsTex
   if (busy) return <section className="panel settings-card"><p className="muted settings-loading">{text.loading}</p></section>;
   return (
     <section className="panel settings-card">
-      <header className="settings-card-head">
-        <div className="settings-card-icon"><NodeIcon /></div>
-        <div>
-          <h2>{kind === "training" ? text.nodesTitle : text.omNodesTitle}</h2>
-          <p>{kind === "training" ? text.nodesSubtitle : text.omNodesSubtitle}</p>
-        </div>
-        <span className={`settings-status ${nodes.length ? "ready" : "disabled"}`}>
-          {nodes.length ? text.nodesRegistered.replace("{count}", String(nodes.length)) : text.ftpNotConfigured}
-        </span>
-      </header>
       {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
       {message ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
       {nodes.length ? (
@@ -1268,16 +1224,6 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
 
   return (
     <form className="panel settings-card" onSubmit={(event) => void save(event)}>
-      <header className="settings-card-head">
-        <div className="settings-card-icon"><WebhookIcon /></div>
-        <div>
-          <h2>{text.webhookTitle}</h2>
-          <p>{text.webhookSubtitle}</p>
-        </div>
-        <span className={`settings-status ${form.enabled && form.url ? "ready" : "disabled"}`}>
-          {form.enabled && form.url ? text.webhookConfigured : text.ftpNotConfigured}
-        </span>
-      </header>
       {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
       {message && !error ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
 
@@ -1376,14 +1322,6 @@ function LanguageSettingsPanel({
   };
   return (
     <section className="panel settings-card language-card">
-      <header className="settings-card-head">
-        <div className="settings-card-icon"><LanguageIcon /></div>
-        <div>
-          <h2>{text.languageTitle}</h2>
-          <p>{text.languageSubtitle}</p>
-        </div>
-        <span className="settings-status ready">{text.applied}</span>
-      </header>
       <div className="language-card-body">
         <strong>{text.displayLanguage}</strong>
         <Segmented
