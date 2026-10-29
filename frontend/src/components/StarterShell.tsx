@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Layout, Menu } from "antd";
+import { Flex, Layout, Menu } from "antd";
 import type { AppLocale } from "../locale";
 import { localeText } from "../locale";
 
@@ -84,7 +84,10 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
         </Sider>
         <Layout>
           <Header className="starter-antd-header">
-            <span className="starter-antd-header-title">{currentLabel(active, labels)}</span>
+            <Flex align="baseline" gap={12}>
+              <span className="starter-antd-header-title">{currentInfo(active, labels).title}</span>
+              <span className="starter-antd-header-desc">{currentInfo(active, labels).description}</span>
+            </Flex>
           </Header>
           <Content className="starter-antd-content">{children}</Content>
         </Layout>
@@ -93,22 +96,33 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
   );
 }
 
-const SETTINGS_LABELS: Record<string, string> = {
-  "settings-llm": "Agent LLM",
-  "settings-sam": "SAM 辅助",
-  "settings-ftp": "FTP 连接",
-  "settings-nodes": "Agent 配置",
-  "settings-weights": "基础权重",
-  "settings-basedata": "基础数据",
-  "settings-webhook": "Webhook 通知",
-  "settings-language": "语言",
+const SECTION_INFO: Record<string, { title: string; description: string }> = {
+  datasources: { title: "数据源", description: "管理原始图片素材池,支持 FTP 同步、本地上传与多值标签筛选" },
+  workspace: { title: "数据集", description: "标注、训练与模型的全流程工作区" },
+  training: { title: "训练", description: "训练任务下发、实时进度与历史记录" },
+  models: { title: "模型", description: "训练产出的受管模型,支持 PT/ONNX/OM 格式转换" },
+  agent: { title: "智能体", description: "AI 助手对话,支持数据问答与受管任务提交" },
+  logs: { title: "日志", description: "后端运行日志与插件日志排查" },
+  ftp: { title: "FTP 管理", description: "浏览、上传与删除 FTP 服务器上的文件" },
+  "plugin-manager": { title: "插件管理", description: "安装/卸载插件包,查看插件运行日志" },
+  "settings-llm": { title: "Agent LLM", description: "Provider、模型与 API Key" },
+  "settings-sam": { title: "SAM 辅助", description: "模型、设备与建议方式" },
+  "settings-ftp": { title: "FTP 连接", description: "FTP 服务器连接配置与连通性测试" },
+  "settings-nodes": { title: "Agent 配置", description: "训练与 OM 转换节点的注册与管理" },
+  "settings-weights": { title: "基础权重", description: "预置 .pt 权重上传与删除" },
+  "settings-basedata": { title: "基础数据", description: "全局类别库、标签库与素材类型管理" },
+  "settings-webhook": { title: "Webhook 通知", description: "训练生命周期事件 HTTP 回调配置" },
+  "settings-language": { title: "语言", description: "工作台显示语言偏好" },
 };
 
-function currentLabel(active: StarterSection, labels: Partial<Record<StarterSection, string>>): string {
-  if (active.startsWith("plugin:")) return "插件";
-  if (active === "plugin-manager") return "插件管理";
-  if (active in SETTINGS_LABELS) return `设置 · ${SETTINGS_LABELS[active]}`;
-  return labels[active] ?? "";
+function currentInfo(active: StarterSection, labels: Partial<Record<string, string>>): { title: string; description: string } {
+  if (active.startsWith("plugin:")) return { title: "插件", description: "" };
+  if (active in SECTION_INFO) {
+    const info = SECTION_INFO[active];
+    return active.startsWith("settings-") ? { title: `设置 · ${info.title}`, description: info.description } : info;
+  }
+  const label = labels[active] ?? "";
+  return { title: label, description: SECTION_INFO[active]?.description ?? "" };
 }
 
 function DatasetIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Z" /><path d="m7.5 15 2.5-3 2 2.2 1.7-1.8 2.8 3.1" /><circle cx="9" cy="9" r="1.2" /></svg>; }
