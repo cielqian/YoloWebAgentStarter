@@ -10,6 +10,8 @@ import {
   Modal,
   Popconfirm,
   Space,
+  Pagination,
+  Segmented,
   Table,
   Tag as AntdTag,
   Typography,
@@ -512,11 +514,11 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   return (
     <>
       <Flex justify="space-between" align="center" style={{ marginBottom: 12 }}>
-        <div>
-          <strong style={{ fontSize: 16 }}>{dataset.name}</strong>
-          <small style={{ marginLeft: 10, color: "#7d8799" }}>{dataset.description || ""} · {page?.total ?? dataset.image_count} 张图片 · {tags.length} 个标签</small>
-        </div>
-        <button className="button" onClick={onBack}>← 返回列表</button>
+        <Space size={12}>
+          <AntdButton onClick={onBack}>← 返回列表</AntdButton>
+          <strong style={{ fontSize: 15 }}>{dataset.name}</strong>
+          <Typography.Text type="secondary">{page?.total ?? dataset.image_count} 张图片 · {tags.length} 个标签</Typography.Text>
+        </Space>
       </Flex>
       {error ? <Alert type="error" showIcon closable title={error} style={{ marginBottom: 12 }} /> : null}
       {notice ? <Alert type="success" showIcon closable title={notice} style={{ marginBottom: 12 }} /> : null}
@@ -535,21 +537,24 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
       <div className="source-sticky">
         <section className="panel source-toolbar">
           <div className="source-toolbar-top">
-            <div className="header-actions">
+            <Space size={8}>
               <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={(event) => pickFiles(event.target.files)} />
-              <button className="button primary" disabled={busy} onClick={() => { setUploadTagIds([]); setPendingFiles([]); setUploadOpen(true); }}>上传图片</button>
-              <button className="button" disabled={busy} onClick={openFtpPicker}>FTP 同步</button>
+              <AntdButton type="primary" disabled={busy} onClick={() => { setUploadTagIds([]); setPendingFiles([]); setUploadOpen(true); }}>上传图片</AntdButton>
+              <AntdButton disabled={busy} onClick={openFtpPicker}>FTP 同步</AntdButton>
               {selectMode ? (
-                <button className="button" onClick={exitSelectMode}>退出选择</button>
+                <AntdButton onClick={exitSelectMode}>退出选择</AntdButton>
               ) : (
-                <button className="button" disabled={busy || !items.length} onClick={() => setSelectMode(true)}>批量选择</button>
+                <AntdButton disabled={busy || !items.length} onClick={() => setSelectMode(true)}>批量选择</AntdButton>
               )}
-            </div>
-            <form className="source-search" onSubmit={(event) => { event.preventDefault(); setQuery(queryInput.trim()); }}>
-              <input value={queryInput} placeholder="按文件名搜索…" onChange={(event) => setQueryInput(event.target.value)} />
-              <button className="button" type="submit">搜索</button>
-              {query && <button type="button" className="button" onClick={() => { setQueryInput(""); setQuery(""); }}>清除</button>}
-            </form>
+            </Space>
+            <AntdInput.Search
+              placeholder="按文件名搜索…"
+              value={queryInput}
+              onChange={(event) => setQueryInput(event.target.value)}
+              onSearch={(value) => setQuery(value.trim())}
+              style={{ width: 220 }}
+              allowClear
+            />
           </div>
           <div className="source-tag-bar" role="group" aria-label="标签筛选">
             <button className={`source-tag-chip${tagFilter.length ? "" : " active"}`} onClick={() => { setTagFilter([]); setTagValueFilter({}); }}>全部</button>
@@ -623,10 +628,15 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
         <p className="muted">正在读取图片…</p>
       ) : items.length ? (
         <>
-        <div className="source-view-mode" role="group" aria-label="展示方式">
-          <button type="button" className={viewMode === "grid" ? "active" : ""} onClick={() => { setViewMode("grid"); setPreview(undefined); }}>网格</button>
-          <button type="button" className={viewMode === "browser" ? "active" : ""} onClick={() => setViewMode("browser")}>浏览(左列表·右大图)</button>
-        </div>
+        <Segmented
+          value={viewMode}
+          onChange={(mode) => { setViewMode(mode as "grid" | "browser"); if (mode === "grid") setPreview(undefined); }}
+          options={[
+            { value: "grid", label: "网格" },
+            { value: "browser", label: "浏览" },
+          ]}
+          style={{ marginBottom: 12 }}
+        />
         {viewMode === "grid" ? (
         <section className="source-image-grid">
           {items.map((image) => {
@@ -715,18 +725,18 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
         )}
         </>
       ) : (
-        <section className="dataset-empty-card">
-          <span className="dataset-empty-icon">▦</span>
-          <h2>{query || tagFilter.length ? "没有符合条件的图片" : "还没有图片"}</h2>
-          <p>{query || tagFilter.length ? "调整搜索词或标签筛选后再试。" : "上传本地图片，或从 FTP 目录同步一批图片进来。"}</p>
-        </section>
+        <Empty description={query || tagFilter.length ? "没有符合条件的图片。调整搜索词或标签筛选后再试。" : "还没有图片。上传本地图片，或从 FTP 目录同步一批图片进来。"} />
       )}
       {page && page.total > page.limit && (
-        <div className="source-pagination">
-          <button className="button" disabled={pageIndex === 0} onClick={() => setPageIndex((index) => Math.max(0, index - 1))}>上一页</button>
-          <span>第 {pageIndex + 1} / {totalPages} 页 · 共 {page.total} 张</span>
-          <button className="button" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex((index) => Math.min(totalPages - 1, index + 1))}>下一页</button>
-        </div>
+        <Flex justify="center" style={{ marginTop: 16 }}>
+          <Pagination
+            current={pageIndex + 1}
+            total={page.total}
+            pageSize={page.limit}
+            showTotal={(total) => `共 ${total} 张`}
+            onChange={(pageNo) => setPageIndex(pageNo - 1)}
+          />
+        </Flex>
       )}
 
       {ftpOpen && (
