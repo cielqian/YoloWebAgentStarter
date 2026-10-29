@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { App as AntdApp, Button as AntdButton, Form as AntdForm, Input as AntdInput, Modal, Popconfirm, Table, type TableProps } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
 import type { ClassTemplate, MaterialType, TagTemplate } from "../types";
@@ -367,134 +369,112 @@ function TagLibraryPanel() {
 }
 
 function MaterialTypePanel() {
+  const { message } = AntdApp.useApp();
   const [types, setTypes] = useState<MaterialType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [editState, setEditState] = useState<{ id: string; name: string; description: string } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<MaterialType>();
+  const [editing, setEditing] = useState<MaterialType | null>(null);
+  const [form] = AntdForm.useForm<{ name: string; description?: string }>();
 
-  const refresh = () => api.listMaterialTypes().then(setTypes).catch((reason: unknown) => setError(errorMessage(reason)));
-  useEffect(() => { refresh().finally(() => setLoading(false)); }, []);
+  const refresh = () =>
+    api.listMaterialTypes()
+      .then(setTypes)
+      .catch((reason: unknown) => message.error(errorMessage(reason)))
+      .finally(() => setLoading(false));
+  useEffect(() => { void refresh(); }, []);
 
   const openCreate = () => {
-    setEditState(null);
-    setName(""); setDescription("");
+    setEditing(null);
+    form.resetFields();
     setDialogOpen(true);
   };
 
   const openEdit = (item: MaterialType) => {
-    setEditState({ id: item.id, name: item.name, description: item.description ?? "" });
+    setEditing(item);
+    form.setFieldsValue({ name: item.name, description: item.description ?? "" });
     setDialogOpen(true);
   };
 
-  const closeDialog = () => {
-    if (busy) return;
-    setDialogOpen(false);
-    setEditState(null);
-  };
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const trimmed = (editState ? editState.name : name).trim();
-    if (!trimmed) return;
-    setBusy(true); setError(""); setNotice("");
+  const submit = async (values: { name: string; description?: string }) => {
+    const description = values.description?.trim() || null;
     try {
-      if (editState) {
-        await api.updateMaterialType(editState.id, { name: trimmed, description: (editState.description || "").trim() || null });
-        setNotice(`素材类型“${trimmed}”已更新`);
+      if (editing) {
+        await api.updateMaterialType(editing.id, { name: values.name.trim(), description });
+        message.success(`素材类型“${values.name.trim()}”已更新`);
       } else {
-        await api.createMaterialType({ name: trimmed, description: description.trim() || null });
-        setNotice(`已新增素材类型“${trimmed}”`);
+        await api.createMaterialType({ name: values.name.trim(), description });
+        message.success(`已新增素材类型“${values.name.trim()}”`);
       }
-      setEditState(null); setDialogOpen(false);
+      setDialogOpen(false);
       await refresh();
     } catch (reason) {
-      setError(errorMessage(reason));
-    } finally { setBusy(false); }
+      message.error(errorMessage(reason));
+    }
   };
 
   const remove = async (item: MaterialType) => {
-    setBusy(true); setError(""); setNotice("");
     try {
       await api.deleteMaterialType(item.id);
-      setNotice(`已删除素材类型“${item.name}”（数据源上的引用已同步清理）`);
+      message.success(`已删除素材类型“${item.name}”（数据源上的引用已同步清理）`);
       await refresh();
     } catch (reason) {
-      setError(errorMessage(reason));
-    } finally { setBusy(false); setDeleteTarget(undefined); }
+      message.error(errorMessage(reason));
+    }
   };
+
+  const columns: TableProps<MaterialType>["columns"] = [
+    { title: "素材类型", dataIndex: "name", key: "name" },
+    { title: "备注", dataIndex: "description", key: "description", render: (value: string | null) => value || <span className="muted">—</span> },
+    { title: "更新时间", dataIndex: "updated_at", key: "updated_at", width: 180, render: (value: string) => formatTagTime(value) },
+    {
+      title: "操作",
+      key: "actions",
+      width: 140,
+      render: (_, item) => (
+        <>
+          <AntdButton type="link" size="small" onClick={() => openEdit(item)}>编辑</AntdButton>
+          <Popconfirm title={`删除素材类型“${item.name}”？`} description="数据源上已选择的该类型会同步移除。" okText="删除" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => void remove(item)}>
+            <AntdButton type="link" size="small" danger>删除</AntdButton>
+          </Popconfirm>
+        </>
+      ),
+    },
+  ];
 
   return (
     <>
-      <Toast kind="error" message={error} onClose={() => setError("")} />
-      <Toast kind="success" message={notice} onClose={() => setNotice("")} />
-      <div className="header-actions">
-        <button className="button primary" onClick={openCreate}>+ 新增素材类型</button>
+      <div className="header-actions" style={{ justifyContent: "flex-end" }}>
+        <AntdButton type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增素材类型</AntdButton>
       </div>
-
-      {loading ? <p className="muted">正在加载素材类型…</p> : types.length ? (
-        <div className="model-table-wrap">
-          <table className="model-table tag-library-table">
-            <thead>
-              <tr>
-                <th>素材类型</th>
-                <th>备注</th>
-                <th>更新时间</th>
-                <th className="model-table-actions">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {types.map((item) => (
-                <tr key={item.id}>
-                  <td className="model-table-name"><button type="button" title={item.name}>{item.name}</button></td>
-                  <td title={item.description ?? undefined}>{item.description || <span className="muted">—</span>}</td>
-                  <td className="model-table-time">{formatTagTime(item.updated_at)}</td>
-                  <td className="model-table-actions">
-                    <button className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openEdit(item)}>编辑</button>
-                    <button className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => setDeleteTarget(item)}>删除</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : <p className="muted">素材类型库还是空的。新增类型（如“可见光图片 / 红外视频”）后，数据源即可多选打标。</p>}
-
-      {dialogOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={closeDialog}>
-          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="material-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header>
-              <div><span className="eyebrow">{editState ? "EDIT TYPE" : "NEW TYPE"}</span><h2 id="material-dialog-title">{editState ? "编辑素材类型" : "新增素材类型"}</h2></div>
-              <button className="icon-button" onClick={closeDialog} aria-label="关闭">×</button>
-            </header>
-            <form className="tag-dialog-form" onSubmit={(event) => void submit(event)}>
-              <label><span>类型名称</span><input autoFocus value={editState ? editState.name : name} placeholder="例如：可见光图片" onChange={(event) => (editState ? setEditState({ ...editState, name: event.target.value }) : setName(event.target.value))} /></label>
-              <label><span>备注</span><input value={editState ? editState.description : description} placeholder="选填" onChange={(event) => (editState ? setEditState({ ...editState, description: event.target.value }) : setDescription(event.target.value))} /></label>
-              <footer>
-                <button type="button" className="button" disabled={busy} onClick={closeDialog}>取消</button>
-                <button className="button primary" type="submit" disabled={busy || !(editState ? editState.name : name).trim()}>保存</button>
-              </footer>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {deleteTarget && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
-          <section className="dataset-dialog" role="alertdialog" aria-modal="true">
-            <header><div><span className="eyebrow">DELETE TYPE</span><h2>删除素材类型“{deleteTarget.name}”？</h2><p>数据源上已选择的该类型会同步移除。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
-            <footer>
-              <button className="button" onClick={() => setDeleteTarget(undefined)}>取消</button>
-              <button className="button danger" disabled={busy} onClick={() => void remove(deleteTarget)}>确认删除</button>
-            </footer>
-          </section>
-        </div>
-      )}
+      <Table<MaterialType>
+        rowKey="id"
+        columns={columns}
+        dataSource={types}
+        loading={loading}
+        pagination={false}
+        size="middle"
+        locale={{ emptyText: "素材类型库还是空的。新增类型（如“可见光图片 / 红外视频”）后，数据源即可多选打标。" }}
+      />
+      <Modal
+        title={editing ? "编辑素材类型" : "新增素材类型"}
+        open={dialogOpen}
+        onCancel={() => setDialogOpen(false)}
+        cancelText="取消"
+        okText="保存"
+        okButtonProps={{ autoFocus: true }}
+        destroyOnHidden
+        onOk={() => void form.submit()}
+        confirmLoading={false}
+      >
+        <AntdForm form={form} layout="vertical" onFinish={(values) => void submit(values)} style={{ marginTop: 12 }}>
+          <AntdForm.Item name="name" label="类型名称" rules={[{ required: true, message: "请输入类型名称" }, { max: 255, message: "名称过长" }]}>
+            <AntdInput placeholder="例如：可见光图片" autoFocus />
+          </AntdForm.Item>
+          <AntdForm.Item name="description" label="备注">
+            <AntdInput placeholder="选填" />
+          </AntdForm.Item>
+        </AntdForm>
+      </Modal>
     </>
   );
 }
