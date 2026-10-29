@@ -514,13 +514,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
 
   return (
     <>
-      <Flex justify="space-between" align="center" style={{ marginBottom: 12 }}>
-        <Space size={12}>
-          <AntdButton onClick={onBack}>← 返回列表</AntdButton>
-          <strong style={{ fontSize: 15 }}>{dataset.name}</strong>
-          <Typography.Text type="secondary">{page?.total ?? dataset.image_count} 张图片 · {tags.length} 个标签</Typography.Text>
-        </Space>
-      </Flex>
+
       {error ? <Alert type="error" showIcon closable title={error} style={{ marginBottom: 12 }} /> : null}
       {notice ? <Alert type="success" showIcon closable title={notice} style={{ marginBottom: 12 }} /> : null}
       {syncProgress && (
@@ -536,6 +530,13 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
         </section>
       )}
       <div className="source-sticky">
+        <Flex justify="space-between" align="center" style={{ padding: "10px 14px 0" }}>
+          <Space size={12}>
+            <AntdButton size="small" onClick={onBack}>← 返回列表</AntdButton>
+            <strong>{dataset.name}</strong>
+            <Typography.Text type="secondary">{page?.total ?? dataset.image_count} 张 · {tags.length} 个标签</Typography.Text>
+          </Space>
+        </Flex>
         <section className="panel source-toolbar">
           <div className="source-toolbar-top">
             <Space size={8}>
