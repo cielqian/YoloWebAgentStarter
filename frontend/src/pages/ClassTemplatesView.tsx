@@ -309,7 +309,7 @@ function TagLibraryPanel() {
                 <tr key={tag.id}>
                   <td className="model-table-check"><i className="tag-color-dot" style={{ background: tag.color }} /></td>
                   <td className="model-table-name"><button type="button" title={tag.name}>{tag.name}</button></td>
-                  <td className="tag-values-cell">{tag.values?.length ? tag.values.map((value) => <em key={value}>{value}</em>) : <span className="muted">—</span>}</td>
+                  <td>{tag.values?.length ? <div className="tag-values-cell">{tag.values.map((value) => <em key={value}>{value}</em>)}</div> : <span className="muted">—</span>}</td>
                   <td title={tag.description ?? undefined}>{tag.description || <span className="muted">—</span>}</td>
                   <td className="model-table-time">{formatTagTime(tag.updated_at)}</td>
                   <td className="model-table-actions">
