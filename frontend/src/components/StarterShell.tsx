@@ -72,13 +72,15 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
             <span className="starter-antd-logo-badge">YWA</span>
             <span className="starter-antd-logo-text">YOLO 训练平台</span>
           </div>
-          <Menu
-            mode="inline"
-            selectedKeys={[active]}
-            items={menuItems}
-            onClick={({ key }) => onNavigate(key as StarterSection)}
-            className="starter-antd-menu"
-          />
+          <div className="starter-antd-menu-scroll">
+            <Menu
+              mode="inline"
+              selectedKeys={[active]}
+              items={menuItems}
+              onClick={({ key }) => onNavigate(key as StarterSection)}
+              className="starter-antd-menu"
+            />
+          </div>
         </Sider>
         <Layout>
           <Header className="starter-antd-header">
