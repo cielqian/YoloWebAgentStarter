@@ -319,7 +319,7 @@ describe("AnnotationView persistence", () => {
     expect(deleteButtons[0].disabled).toBe(true); // vehicle 正被当前标注使用
 
     act(() => deleteButtons[1]?.click());
-    const confirm = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) => button.textContent === "确认删除");
+    const confirm = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) => (button.textContent ?? "").includes("确认删除"));
     await act(async () => confirm?.click());
 
     expect(onDeleteClass).toHaveBeenCalledWith(personClass.id);
