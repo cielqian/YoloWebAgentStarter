@@ -1,8 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { Flex } from "antd";
+import {
+  Alert,
+  App as AntdApp,
+  Button as AntdButton,
+  Card,
+  Empty,
+  Flex,
+  Form as AntdForm,
+  Input as AntdInput,
+  Modal,
+  Popconfirm,
+  Space,
+  Tag as AntdTag,
+  Typography,
+} from "antd";
+import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api, apiUrl, type FtpSyncProgressEvent } from "../api/client";
-import { Toast } from "../components/Toast";
-import { confirmDialog } from "../components/confirm";
 import type { FtpEntry, MaterialType, SourceDataset, SourceImage, SourceImagePage, SourceTag } from "../types";
 
 const PAGE_SIZE = 60;
@@ -68,7 +81,6 @@ export function DataSourceView() {
   const [createMaterials, setCreateMaterials] = useState<string[]>([]);
   const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
   const [renameMaterials, setRenameMaterials] = useState<string[]>([]);
-  const [deleteTarget, setDeleteTarget] = useState<SourceDataset>();
   const [renameTarget, setRenameTarget] = useState<SourceDataset>();
   const [renameName, setRenameName] = useState("");
 
@@ -132,10 +144,7 @@ export function DataSourceView() {
     });
   };
 
-  const submitDelete = async () => {
-    if (!deleteTarget) return;
-    const target = deleteTarget;
-    setDeleteTarget(undefined);
+  const submitDelete = async (target: SourceDataset) => {
     await runAction(async () => {
       await api.deleteSourceDataset(target.id);
       await load(true);
@@ -155,97 +164,84 @@ export function DataSourceView() {
         />
       ) : (
         <>
-          <Flex justify="flex-end" gap={8} style={{ marginBottom: 12 }}>
-            <button className="button primary" onClick={() => { setCreateName(""); setCreateDescription(""); setCreateOpen(true); }}>新建数据集</button>
-            <button className="button" disabled={loading} onClick={() => void load()}>刷新</button>
+          <Flex justify="flex-end" gap={8} style={{ marginBottom: 16 }}>
+            <AntdButton icon={<ReloadOutlined />} disabled={loading} onClick={() => void load()}>刷新</AntdButton>
+            <AntdButton type="primary" icon={<PlusOutlined />} onClick={() => { setCreateName(""); setCreateDescription(""); setCreateOpen(true); }}>新建数据集</AntdButton>
           </Flex>
-          <Toast kind="error" message={error} onClose={() => setError("")} />
-          <Toast kind="success" message={notice} onClose={() => setNotice("")} />
+          {error ? <Alert type="error" showIcon closable title={error} style={{ marginBottom: 12 }} /> : null}
+          {notice ? <Alert type="success" showIcon closable title={notice} style={{ marginBottom: 12 }} /> : null}
           {loading ? (
-            <p className="muted">正在加载数据集…</p>
+            <Typography.Paragraph type="secondary">正在加载数据集…</Typography.Paragraph>
           ) : datasets.length ? (
-            <section className="source-grid">
+            <Flex wrap gap={12} align="stretch">
               {datasets.map((item) => (
-                <article key={item.id} className="source-card">
-                  <header>
-                    <span className="source-card-icon" aria-hidden="true">▦</span>
-                    <div>
-                      <h2>{item.name}</h2>
-                      <small>{item.description || "—"}</small>
-                      {item.material_types?.length ? (
-                        <div className="source-material-chips">
-                          {item.material_types.map((type) => <em key={type}>{type}</em>)}
-                        </div>
-                      ) : null}
-                    </div>
-                  </header>
-                  <div className="source-card-metrics">
-                    <span><small>图片</small><strong>{item.image_count}</strong></span>
-                    <span><small>标签</small><strong>{item.tag_count}</strong></span>
-                  </div>
-                  <footer>
-                    <button className="button primary" onClick={() => setActiveId(item.id)}>打开</button>
-                    <button className="button" disabled={busy} onClick={() => { setRenameTarget(item); setRenameName(item.name); setRenameMaterials(item.material_types ?? []); }}>编辑</button>
-                    <button className="button danger" disabled={busy} onClick={() => setDeleteTarget(item)}>删除</button>
-                  </footer>
-                </article>
+                <Card
+                  key={item.id}
+                  size="small"
+                  style={{ width: 300 }}
+                  title={item.name}
+                  extra={
+                    <Space size="small">
+                      <AntdButton type="link" size="small" onClick={() => setActiveId(item.id)}>打开</AntdButton>
+                      <AntdButton type="link" size="small" disabled={busy} onClick={() => { setRenameTarget(item); setRenameName(item.name); setRenameMaterials(item.material_types ?? []); }}>编辑</AntdButton>
+                      <Popconfirm title={`删除数据集"${item.name}"？`} description={`其中 ${item.image_count} 张图片、标签和关联文件会被永久删除，且无法撤销。`} okText="确认删除" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => void submitDelete(item)}>
+                        <AntdButton type="link" size="small" danger disabled={busy}>删除</AntdButton>
+                      </Popconfirm>
+                    </Space>
+                  }
+                >
+                  <p style={{ margin: "0 0 8px", minHeight: 18 }}>
+                    {item.description || <Typography.Text type="secondary">—</Typography.Text>}
+                  </p>
+                  {item.material_types?.length ? (
+                    <Space size={4} wrap style={{ marginBottom: 8 }}>
+                      {item.material_types.map((type) => <AntdTag key={type}>{type}</AntdTag>)}
+                    </Space>
+                  ) : null}
+                  <Space size={16}>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>图片 <strong style={{ color: "#273248" }}>{item.image_count}</strong></Typography.Text>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>标签 <strong style={{ color: "#273248" }}>{item.tag_count}</strong></Typography.Text>
+                  </Space>
+                </Card>
               ))}
-            </section>
+            </Flex>
           ) : (
-            <section className="dataset-empty-card">
-              <span className="dataset-empty-icon">▦</span>
-              <h2>还没有数据集</h2>
-              <p>新建一个数据集后，可以上传图片或从 FTP 目录同步，再为图片打标签管理。</p>
-              <div><button className="button primary" onClick={() => setCreateOpen(true)}>新建数据集</button></div>
-            </section>
+            <Empty description="还没有数据集。新建一个数据集后，可以上传图片或从 FTP 目录同步，再为图片打标签管理。">
+              <AntdButton type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建数据集</AntdButton>
+            </Empty>
           )}
         </>
       )}
 
-      {createOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setCreateOpen(false)}>
-          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="source-create-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header className="data-exchange-header"><div><span className="eyebrow">NEW SOURCE DATASET</span><h2 id="source-create-title">新建数据集</h2><p>仅用于管理原始图片与标签，不涉及标注。</p></div><button className="icon-button" onClick={() => setCreateOpen(false)} aria-label="关闭">×</button></header>
-            <form className="ftp-dialog-form" onSubmit={(event) => { event.preventDefault(); void submitCreate(); }}>
-              <input autoFocus value={createName} placeholder="数据集名称，例如：路口白天" onChange={(event) => setCreateName(event.target.value)} />
-              <input value={createDescription} placeholder="描述（可选）" onChange={(event) => setCreateDescription(event.target.value)} />
-              <MaterialTypeSelect options={materialTypes} value={createMaterials} onChange={setCreateMaterials} />
-              <footer>
-                <button type="button" className="button" onClick={() => setCreateOpen(false)}>取消</button>
-                <button className="button primary" type="submit" disabled={!createName.trim()}>创建</button>
-              </footer>
-            </form>
-          </section>
-        </div>
-      )}
+      <Modal
+        title="新建数据集"
+        open={createOpen}
+        onCancel={() => setCreateOpen(false)}
+        okText="创建"
+        cancelText="取消"
+        destroyOnHidden
+        onOk={() => void submitCreate()}
+        okButtonProps={{ disabled: !createName.trim() }}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>仅用于管理原始图片与标签，不涉及标注。</Typography.Paragraph>
+        <AntdInput autoFocus value={createName} placeholder="数据集名称，例如：路口白天" onChange={(event) => setCreateName(event.target.value)} style={{ marginBottom: 12 }} />
+        <AntdInput value={createDescription} placeholder="描述（可选）" onChange={(event) => setCreateDescription(event.target.value)} style={{ marginBottom: 12 }} />
+        <MaterialTypeSelect options={materialTypes} value={createMaterials} onChange={setCreateMaterials} />
+      </Modal>
 
-      {renameTarget && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setRenameTarget(undefined)}>
-          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="source-rename-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header className="data-exchange-header"><div><span className="eyebrow">EDIT SOURCE DATASET</span><h2 id="source-rename-title">编辑“{renameTarget.name}”</h2></div><button className="icon-button" onClick={() => setRenameTarget(undefined)} aria-label="关闭">×</button></header>
-            <form className="ftp-dialog-form" onSubmit={(event) => { event.preventDefault(); void submitRename(); }}>
-              <input autoFocus value={renameName} onChange={(event) => setRenameName(event.target.value)} />
-              <MaterialTypeSelect options={materialTypes} value={renameMaterials} onChange={setRenameMaterials} />
-              <footer>
-                <button type="button" className="button" onClick={() => setRenameTarget(undefined)}>取消</button>
-                <button className="button primary" type="submit" disabled={!renameName.trim()}>确认</button>
-              </footer>
-            </form>
-          </section>
-        </div>
-      )}
-
-      {deleteTarget && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
-          <section className="dataset-dialog dataset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="source-delete-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header><div><span className="eyebrow">DELETE</span><h2 id="source-delete-title">删除数据集“{deleteTarget.name}”？</h2><p>其中 {deleteTarget.image_count} 张图片、标签和关联文件会被永久删除，且无法撤销。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
-            <footer>
-              <button className="button" disabled={busy} onClick={() => setDeleteTarget(undefined)}>取消</button>
-              <button className="button danger" disabled={busy} onClick={() => void submitDelete()}>确认删除</button>
-            </footer>
-          </section>
-        </div>
-      )}
+      <Modal
+        title={`编辑"${renameTarget?.name ?? ""}"`}
+        open={Boolean(renameTarget)}
+        onCancel={() => setRenameTarget(undefined)}
+        okText="确认"
+        cancelText="取消"
+        destroyOnHidden
+        onOk={() => void submitRename()}
+        okButtonProps={{ disabled: !renameName.trim() }}
+      >
+        <AntdInput autoFocus value={renameName} onChange={(event) => setRenameName(event.target.value)} style={{ marginBottom: 12 }} />
+        <MaterialTypeSelect options={materialTypes} value={renameMaterials} onChange={setRenameMaterials} />
+      </Modal>
     </main>
   );
 }
@@ -491,12 +487,6 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   };
 
   const deleteImage = async (image: SourceImage) => {
-    const confirmed = await confirmDialog({
-      title: `删除图片「${image.file_name}」？`,
-      description: "图片与其标签关联会从数据源永久删除，不可恢复。",
-      confirmLabel: "删除图片",
-    });
-    if (!confirmed) return;
     await runAction(async () => {
       await api.deleteSourceImage(dataset.id, image.id);
       setPreview(undefined);
@@ -516,8 +506,8 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
         </div>
         <button className="button" onClick={onBack}>← 返回列表</button>
       </Flex>
-      <Toast kind="error" message={error} onClose={() => setError("")} />
-      <Toast kind="success" message={notice} onClose={() => setNotice("")} />
+      {error ? <Alert type="error" showIcon closable title={error} style={{ marginBottom: 12 }} /> : null}
+      {notice ? <Alert type="success" showIcon closable title={notice} style={{ marginBottom: 12 }} /> : null}
       {syncProgress && (
         <section className="panel sync-progress" role="status">
           <span className="sync-progress-spin" aria-hidden="true" />
