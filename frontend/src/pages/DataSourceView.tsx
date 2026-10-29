@@ -2,10 +2,34 @@ import { useEffect, useRef, useState } from "react";
 import { api, apiUrl, type FtpSyncProgressEvent } from "../api/client";
 import { Toast } from "../components/Toast";
 import { confirmDialog } from "../components/confirm";
-import type { FtpEntry, SourceDataset, SourceImage, SourceImagePage, SourceTag } from "../types";
+import type { FtpEntry, MaterialType, SourceDataset, SourceImage, SourceImagePage, SourceTag } from "../types";
 
 const PAGE_SIZE = 60;
 const IMAGE_RE = /\.(jpe?g|png|bmp|webp)$/i;
+
+/** 素材类型多选下拉(复选框列表),取值为类型名称。 */
+function MaterialTypeSelect({ options, value, onChange }: { options: MaterialType[]; value: string[]; onChange: (next: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const toggle = (name: string) => onChange(value.includes(name) ? value.filter((item) => item !== name) : [...value, name]);
+  return (
+    <div className="material-select">
+      <button type="button" className="material-select-trigger" onClick={() => setOpen((current) => !current)}>
+        {value.length ? value.join("、") : "选择素材类型（可多选）"}
+        <span aria-hidden>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="material-select-menu" role="listbox" aria-label="素材类型">
+          {options.length ? options.map((item) => (
+            <label key={item.id} className="material-select-option">
+              <input type="checkbox" checked={value.includes(item.name)} onChange={() => toggle(item.name)} />
+              <span>{item.name}</span>
+            </label>
+          )) : <small className="muted">素材类型库为空，请先到「设置 → 基础数据 → 素材类型」添加。</small>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function message(reason: unknown): string {
   return reason instanceof Error ? reason.message : "数据源操作失败，请稍后重试。";
@@ -40,6 +64,9 @@ export function DataSourceView() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
+  const [createMaterials, setCreateMaterials] = useState<string[]>([]);
+  const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
+  const [renameMaterials, setRenameMaterials] = useState<string[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<SourceDataset>();
   const [renameTarget, setRenameTarget] = useState<SourceDataset>();
   const [renameName, setRenameName] = useState("");
@@ -57,6 +84,7 @@ export function DataSourceView() {
 
   useEffect(() => {
     void load();
+    api.listMaterialTypes().then(setMaterialTypes).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -80,13 +108,14 @@ export function DataSourceView() {
     if (!name) return;
     setCreateOpen(false);
     await runAction(async () => {
-      const created = await api.createSourceDataset(name, createDescription.trim() || undefined);
+      const created = await api.createSourceDataset(name, createDescription.trim() || undefined, createMaterials);
       await load(true);
       setActiveId(created.id);
       return `已创建数据集“${created.name}”`;
     });
     setCreateName("");
     setCreateDescription("");
+    setCreateMaterials([]);
   };
 
   const submitRename = async () => {
@@ -96,9 +125,9 @@ export function DataSourceView() {
     const target = renameTarget;
     setRenameTarget(undefined);
     await runAction(async () => {
-      await api.updateSourceDataset(target.id, { name });
+      await api.updateSourceDataset(target.id, { name, material_types: renameMaterials.length ? renameMaterials : null });
       await load(true);
-      return `已重命名为“${name}”`;
+      return `已更新“${name}”`;
     });
   };
 
@@ -149,6 +178,11 @@ export function DataSourceView() {
                     <div>
                       <h2>{item.name}</h2>
                       <small>{item.description || "—"}</small>
+                      {item.material_types?.length ? (
+                        <div className="source-material-chips">
+                          {item.material_types.map((type) => <em key={type}>{type}</em>)}
+                        </div>
+                      ) : null}
                     </div>
                   </header>
                   <div className="source-card-metrics">
@@ -157,7 +191,7 @@ export function DataSourceView() {
                   </div>
                   <footer>
                     <button className="button primary" onClick={() => setActiveId(item.id)}>打开</button>
-                    <button className="button" disabled={busy} onClick={() => { setRenameTarget(item); setRenameName(item.name); }}>重命名</button>
+                    <button className="button" disabled={busy} onClick={() => { setRenameTarget(item); setRenameName(item.name); setRenameMaterials(item.material_types ?? []); }}>编辑</button>
                     <button className="button danger" disabled={busy} onClick={() => setDeleteTarget(item)}>删除</button>
                   </footer>
                 </article>
@@ -181,6 +215,7 @@ export function DataSourceView() {
             <form className="ftp-dialog-form" onSubmit={(event) => { event.preventDefault(); void submitCreate(); }}>
               <input autoFocus value={createName} placeholder="数据集名称，例如：路口白天" onChange={(event) => setCreateName(event.target.value)} />
               <input value={createDescription} placeholder="描述（可选）" onChange={(event) => setCreateDescription(event.target.value)} />
+              <MaterialTypeSelect options={materialTypes} value={createMaterials} onChange={setCreateMaterials} />
               <footer>
                 <button type="button" className="button" onClick={() => setCreateOpen(false)}>取消</button>
                 <button className="button primary" type="submit" disabled={!createName.trim()}>创建</button>
@@ -193,9 +228,10 @@ export function DataSourceView() {
       {renameTarget && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setRenameTarget(undefined)}>
           <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="source-rename-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header className="data-exchange-header"><div><span className="eyebrow">RENAME</span><h2 id="source-rename-title">重命名“{renameTarget.name}”</h2></div><button className="icon-button" onClick={() => setRenameTarget(undefined)} aria-label="关闭">×</button></header>
+            <header className="data-exchange-header"><div><span className="eyebrow">EDIT SOURCE DATASET</span><h2 id="source-rename-title">编辑“{renameTarget.name}”</h2></div><button className="icon-button" onClick={() => setRenameTarget(undefined)} aria-label="关闭">×</button></header>
             <form className="ftp-dialog-form" onSubmit={(event) => { event.preventDefault(); void submitRename(); }}>
               <input autoFocus value={renameName} onChange={(event) => setRenameName(event.target.value)} />
+              <MaterialTypeSelect options={materialTypes} value={renameMaterials} onChange={setRenameMaterials} />
               <footer>
                 <button type="button" className="button" onClick={() => setRenameTarget(undefined)}>取消</button>
                 <button className="button primary" type="submit" disabled={!renameName.trim()}>确认</button>

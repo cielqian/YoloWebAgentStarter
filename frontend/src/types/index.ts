@@ -675,6 +675,15 @@ export interface SourceDataset {
   description: string | null;
   image_count: number;
   tag_count: number;
+  material_types?: string[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MaterialType {
+  id: string;
+  name: string;
+  description: string | null;
   created_at: string;
   updated_at: string;
 }

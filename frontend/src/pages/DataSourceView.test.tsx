@@ -30,6 +30,7 @@ vi.mock("../api/client", () => {
   return {
     api: {
       listSourceDatasets: vi.fn().mockResolvedValue([dataset]),
+      listMaterialTypes: vi.fn().mockResolvedValue([]),
       createSourceDataset: vi.fn(),
       updateSourceDataset: vi.fn(),
       deleteSourceDataset: vi.fn(),

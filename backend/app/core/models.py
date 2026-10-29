@@ -488,6 +488,8 @@ class SourceDataset(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tag_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 素材类型(多选),取值为素材类型库中的名称,如 ["可见光图片", "红外视频"]
+    material_types: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     images: Mapped[list["SourceImage"]] = relationship(back_populates="source_dataset", cascade="all, delete-orphan")
     tags: Mapped[list["SourceTag"]] = relationship(back_populates="source_dataset", cascade="all, delete-orphan")
@@ -524,6 +526,17 @@ class TagTemplate(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#3157d5", nullable=False)
     values: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MaterialType(Base, TimestampMixin):
+    """素材类型库:数据源多选属性的全局取值范围(如 可见光图片/红外视频/航拍)。"""
+
+    __tablename__ = "material_types"
+    __table_args__ = (UniqueConstraint("name", name="uq_material_type_name"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

@@ -62,7 +62,14 @@ def list_source_datasets(session: Session) -> list[SourceDataset]:
 
 
 def create_source_dataset(session: Session, payload: SourceDatasetCreate) -> SourceDataset:
-    dataset = SourceDataset(id=new_id("sd"), name=payload.name, description=payload.description)
+    material_types = None
+    if payload.material_types:
+        from app.material_type.service import validate_names
+
+        material_types = validate_names(session, payload.material_types)
+    dataset = SourceDataset(
+        id=new_id("sd"), name=payload.name, description=payload.description, material_types=material_types
+    )
     session.add(dataset)
     session.commit()
     session.refresh(dataset)
@@ -72,6 +79,10 @@ def create_source_dataset(session: Session, payload: SourceDatasetCreate) -> Sou
 def update_source_dataset(session: Session, source_dataset_id: str, payload: SourceDatasetUpdate) -> SourceDataset:
     dataset = get_source_dataset(session, source_dataset_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
+        if field == "material_types" and value:
+            from app.material_type.service import validate_names
+
+            value = validate_names(session, value)
         setattr(dataset, field, value)
     session.commit()
     session.refresh(dataset)

@@ -37,6 +37,7 @@ import type {
   SourceImagePage,
   SourceTag,
   TagTemplate,
+  MaterialType,
   SystemInfo,
   RuntimeLogResponse,
   PluginLogEntry,
@@ -146,9 +147,9 @@ export const api = {
   ftpRename: (source: string, target: string) => request<{ ok: boolean }>("/api/ftp/rename", json({ source, target })),
   ftpDelete: (path: string) => request<{ ok: boolean }>("/api/ftp/delete", json({ path })),
   listSourceDatasets: () => request<SourceDataset[]>("/api/source-datasets"),
-  createSourceDataset: (name: string, description?: string) =>
-    request<SourceDataset>("/api/source-datasets", json({ name, description: description || null })),
-  updateSourceDataset: (datasetId: string, payload: { name?: string; description?: string | null }) =>
+  createSourceDataset: (name: string, description?: string, materialTypes?: string[]) =>
+    request<SourceDataset>("/api/source-datasets", json({ name, description: description || null, material_types: materialTypes?.length ? materialTypes : null })),
+  updateSourceDataset: (datasetId: string, payload: { name?: string; description?: string | null; material_types?: string[] | null }) =>
     request<SourceDataset>(`/api/source-datasets/${datasetId}`, json(payload, "PATCH")),
   deleteSourceDataset: (datasetId: string) => request<void>(`/api/source-datasets/${datasetId}`, { method: "DELETE" }),
   listSourceImages: (datasetId: string, options: { offset?: number; limit?: number; tagIds?: string[]; tagMatch?: "all" | "any"; tagValues?: Record<string, string>; query?: string } = {}) => {
@@ -240,6 +241,12 @@ export const api = {
     request<TagTemplate>(`/api/tag-templates/${id}`, json(payload, "PATCH")),
   deleteTagTemplate: (id: string) => request<void>(`/api/tag-templates/${id}`, { method: "DELETE" }),
   syncTagTemplates: (datasetId: string) => request<TagTemplate[]>(`/api/tag-templates/sync/${datasetId}`, json({})),
+  listMaterialTypes: () => request<MaterialType[]>("/api/material-types"),
+  createMaterialType: (payload: { name: string; description?: string | null }) =>
+    request<MaterialType>("/api/material-types", json(payload)),
+  updateMaterialType: (id: string, payload: { name?: string; description?: string | null }) =>
+    request<MaterialType>(`/api/material-types/${id}`, json(payload, "PATCH")),
+  deleteMaterialType: (id: string) => request<void>(`/api/material-types/${id}`, { method: "DELETE" }),
   listSourceTags: (datasetId: string) => request<SourceTag[]>(`/api/source-datasets/${datasetId}/tags`),
   createSourceTag: (datasetId: string, name: string, color = "#3157d5", values?: string[] | null) =>
     request<SourceTag>(`/api/source-datasets/${datasetId}/tags`, json({ name, color, values: values ?? null })),

@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
-import type { ClassTemplate, TagTemplate } from "../types";
+import type { ClassTemplate, MaterialType, TagTemplate } from "../types";
 
-type LibraryTab = "classes" | "tags";
+type LibraryTab = "classes" | "tags" | "materials";
 
 const CLASS_COLORS = [
   "#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#a855f7",
@@ -37,8 +37,9 @@ export function ClassTemplatesView() {
       <div className="import-origin-toggle base-data-tabs" role="tablist" aria-label="基础数据">
         <button type="button" role="tab" aria-selected={tab === "classes"} className={tab === "classes" ? "active" : ""} onClick={() => setTab("classes")}>类别库</button>
         <button type="button" role="tab" aria-selected={tab === "tags"} className={tab === "tags" ? "active" : ""} onClick={() => setTab("tags")}>标签库</button>
+        <button type="button" role="tab" aria-selected={tab === "materials"} className={tab === "materials" ? "active" : ""} onClick={() => setTab("materials")}>素材类型</button>
       </div>
-      {tab === "classes" ? <ClassLibraryPanel /> : <TagLibraryPanel />}
+      {tab === "classes" ? <ClassLibraryPanel /> : tab === "tags" ? <TagLibraryPanel /> : <MaterialTypePanel />}
     </main>
   );
 }
@@ -354,6 +355,139 @@ function TagLibraryPanel() {
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
           <section className="dataset-dialog" role="alertdialog" aria-modal="true">
             <header><div><span className="eyebrow">DELETE TAG</span><h2>删除标签“{deleteTarget.name}”？</h2><p>只删除标签库模板;数据源已使用的标签和图片标注不受影响。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
+            <footer>
+              <button className="button" onClick={() => setDeleteTarget(undefined)}>取消</button>
+              <button className="button danger" disabled={busy} onClick={() => void remove(deleteTarget)}>确认删除</button>
+            </footer>
+          </section>
+        </div>
+      )}
+    </>
+  );
+}
+
+function MaterialTypePanel() {
+  const [types, setTypes] = useState<MaterialType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [editState, setEditState] = useState<{ id: string; name: string; description: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MaterialType>();
+
+  const refresh = () => api.listMaterialTypes().then(setTypes).catch((reason: unknown) => setError(errorMessage(reason)));
+  useEffect(() => { refresh().finally(() => setLoading(false)); }, []);
+
+  const openCreate = () => {
+    setEditState(null);
+    setName(""); setDescription("");
+    setDialogOpen(true);
+  };
+
+  const openEdit = (item: MaterialType) => {
+    setEditState({ id: item.id, name: item.name, description: item.description ?? "" });
+    setDialogOpen(true);
+  };
+
+  const closeDialog = () => {
+    if (busy) return;
+    setDialogOpen(false);
+    setEditState(null);
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = (editState ? editState.name : name).trim();
+    if (!trimmed) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      if (editState) {
+        await api.updateMaterialType(editState.id, { name: trimmed, description: (editState.description || "").trim() || null });
+        setNotice(`素材类型“${trimmed}”已更新`);
+      } else {
+        await api.createMaterialType({ name: trimmed, description: description.trim() || null });
+        setNotice(`已新增素材类型“${trimmed}”`);
+      }
+      setEditState(null); setDialogOpen(false);
+      await refresh();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally { setBusy(false); }
+  };
+
+  const remove = async (item: MaterialType) => {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await api.deleteMaterialType(item.id);
+      setNotice(`已删除素材类型“${item.name}”（数据源上的引用已同步清理）`);
+      await refresh();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally { setBusy(false); setDeleteTarget(undefined); }
+  };
+
+  return (
+    <>
+      <Toast kind="error" message={error} onClose={() => setError("")} />
+      <Toast kind="success" message={notice} onClose={() => setNotice("")} />
+      <div className="header-actions">
+        <button className="button primary" onClick={openCreate}>+ 新增素材类型</button>
+      </div>
+
+      {loading ? <p className="muted">正在加载素材类型…</p> : types.length ? (
+        <div className="model-table-wrap">
+          <table className="model-table tag-library-table">
+            <thead>
+              <tr>
+                <th>素材类型</th>
+                <th>备注</th>
+                <th>更新时间</th>
+                <th className="model-table-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {types.map((item) => (
+                <tr key={item.id}>
+                  <td className="model-table-name"><button type="button" title={item.name}>{item.name}</button></td>
+                  <td title={item.description ?? undefined}>{item.description || <span className="muted">—</span>}</td>
+                  <td className="model-table-time">{formatTagTime(item.updated_at)}</td>
+                  <td className="model-table-actions">
+                    <button className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openEdit(item)}>编辑</button>
+                    <button className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => setDeleteTarget(item)}>删除</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <p className="muted">素材类型库还是空的。新增类型（如“可见光图片 / 红外视频”）后，数据源即可多选打标。</p>}
+
+      {dialogOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeDialog}>
+          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="material-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><span className="eyebrow">{editState ? "EDIT TYPE" : "NEW TYPE"}</span><h2 id="material-dialog-title">{editState ? "编辑素材类型" : "新增素材类型"}</h2></div>
+              <button className="icon-button" onClick={closeDialog} aria-label="关闭">×</button>
+            </header>
+            <form className="tag-dialog-form" onSubmit={(event) => void submit(event)}>
+              <label><span>类型名称</span><input autoFocus value={editState ? editState.name : name} placeholder="例如：可见光图片" onChange={(event) => (editState ? setEditState({ ...editState, name: event.target.value }) : setName(event.target.value))} /></label>
+              <label><span>备注</span><input value={editState ? editState.description : description} placeholder="选填" onChange={(event) => (editState ? setEditState({ ...editState, description: event.target.value }) : setDescription(event.target.value))} /></label>
+              <footer>
+                <button type="button" className="button" disabled={busy} onClick={closeDialog}>取消</button>
+                <button className="button primary" type="submit" disabled={busy || !(editState ? editState.name : name).trim()}>保存</button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
+          <section className="dataset-dialog" role="alertdialog" aria-modal="true">
+            <header><div><span className="eyebrow">DELETE TYPE</span><h2>删除素材类型“{deleteTarget.name}”？</h2><p>数据源上已选择的该类型会同步移除。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
             <footer>
               <button className="button" onClick={() => setDeleteTarget(undefined)}>取消</button>
               <button className="button danger" disabled={busy} onClick={() => void remove(deleteTarget)}>确认删除</button>
