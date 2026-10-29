@@ -83,7 +83,7 @@ describe("DatasetHome source sync dialog", () => {
     });
     await act(async () => {});
 
-    await clickButton("添加图片");
+    await clickButton("添加");
     await clickButton("从数据源同步");
     expect(api.listSourceDatasets).toHaveBeenCalled();
     expect(api.listSourceTags).toHaveBeenCalledWith("sd-1");

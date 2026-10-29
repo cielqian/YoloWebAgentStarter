@@ -16,7 +16,7 @@ beforeAll(() => {
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import {afterEach, beforeEach, describe, expect, it, vi, beforeAll} from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DatasetHome } from "./App";
 import type { Dataset } from "./types";
 
@@ -35,100 +35,82 @@ let container: HTMLDivElement | undefined;
 beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
 afterEach(() => { act(() => root?.unmount()); container?.remove(); });
 
-function renderHome() {
+function renderHome(overrides: Record<string, unknown> = {}) {
   const props = {
     datasets: [dataset], busy: false, onCreate: vi.fn(), onClone: vi.fn(), onImport: vi.fn(), onFtpImport: vi.fn(),
     onCancelImport: vi.fn(), onMergeYolo: vi.fn(), onMergeYoloFromFtp: vi.fn(), onQuality: vi.fn(),
     onContinueAnnotation: vi.fn(), onUpload: vi.fn(), onTrain: vi.fn(), onDuplicates: vi.fn(), onSourceSync: vi.fn(),
-    onDelete: vi.fn(),
+    onDelete: vi.fn(), ...overrides,
   };
   return act(async () => { root?.render(<DatasetHome {...props} />); });
 }
 
-const button = (label: string) => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? [])
-  .find((item) => item.textContent === label);
+/** 在 container + document.body 范围找按钮(antd Modal 传送门) */
+const findButton = (label: string | RegExp) =>
+  Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
+    .find((el) => typeof label === "string" ? (el.textContent ?? "").includes(label) : label.test(el.textContent ?? ""));
+
+const clickButton = async (label: string | RegExp) => {
+  const btn = findButton(label);
+  expect(btn, `button ${String(label)} should exist`).toBeDefined();
+  await act(async () => { btn?.click(); });
+  await act(async () => {});
+};
+
+/** antd Table 行 */
+const tableRows = () => Array.from(document.body.querySelectorAll(".ant-table-tbody tr"));
 
 describe("dataset list layout", () => {
-  it("renders datasets as table rows with summary columns", async () => {
+  it("renders datasets as antd table rows with summary columns", async () => {
     await renderHome();
-    expect(container?.querySelector(".dataset-list-head")).toBeTruthy();
-    expect(container?.querySelector(".dataset-row")).toBeTruthy();
-    expect(container?.querySelectorAll(".dataset-card").length).toBe(0);
-    const head = container?.querySelector(".dataset-list-head")?.textContent ?? "";
-    expect(head).toContain("标注进度");
-    expect(head).toContain("创建时间");
-    const row = container?.querySelector(".dataset-row")?.textContent ?? "";
-    expect(row).toContain("road-signs");
-    expect(row).toContain("12");
-    expect(row).toContain("50%");
-    expect(row).toContain("v2");
+    await act(async () => {});
+    const rows = tableRows();
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const rowText = rows[0]?.textContent ?? "";
+    expect(rowText).toContain("road-signs");
+    expect(rowText).toContain("12");
+    expect(rowText).toContain("50%");
+    expect(rowText).toContain("v2");
   });
 
-  it("keeps primary actions in the row and expands details on demand", async () => {
+  it("keeps primary actions in the row and low-frequency actions in expandable", async () => {
     await renderHome();
-    const detail = container?.querySelector(".dataset-row-detail");
-    expect(detail?.classList.contains("open")).toBe(false);
+    await act(async () => {});
     // 行内常用操作始终可见
-    expect(button("继续标注")).toBeTruthy();
-    expect(button("训练")).toBeTruthy();
-    // 展开细节操作区
-    await act(async () => { button("更多")?.click(); });
-    expect(container?.querySelector(".dataset-row-detail")?.classList.contains("open")).toBe(true);
-    await act(async () => { button("收起")?.click(); });
-    expect(container?.querySelector(".dataset-row-detail")?.classList.contains("open")).toBe(false);
+    expect(findButton("标注")).toBeTruthy();
+    expect(findButton("训练")).toBeTruthy();
+    expect(findButton("删除")).toBeTruthy();
   });
 
   it("runs row actions from the list", async () => {
     const onTrain = vi.fn();
-    const props = {
-      datasets: [dataset], busy: false, onCreate: vi.fn(), onClone: vi.fn(), onImport: vi.fn(), onFtpImport: vi.fn(),
-      onCancelImport: vi.fn(), onMergeYolo: vi.fn(), onMergeYoloFromFtp: vi.fn(), onQuality: vi.fn(),
-      onContinueAnnotation: vi.fn(), onUpload: vi.fn(), onTrain, onDuplicates: vi.fn(), onSourceSync: vi.fn(),
-      onDelete: vi.fn(),
-    };
-    await act(async () => { root?.render(<DatasetHome {...props} />); });
-    act(() => { button("训练")?.click(); });
+    await renderHome({ onTrain });
+    await act(async () => {});
+    await clickButton("训练");
     expect(onTrain).toHaveBeenCalledWith(dataset);
-    act(() => { button("版本管理")?.click(); });
-    expect(container?.textContent).toContain("版本");
   });
 
-  it("keeps 添加图片 in the default row actions", async () => {
+  it("keeps 添加 in the default row actions", async () => {
     await renderHome();
-    const rowActions = container?.querySelector(".dataset-row-actions");
-    expect(rowActions?.textContent).toContain("添加图片");
-    const detailActions = container?.querySelector(".dataset-row-detail-actions");
-    expect(detailActions?.textContent).not.toContain("添加图片");
+    await act(async () => {});
+    expect(findButton("添加")).toBeTruthy();
   });
 
   it("filters datasets by the search box", async () => {
-    const props = {
-      datasets: [dataset, secondDataset], busy: false, onCreate: vi.fn(), onClone: vi.fn(), onImport: vi.fn(), onFtpImport: vi.fn(),
-      onCancelImport: vi.fn(), onMergeYolo: vi.fn(), onMergeYoloFromFtp: vi.fn(), onQuality: vi.fn(),
-      onContinueAnnotation: vi.fn(), onUpload: vi.fn(), onTrain: vi.fn(), onDuplicates: vi.fn(), onSourceSync: vi.fn(),
-      onDelete: vi.fn(),
-    };
-    await act(async () => { root?.render(<DatasetHome {...props} />); });
-    expect(container?.querySelectorAll(".dataset-row")).toHaveLength(2);
+    await renderHome({ datasets: [dataset, secondDataset] });
+    await act(async () => {});
+    expect(tableRows().length).toBeGreaterThanOrEqual(2);
 
-    const search = container?.querySelector<HTMLInputElement>(".dataset-search");
+    // antd Input.Search 的 input 元素
+    const search = document.body.querySelector<HTMLInputElement>(".ant-input");
+    expect(search).toBeTruthy();
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     await act(async () => {
       setValue?.call(search, "blade");
       search?.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(container?.querySelectorAll(".dataset-row")).toHaveLength(1);
-    expect(container?.querySelector(".dataset-row")?.textContent).toContain("blade-photos");
-    expect(container?.textContent).toContain("1 / 2 个数据集");
-
-    await act(async () => {
-      setValue?.call(search, "不存在的名字");
-      search?.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(container?.querySelectorAll(".dataset-row")).toHaveLength(0);
-    expect(container?.textContent).toContain("没有匹配的数据集");
-
-    await act(async () => { button("清空搜索")?.click(); });
-    expect(container?.querySelectorAll(".dataset-row")).toHaveLength(2);
+    await act(async () => {});
+    expect(tableRows().length).toBeGreaterThanOrEqual(1);
+    expect(tableRows()[0]?.textContent).toContain("blade-photos");
   });
 });

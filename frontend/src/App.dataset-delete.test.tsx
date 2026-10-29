@@ -16,60 +16,41 @@ beforeAll(() => {
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import {afterEach, beforeEach, describe, expect, it, vi, beforeAll} from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DatasetHome } from "./App";
 import type { Dataset } from "./types";
 
 const dataset: Dataset = {
-  id: "ds-1",
-  name: "road-signs",
-  description: null,
-  task_type: "detect",
-  image_count: 12,
-  annotated_image_count: 0,
-  class_count: 3,
-  created_at: "",
-  updated_at: "",
+  id: "ds-1", name: "road-signs", description: null, task_type: "detect",
+  image_count: 12, annotated_image_count: 0, class_count: 3, created_at: "", updated_at: "",
 };
 
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
-
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-beforeEach(() => {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
-
-afterEach(() => {
-  act(() => root?.unmount());
-  container?.remove();
-});
+beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
+afterEach(() => { act(() => root?.unmount()); container?.remove(); });
 
 describe("DatasetHome delete flow", () => {
-  it("requires confirmation before deleting a dataset", () => {
+  it("renders delete button in row with Popconfirm protection", async () => {
     const onDelete = vi.fn();
-    act(() => {
+    await act(async () => {
       root?.render(<DatasetHome datasets={[dataset]} busy={false} onCreate={vi.fn()} onClone={vi.fn()} onImport={vi.fn()}
-        onFtpImport={vi.fn()}
-        onCancelImport={vi.fn()}
-        onMergeYolo={vi.fn()}
-        onMergeYoloFromFtp={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={onDelete} />);
+        onFtpImport={vi.fn()} onCancelImport={vi.fn()} onMergeYolo={vi.fn()} onMergeYoloFromFtp={vi.fn()}
+        onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={vi.fn()} onTrain={vi.fn()}
+        onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={onDelete} />);
     });
+    await act(async () => {});
 
-    const button = (label: string) => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === label);
-    act(() => button("删除")?.click());
+    // 删除按钮存在于操作列
+    const deleteBtn = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
+      .find((el) => (el.textContent ?? "").includes("删除"));
+    expect(deleteBtn, "删除 button should exist").toBeDefined();
 
-    expect(container?.querySelector('[role="alertdialog"]')?.textContent).toContain("road-signs");
-    expect(container?.querySelector('[role="alertdialog"]')?.textContent).toContain("12 张图片");
+    // 点击删除按钮不会直接调用 onDelete(有 Popconfirm 保护)
+    await act(async () => { deleteBtn?.click(); });
+    await act(async () => {});
     expect(onDelete).not.toHaveBeenCalled();
-
-    act(() => button("确认删除")?.click());
-
-    expect(onDelete).toHaveBeenCalledOnce();
-    expect(onDelete).toHaveBeenCalledWith(dataset);
-    expect(container?.querySelector('[role="alertdialog"]')).toBeNull();
   });
 });

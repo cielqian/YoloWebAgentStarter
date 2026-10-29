@@ -49,7 +49,7 @@ describe("DatasetHome image upload", () => {
         onMergeYoloFromFtp={vi.fn()} onQuality={vi.fn()} onContinueAnnotation={vi.fn()} onUpload={onUpload} onTrain={vi.fn()} onDuplicates={vi.fn()} onSourceSync={vi.fn()} onDelete={vi.fn()} />);
     });
 
-    act(() => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "添加图片")?.click());
+    act(() => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "添加")?.click());
     expect(container?.querySelector('[role="dialog"]')?.textContent).toContain("添加图片到“road-signs”");
 
     const input = container?.querySelector<HTMLInputElement>('input[type="file"][multiple]');
