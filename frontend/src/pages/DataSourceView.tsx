@@ -186,10 +186,6 @@ export function DataSourceView() {
         />
       ) : (
         <>
-          <Flex justify="flex-end" gap={8} style={{ marginBottom: 16 }}>
-            <AntdButton icon={<ReloadOutlined />} disabled={loading} onClick={() => void load()}>刷新</AntdButton>
-            <AntdButton type="primary" icon={<PlusOutlined />} onClick={() => { setCreateName(""); setCreateDescription(""); setCreateOpen(true); }}>新建数据集</AntdButton>
-          </Flex>
           {error ? <Alert type="error" showIcon closable title={error} style={{ marginBottom: 12 }} /> : null}
           {notice ? <Alert type="success" showIcon closable title={notice} style={{ marginBottom: 12 }} /> : null}
           {loading ? (
@@ -203,6 +199,18 @@ export function DataSourceView() {
               pagination={false}
               size="middle"
               onRow={(record) => ({ onClick: () => setActiveId(record.id), style: { cursor: "pointer" } })}
+              title={() => (
+                <Flex justify="space-between" align="center">
+                  <Space size={8}>
+                    <strong>所有数据源</strong>
+                    <Typography.Text type="secondary">{datasets.length} 个</Typography.Text>
+                  </Space>
+                  <Space size={8}>
+                    <AntdButton icon={<ReloadOutlined />} disabled={loading} onClick={() => void load()}>刷新</AntdButton>
+                    <AntdButton type="primary" icon={<PlusOutlined />} onClick={() => { setCreateName(""); setCreateDescription(""); setCreateOpen(true); }}>新建数据集</AntdButton>
+                  </Space>
+                </Flex>
+              )}
             />
           ) : (
             <Empty description="还没有数据集。新建一个数据集后，可以上传图片或从 FTP 目录同步，再为图片打标签管理。">
