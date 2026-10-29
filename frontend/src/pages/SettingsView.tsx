@@ -442,7 +442,7 @@ export function SettingsView({
       </header>
       <div className="settings-section-layout">
         <Tabs
-          tabPlacement="left"
+          tabPlacement="start"
           activeKey={tab}
           onChange={(key) => onTabChange(key as SettingsTab)}
           items={navItems.map((item) => ({

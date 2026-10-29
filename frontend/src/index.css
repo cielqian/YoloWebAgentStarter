@@ -833,3 +833,27 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .material-select-option input { margin: 0; }
 .source-material-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .source-material-chips em { padding: 1px 8px; border-radius: 999px; background: #eef3ff; color: #3157d5; font-size: 10px; font-style: normal; font-weight: 650; }
+
+/* antd Layout 外壳 */
+.starter-antd-layout { min-height: 100vh; }
+.starter-antd-sider { position: sticky; top: 0; z-index: 10; height: 100vh; overflow-y: auto; overscroll-behavior: contain; }
+.starter-antd-sider .ant-layout-sider-children { display: flex; flex-direction: column; }
+.starter-antd-logo { display: flex; align-items: center; gap: 10px; padding: 20px 16px 12px; }
+.starter-antd-logo-badge { display: grid; place-items: center; min-width: 36px; height: 36px; padding: 0 6px; border-radius: 9px; color: #fff; background: #3157d5; font-size: 13px; font-weight: 800; letter-spacing: .04em; }
+.starter-antd-logo-text { color: #273248; font-size: 14px; font-weight: 750; }
+.starter-antd-menu { flex: 1; border-inline-end: 0 !important; padding: 0 8px 12px; }
+.starter-antd-menu .ant-menu-item { border-radius: 8px; margin-inline: 4px; width: calc(100
+/* antd Layout 外壳 */
+.starter-antd-layout { min-height: 100vh; }
+.starter-antd-sider { position: sticky; top: 0; z-index: 10; height: 100vh; overflow-y: auto; overscroll-behavior: contain; }
+.starter-antd-sider .ant-layout-sider-children { display: flex; flex-direction: column; }
+.starter-antd-logo { display: flex; align-items: center; gap: 10px; padding: 20px 16px 12px; }
+.starter-antd-logo-badge { display: grid; place-items: center; min-width: 36px; height: 36px; padding: 0 6px; border-radius: 9px; color: #fff; background: #3157d5; font-size: 13px; font-weight: 800; letter-spacing: .04em; }
+.starter-antd-logo-text { color: #273248; font-size: 14px; font-weight: 750; }
+.starter-antd-menu { flex: 1; border-inline-end: 0 !important; padding: 0 8px 12px; }
+.starter-antd-menu .ant-menu-item { border-radius: 8px; margin-inline: 4px; width: calc(100% - 8px); }
+.starter-antd-menu .ant-menu-item-group-title { padding: 4px 16px 1px; color: #a1a9b9; font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.starter-antd-header { display: flex; align-items: center; height: 48px; padding: 0 24px; border-bottom: 1px solid #e7eaf0; background: #fff; line-height: normal; }
+.starter-antd-header-title { color: #536077; font-size: 13px; font-weight: 650; }
+.starter-antd-content { overflow-x: auto; }
+.focus-mode .starter-antd-sider, .focus-mode .starter-antd-header { display: none; }
