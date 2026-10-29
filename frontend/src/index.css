@@ -855,9 +855,12 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .starter-antd-menu { border-inline-end: 0 !important; padding: 0 8px 12px; }
 .starter-antd-menu .ant-menu-item { border-radius: 8px; margin-inline: 4px; width: calc(100% - 8px); }
 .starter-antd-menu .ant-menu-item-group-title { padding: 4px 16px 1px; color: #a1a9b9; font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
-.starter-antd-header { position: sticky; top: 0; z-index: 9; display: flex; align-items: center; height: 48px; padding: 0 24px; border-bottom: 1px solid #e7eaf0; background: #f5f7fc; line-height: normal; }
+.starter-antd-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; height: 48px; padding: 0 24px; border-bottom: 1px solid #e7eaf0; background: #f5f7fc; line-height: normal; flex: none; }
 .starter-antd-header-title { color: #273248; font-size: 14px; font-weight: 750; }
 .starter-antd-header-desc { color: #7d8799; font-size: 12px; }
 .starter-antd-header-desc { color: #8994a8; font-size: 12px; }
-.starter-antd-content { overflow-x: auto; }
+.starter-antd-content { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0; }
 .focus-mode .starter-antd-sider, .focus-mode .starter-antd-header { display: none; }
+
+/* 内层 Layout:固定视口高,Header 不动,Content 独立滚动 */
+.starter-antd-layout > .ant-layout { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
