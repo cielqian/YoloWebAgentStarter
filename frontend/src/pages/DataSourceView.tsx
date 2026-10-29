@@ -196,7 +196,11 @@ export function DataSourceView() {
               columns={columns}
               dataSource={datasets}
               loading={loading}
-              pagination={false}
+              pagination={{
+                showSizeChanger: false,
+                showTotal: (total) => `共 ${total} 个`,
+                pageSize: 10,
+              }}
               size="middle"
               onRow={(record) => ({ onClick: () => setActiveId(record.id), style: { cursor: "pointer" } })}
               title={() => (
