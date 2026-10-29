@@ -5,8 +5,12 @@ import {
   Empty as AntdEmpty,
   Flex,
   Input as AntdInput,
+  Modal,
   Popconfirm,
+  Radio,
+  Segmented,
   Progress,
+  Select as AntdSelect,
   Space,
   Table,
   Tag as AntdTag,
@@ -950,28 +954,56 @@ export function DatasetHome(props: {
     </section>
     {autoAnnotationTarget && <AutoAnnotationModal dataset={autoAnnotationTarget} onClose={() => setAutoAnnotationTarget(undefined)} onChanged={() => props.onAutoAnnotationComplete?.()} />}
     {dialog === "import" && <ImportCenterModal busy={props.busy} onClose={closeDialog} onArchiveImport={props.onImport} onFtpImport={props.onFtpImport} onVideoCompleted={(task) => props.onVideoImportComplete?.(task)} />}
-    {dialog === "create" && <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={closeDialog}>
-      <section className="dataset-dialog data-exchange-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="data-exchange-header"><div><span className="eyebrow">NEW DATASET</span><h2 id="dataset-dialog-title">新建数据集</h2><p>创建空白数据集，或从现有数据集的某个版本克隆。</p></div><button className="icon-button" onClick={closeDialog} aria-label="关闭">×</button></header>
-        <div className="upload-mode-switch" role="tablist" aria-label="创建方式">
-          <button role="tab" aria-selected={createMode === "blank"} className={createMode === "blank" ? "active" : ""} onClick={() => setCreateMode("blank")}>创建空白数据集</button>
-          <button role="tab" aria-selected={createMode === "clone"} className={createMode === "clone" ? "active" : ""} onClick={() => { setCreateMode("clone"); if (!cloneSourceId && props.datasets[0]) setCloneSourceId(props.datasets[0].id); }}>从现有版本克隆</button>
-        </div>
-        {createMode === "blank" ? (
-          <div className="exchange-fields"><label>数据集名称<input value={name} placeholder="例如：my-dataset" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>产出模型名称（选填）<input value={createModelName} placeholder="例如：blade-detector；训练产出的模型默认用此命名" onChange={(event) => setCreateModelName(event.target.value)} /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option><option value="pose">关键点检测（Pose）</option></select></label>{taskType === "pose" && <><label>关键点数量<input type="number" min={1} max={133} value={kptCount} onChange={(event) => setKptCount(event.target.value)} /></label><label>关键点维度<select value={kptDim} onChange={(event) => setKptDim(event.target.value)}><option value="3">x, y, 可见性（推荐）</option><option value="2">x, y</option></select></label></>}</div>
-        ) : (
-          <>
-            <div className="exchange-fields">
-              <label>源数据集<select value={cloneSourceId} disabled={!props.datasets.length || cloneLoading} onChange={(event) => { setCloneSourceId(event.target.value); setCloneVersionId(""); }}>{props.datasets.map((item) => <option key={item.id} value={item.id}>{item.name}{item.latest_version_number != null ? `（最新 ${item.latest_version_label || `v${item.latest_version_number}`}）` : "（未创建版本，克隆当前工作区）"}</option>)}</select></label>
-              {cloneSourceHasVersions && <label>版本<select value={cloneVersionId} disabled={cloneLoading || !cloneVersions?.length} onChange={(event) => { const version = cloneVersions?.find((item) => item.id === event.target.value); setCloneVersionId(event.target.value); if (version && cloneSource) setName(`${cloneSource.name}-v${version.version_number}`); }}>{cloneVersions?.map((version) => <option key={version.id} value={version.id}>{version.version_label || `v${version.version_number}`}{version.note ? ` · ${version.note}` : ""} · {version.image_count} 张图片</option>)}</select></label>}
-              <label>新数据集名称<input value={name} placeholder="例如：my-dataset-v1" onChange={(event) => setName(event.target.value)} /></label>
-            </div>
-            {!props.datasets.length ? <p className="muted">还没有可克隆的数据集，先创建或导入一个。</p> : cloneLoading ? <p className="muted">正在加载版本…</p> : !cloneSourceHasVersions ? <p className="muted">该数据集还没有版本，将克隆其当前工作区（图片、类别与标注的实时状态）。</p> : null}
-          </>
-        )}
-        <footer className="data-exchange-footer"><span>{createMode === "clone" ? "任务类型与类别会沿用源数据集。" : taskType === "pose" ? "pose 数据集的关键点数量创建后不可修改，导出训练时会写入 kpt_shape。" : "创建后可从卡片继续导入图片或已有数据。"}</span><div><button className="button" onClick={closeDialog}>取消</button><button className="button primary" disabled={props.busy || !name.trim() || (createMode === "blank" && taskType === "pose" && !(Number(kptCount) >= 1 && Number(kptCount) <= 133)) || (createMode === "clone" && (!cloneSourceId || (cloneSourceHasVersions && !cloneVersionId)))} onClick={create}>{createMode === "clone" ? "克隆数据集" : "创建数据集"}</button></div></footer>
-      </section>
-    </div>}
+    <Modal
+      title="新建数据集"
+      open={dialog === "create"}
+      onCancel={closeDialog}
+      width={520}
+      footer={null}
+      destroyOnHidden
+    >
+      <Segmented
+        value={createMode}
+        onChange={(mode) => { setCreateMode(mode as "blank" | "clone"); if (mode === "clone" && !cloneSourceId && props.datasets[0]) setCloneSourceId(props.datasets[0].id); }}
+        options={[{ value: "blank", label: "创建空白" }, { value: "clone", label: "从版本克隆" }]}
+        block
+        style={{ marginBottom: 16 }}
+      />
+      {createMode === "blank" ? (
+        <Flex vertical gap={12}>
+          <AntdInput addonBefore="名称" value={name} placeholder="my-dataset" onChange={(e) => setName(e.target.value)} autoFocus />
+          <AntdInput addonBefore="模型名" value={createModelName} placeholder="选填" onChange={(e) => setCreateModelName(e.target.value)} />
+          <AntdSelect value={taskType} onChange={(v) => setTaskType(v)} options={[
+            { value: "detect", label: "目标检测" }, { value: "segment", label: "实例分割" },
+            { value: "obb", label: "旋转框" }, { value: "classify", label: "图像分类" }, { value: "pose", label: "关键点检测" },
+          ]} style={{ width: "100%" }} />
+          {taskType === "pose" && (
+            <Flex gap={12}>
+              <AntdInput type="number" addonBefore="关键点数" min={1} max={133} value={kptCount} onChange={(e) => setKptCount(e.target.value)} style={{ flex: 1 }} />
+              <AntdSelect value={kptDim} onChange={setKptDim} options={[{ value: "3", label: "x,y,可见性" }, { value: "2", label: "x,y" }]} style={{ width: 140 }} />
+            </Flex>
+          )}
+        </Flex>
+      ) : (
+        <Flex vertical gap={12}>
+          <AntdSelect value={cloneSourceId || undefined} placeholder="选择源数据集" disabled={!props.datasets.length || cloneLoading}
+            onChange={(v) => { setCloneSourceId(v); setCloneVersionId(""); }}
+            options={props.datasets.map((item) => ({ value: item.id, label: item.name }))}
+            style={{ width: "100%" }} />
+          {cloneSourceHasVersions && (
+            <AntdSelect value={cloneVersionId || undefined} placeholder="选择版本" disabled={cloneLoading || !cloneVersions?.length}
+              onChange={(v) => { setCloneVersionId(v); const ver = cloneVersions?.find((i) => i.id === v); if (ver && cloneSource) setName(`${cloneSource.name}-v${ver.version_number}`); }}
+              options={cloneVersions?.map((v) => ({ value: v.id, label: `${v.version_label || `v${v.version_number}`} · ${v.image_count} 张` }))}
+              style={{ width: "100%" }} />
+          )}
+          <AntdInput addonBefore="新名称" value={name} placeholder="my-dataset-v1" onChange={(e) => setName(e.target.value)} />
+        </Flex>
+      )}
+      <Flex justify="flex-end" gap={8} style={{ marginTop: 16 }}>
+        <AntdButton onClick={closeDialog}>取消</AntdButton>
+        <AntdButton type="primary" disabled={props.busy || !name.trim()} onClick={create}>{createMode === "clone" ? "克隆" : "创建"}</AntdButton>
+      </Flex>
+    </Modal>
     {uploadTarget && <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={closeUpload}>
       <section className="dataset-dialog data-exchange-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-upload-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
         <header className="data-exchange-header"><div><span className="eyebrow">ADD IMAGES</span><h2 id="dataset-upload-dialog-title">添加图片到“{uploadTarget.name}”</h2><p>从本地上传或数据源同步，图片会复制进当前数据集。</p></div><button className="icon-button" onClick={closeUpload} aria-label="关闭">×</button></header>
@@ -1062,32 +1094,54 @@ export function DatasetHome(props: {
         </>}
       </section>
     </div>}
-    {exportTarget && <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={() => setExportTarget(undefined)}>
-      <section className="dataset-dialog data-exchange-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-export-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="data-exchange-header"><div><span className="eyebrow">EXPORT CENTER</span><h2 id="dataset-export-dialog-title">导出“{exportTarget.name}”</h2><p>导出会使用当前已保存的图片 split、类别和标注。</p></div><button className="icon-button" onClick={() => setExportTarget(undefined)} aria-label="关闭">×</button></header>
-        <div className="exchange-summary"><span>任务类型<strong>{taskDescription(exportTarget.task_type)}</strong></span><span>图片<strong>{exportTarget.image_count} 张</strong></span><span>已标注<strong>{exportTarget.annotated_image_count} 张</strong></span></div>
-        <section><span className="exchange-label">导出格式</span><div className="format-option-grid"><button className={exportFormat === "yolo" ? "format-option selected" : "format-option"} onClick={() => setExportFormat("yolo")}><strong>YOLO ZIP</strong><span>标准 YOLO 目录、标签与 data.yaml</span></button>{["detect", "segment"].includes(exportTarget.task_type) && <button className={exportFormat === "coco" ? "format-option selected" : "format-option"} onClick={() => setExportFormat("coco")}><strong>COCO ZIP</strong><span>annotations.json 与原始图片</span></button>}</div></section>
-        <footer className="data-exchange-footer"><span>下载文件会由浏览器保存到默认下载目录。</span><div><button className="button" onClick={() => setExportTarget(undefined)}>取消</button><a className="button primary" href={exportUrl ?? undefined} onClick={() => setExportTarget(undefined)}>下载 {exportFormat.toUpperCase()} ZIP</a></div></footer>
-      </section>
-    </div>}
-    {renameTarget && (
-      <div className="modal-backdrop" role="presentation" onMouseDown={() => setRenameTarget(undefined)}>
-        <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="dataset-basic-info-title" onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><span className="eyebrow">BASIC INFO</span><h2 id="dataset-basic-info-title">基础信息维护 · {renameTarget.name}</h2><p className="muted">名称用于列表展示；产出模型名称将作为该数据集训练产出模型的默认命名（未填写时使用任务名）。</p></div><button className="icon-button" onClick={() => setRenameTarget(undefined)} aria-label="关闭">×</button></header>
-          {dialogError && <p className="annotation-form-error">{dialogError}</p>}
-          <label><span>数据集名称</span><input value={renameName} autoFocus onChange={(event) => setRenameName(event.target.value)} /></label>
-          <label><span>产出模型名称</span><input value={renameModelName} placeholder="例如：blade-detector" onChange={(event) => setRenameModelName(event.target.value)} /></label>
-          <footer><button className="button" disabled={renameBusy} onClick={() => setRenameTarget(undefined)}>取消</button><button className="button primary" disabled={renameBusy || !renameName.trim()} onClick={() => void submitBasicInfo()}>保存</button></footer>
-        </section>
-      </div>
-    )}
-
-    {deleteTarget && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleteTarget(undefined)}>
-      <section className="dataset-dialog dataset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dataset-delete-dialog-title" aria-describedby="dataset-delete-dialog-description" onMouseDown={(event) => event.stopPropagation()}>
-        <header><div><span className="eyebrow">DELETE DATASET</span><h2 id="dataset-delete-dialog-title">删除数据集“{deleteTarget.name}”？</h2><p id="dataset-delete-dialog-description">这会永久删除该数据集的 {deleteTarget.image_count} 张图片、类别和标注，且无法撤销。</p></div><button className="icon-button" onClick={() => setDeleteTarget(undefined)} aria-label="关闭">×</button></header>
-        <footer><button className="button" disabled={props.busy} onClick={() => setDeleteTarget(undefined)}>取消</button><button className="button danger" disabled={props.busy} onClick={() => { props.onDelete(deleteTarget); setDeleteTarget(undefined); }}>确认删除</button></footer>
-      </section>
-    </div>}
+    <Modal
+      title={`导出"${exportTarget?.name ?? ""}"`}
+      open={Boolean(exportTarget)}
+      onCancel={() => setExportTarget(undefined)}
+      footer={null}
+      destroyOnHidden
+    >
+      <Flex gap={16} style={{ marginBottom: 16 }}>
+        <span>图片 <strong>{exportTarget?.image_count}</strong> 张</span>
+        <span>已标注 <strong>{exportTarget?.annotated_image_count}</strong> 张</span>
+      </Flex>
+      <Radio.Group value={exportFormat} onChange={(e) => setExportFormat(e.target.value)} style={{ marginBottom: 16 }}>
+        <Radio value="yolo">YOLO ZIP</Radio>
+        {exportTarget && ["detect", "segment"].includes(exportTarget.task_type) && <Radio value="coco">COCO ZIP</Radio>}
+      </Radio.Group>
+      <Flex justify="flex-end" gap={8}>
+        <AntdButton onClick={() => setExportTarget(undefined)}>取消</AntdButton>
+        <AntdButton type="primary" href={exportUrl ?? undefined} onClick={() => setExportTarget(undefined)}>下载 {exportFormat.toUpperCase()} ZIP</AntdButton>
+      </Flex>
+    </Modal>
+    <Modal
+      title={`基础信息维护 · ${renameTarget?.name ?? ""}`}
+      open={Boolean(renameTarget)}
+      onCancel={() => setRenameTarget(undefined)}
+      footer={null}
+      destroyOnHidden
+    >
+      {dialogError && <Alert type="error" message={dialogError} style={{ marginBottom: 12 }} />}
+      <Flex vertical gap={12}>
+        <AntdInput addonBefore="数据集名称" value={renameName} onChange={(e) => setRenameName(e.target.value)} autoFocus />
+        <AntdInput addonBefore="产出模型名" value={renameModelName} placeholder="选填，如 blade-detector" onChange={(e) => setRenameModelName(e.target.value)} />
+      </Flex>
+      <Flex justify="flex-end" gap={8} style={{ marginTop: 16 }}>
+        <AntdButton onClick={() => setRenameTarget(undefined)}>取消</AntdButton>
+        <AntdButton type="primary" loading={renameBusy} disabled={!renameName.trim()} onClick={() => void submitBasicInfo()}>保存</AntdButton>
+      </Flex>
+    </Modal>
+    <Modal
+      title={`删除数据集"${deleteTarget?.name ?? ""}"？`}
+      open={Boolean(deleteTarget)}
+      onCancel={() => setDeleteTarget(undefined)}
+      okText="确认删除"
+      okButtonProps={{ danger: true, disabled: props.busy }}
+      cancelText="取消"
+      onOk={() => { props.onDelete(deleteTarget!); setDeleteTarget(undefined); }}
+    >
+      <Alert type="warning" showIcon message={`这会永久删除该数据集的 ${deleteTarget?.image_count ?? 0} 张图片、类别和标注，且无法撤销。`} />
+    </Modal>
     {versionTarget && <DatasetVersionDialog dataset={versionTarget} onClose={() => setVersionTarget(undefined)} onChanged={() => props.onVersionsChange?.()} />}
   </main>;
 }
