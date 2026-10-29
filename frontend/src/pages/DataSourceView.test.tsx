@@ -2,7 +2,21 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi, beforeAll} from "vitest";
+// antd 组件在 jsdom 里需要的浏览器 API mock
+beforeAll(() => {
+  if (!window.matchMedia) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: (query: string) => ({ matches: false, media: query, onchange: null, addListener: () => undefined, removeListener: () => undefined, addEventListener: () => undefined, removeEventListener: () => undefined, dispatchEvent: () => false }),
+    });
+  }
+  if (!window.ResizeObserver) {
+    class ResizeObserverMock { observe() {} unobserve() {} disconnect() {} }
+    (window as unknown as { ResizeObserver: object }).ResizeObserver = ResizeObserverMock;
+  }
+});
+
 import { DataSourceView } from "./DataSourceView";
 import type { SourceImage } from "../types";
 

@@ -3,7 +3,6 @@ import {
   Alert,
   App as AntdApp,
   Button as AntdButton,
-  Card,
   Empty,
   Flex,
   Form as AntdForm,
@@ -11,8 +10,10 @@ import {
   Modal,
   Popconfirm,
   Space,
+  Table,
   Tag as AntdTag,
   Typography,
+  type TableProps,
 } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api, apiUrl, type FtpSyncProgressEvent } from "../api/client";
@@ -154,6 +155,27 @@ export function DataSourceView() {
 
   const active = datasets.find((item) => item.id === activeId);
 
+  const columns: TableProps<SourceDataset>["columns"] = [
+    { title: "名称", dataIndex: "name", key: "name", render: (_, item) => (
+      <Space size={4}>
+        <strong>{item.name}</strong>
+        {item.material_types?.map((type) => <AntdTag key={type}>{type}</AntdTag>)}
+      </Space>
+    ) },
+    { title: "描述", dataIndex: "description", key: "description", ellipsis: true, render: (value: string | null) => value || <Typography.Text type="secondary">—</Typography.Text> },
+    { title: "图片", dataIndex: "image_count", key: "image_count", width: 80, render: (value: number) => <Typography.Text style={{ fontVariantNumeric: "tabular-nums", fontWeight: 650 }}>{value}</Typography.Text> },
+    { title: "标签", dataIndex: "tag_count", key: "tag_count", width: 80, render: (value: number) => <Typography.Text style={{ fontVariantNumeric: "tabular-nums", fontWeight: 650 }}>{value}</Typography.Text> },
+    { title: "操作", key: "actions", width: 160, render: (_, item) => (
+      <Space size="small" onClick={(event) => event.stopPropagation()}>
+        <AntdButton type="link" size="small" onClick={() => setActiveId(item.id)}>打开</AntdButton>
+        <AntdButton type="link" size="small" disabled={busy} onClick={() => { setRenameTarget(item); setRenameName(item.name); setRenameMaterials(item.material_types ?? []); }}>编辑</AntdButton>
+        <Popconfirm title={`删除数据集"${item.name}"？`} description={`其中 ${item.image_count} 张图片、标签和关联文件会被永久删除，且无法撤销。`} okText="确认删除" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => void submitDelete(item)}>
+          <AntdButton type="link" size="small" danger disabled={busy}>删除</AntdButton>
+        </Popconfirm>
+      </Space>
+    ) },
+  ];
+
   return (
     <main className="source-page">
       {active ? (
@@ -173,38 +195,15 @@ export function DataSourceView() {
           {loading ? (
             <Typography.Paragraph type="secondary">正在加载数据集…</Typography.Paragraph>
           ) : datasets.length ? (
-            <Flex wrap gap={12} align="stretch">
-              {datasets.map((item) => (
-                <Card
-                  key={item.id}
-                  size="small"
-                  style={{ width: 300 }}
-                  title={item.name}
-                  extra={
-                    <Space size="small">
-                      <AntdButton type="link" size="small" onClick={() => setActiveId(item.id)}>打开</AntdButton>
-                      <AntdButton type="link" size="small" disabled={busy} onClick={() => { setRenameTarget(item); setRenameName(item.name); setRenameMaterials(item.material_types ?? []); }}>编辑</AntdButton>
-                      <Popconfirm title={`删除数据集"${item.name}"？`} description={`其中 ${item.image_count} 张图片、标签和关联文件会被永久删除，且无法撤销。`} okText="确认删除" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => void submitDelete(item)}>
-                        <AntdButton type="link" size="small" danger disabled={busy}>删除</AntdButton>
-                      </Popconfirm>
-                    </Space>
-                  }
-                >
-                  <p style={{ margin: "0 0 8px", minHeight: 18 }}>
-                    {item.description || <Typography.Text type="secondary">—</Typography.Text>}
-                  </p>
-                  {item.material_types?.length ? (
-                    <Space size={4} wrap style={{ marginBottom: 8 }}>
-                      {item.material_types.map((type) => <AntdTag key={type}>{type}</AntdTag>)}
-                    </Space>
-                  ) : null}
-                  <Space size={16}>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>图片 <strong style={{ color: "#273248" }}>{item.image_count}</strong></Typography.Text>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>标签 <strong style={{ color: "#273248" }}>{item.tag_count}</strong></Typography.Text>
-                  </Space>
-                </Card>
-              ))}
-            </Flex>
+            <Table<SourceDataset>
+              rowKey="id"
+              columns={columns}
+              dataSource={datasets}
+              loading={loading}
+              pagination={false}
+              size="middle"
+              onRow={(record) => ({ onClick: () => setActiveId(record.id), style: { cursor: "pointer" } })}
+            />
           ) : (
             <Empty description="还没有数据集。新建一个数据集后，可以上传图片或从 FTP 目录同步，再为图片打标签管理。">
               <AntdButton type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建数据集</AntdButton>
