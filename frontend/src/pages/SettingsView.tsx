@@ -1,8 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  Alert,
+  App as AntdApp,
+  Button as AntdButton,
+  Checkbox,
+  Flex,
+  Input as AntdInput,
+  InputNumber,
+  Popconfirm,
+  Segmented,
+  Select as AntdSelect,
+  Slider,
+  Space,
+  Switch,
+  Tabs,
+  Typography,
+  Upload,
+} from "antd";
+import { InboxOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import { ClassTemplatesView } from "./ClassTemplatesView";
-import { Toast } from "../components/Toast";
-import { confirmDialog } from "../components/confirm";
 import type { AppLocale } from "../locale";
 import { saveLocale } from "../locale";
 import type {
@@ -403,6 +420,16 @@ export function SettingsView({
   onTabChange: (tab: SettingsTab) => void;
 }) {
   const text = copy[locale];
+  const navItems = [
+    { key: "llm", icon: <LlmIcon />, title: text.llmNav, description: text.llmNavDescription },
+    { key: "sam", icon: <SamIcon />, title: text.samNav, description: text.samNavDescription },
+    { key: "ftp", icon: <FtpIcon />, title: text.ftpNav, description: text.ftpNavDescription },
+    { key: "nodes", icon: <NodeIcon />, title: text.nodesNav, description: text.nodesNavDescription },
+    { key: "weights", icon: <NodeIcon />, title: text.weightsNav, description: text.weightsNavDescription },
+    { key: "basedata", icon: <ClassIcon />, title: text.basedataNav, description: text.basedataNavDescription },
+    { key: "webhook", icon: <WebhookIcon />, title: text.webhookNav, description: text.webhookNavDescription },
+    { key: "language", icon: <LanguageIcon />, title: text.languageNav, description: text.languageNavDescription },
+  ];
   return (
     <main className="settings-layout">
       <header className="settings-page-head">
@@ -414,64 +441,23 @@ export function SettingsView({
         <span className="settings-page-badge">{text.local}</span>
       </header>
       <div className="settings-section-layout">
-        <nav className="settings-section-nav" aria-label={text.title}>
-          <SettingsNavigationItem
-            active={tab === "llm"}
-            icon={<LlmIcon />}
-            title={text.llmNav}
-            description={text.llmNavDescription}
-            onClick={() => onTabChange("llm")}
-          />
-          <SettingsNavigationItem
-            active={tab === "sam"}
-            icon={<SamIcon />}
-            title={text.samNav}
-            description={text.samNavDescription}
-            onClick={() => onTabChange("sam")}
-          />
-          <SettingsNavigationItem
-            active={tab === "ftp"}
-            icon={<FtpIcon />}
-            title={text.ftpNav}
-            description={text.ftpNavDescription}
-            onClick={() => onTabChange("ftp")}
-          />
-          <SettingsNavigationItem
-            active={tab === "nodes"}
-            icon={<NodeIcon />}
-            title={text.nodesNav}
-            description={text.nodesNavDescription}
-            onClick={() => onTabChange("nodes")}
-          />
-          <SettingsNavigationItem
-            active={tab === "weights"}
-            icon={<NodeIcon />}
-            title={text.weightsNav}
-            description={text.weightsNavDescription}
-            onClick={() => onTabChange("weights")}
-          />
-          <SettingsNavigationItem
-            active={tab === "basedata"}
-            icon={<ClassIcon />}
-            title={text.basedataNav}
-            description={text.basedataNavDescription}
-            onClick={() => onTabChange("basedata")}
-          />
-          <SettingsNavigationItem
-            active={tab === "webhook"}
-            icon={<WebhookIcon />}
-            title={text.webhookNav}
-            description={text.webhookNavDescription}
-            onClick={() => onTabChange("webhook")}
-          />
-          <SettingsNavigationItem
-            active={tab === "language"}
-            icon={<LanguageIcon />}
-            title={text.languageNav}
-            description={text.languageNavDescription}
-            onClick={() => onTabChange("language")}
-          />
-        </nav>
+        <Tabs
+          tabPlacement="left"
+          activeKey={tab}
+          onChange={(key) => onTabChange(key as SettingsTab)}
+          items={navItems.map((item) => ({
+            key: item.key,
+            label: (
+              <span className="settings-nav-label">
+                <span className="settings-nav-icon">{item.icon}</span>
+                <span className="settings-nav-copy">
+                  <strong>{item.title}</strong>
+                  <small>{item.description}</small>
+                </span>
+              </span>
+            ),
+          }))}
+        />
         <div className="settings-section-content">
           {tab === "llm" ? (
             <LlmSettingsPanel locale={locale} text={text} />
@@ -493,38 +479,6 @@ export function SettingsView({
         </div>
       </div>
     </main>
-  );
-}
-
-function SettingsNavigationItem({
-  active,
-  icon,
-  title,
-  description,
-  badge,
-  onClick,
-}: {
-  active: boolean;
-  icon: ReactNode;
-  title: string;
-  description: string;
-  badge?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`settings-section-nav-item ${active ? "active" : ""}`}
-      aria-current={active ? "page" : undefined}
-      onClick={onClick}
-    >
-      <span className="settings-nav-icon">{icon}</span>
-      <span className="settings-section-nav-copy">
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-      {badge ? <span className="settings-nav-badge">{badge}</span> : null}
-    </button>
   );
 }
 
@@ -616,37 +570,37 @@ function LlmSettingsPanel({ text }: { locale: AppLocale; text: SettingsText }) {
         </div>
         <span className={`settings-status ${form.enabled ? "ready" : "disabled"}`}>{status}</span>
       </header>
-      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
-      {message && !error ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
+      {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
+      {message && !error ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
 
-      <label className="settings-toggle">
-        <input
-          type="checkbox"
-          checked={form.enabled}
-          onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
-        />
-        <span>
+      <Flex align="center" gap={12}>
+        <Switch checked={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
+        <div>
           <strong>{text.enabled}</strong>
-          <small>{text.enabledHint}</small>
-        </span>
-      </label>
+          <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>{text.enabledHint}</Typography.Paragraph>
+        </div>
+      </Flex>
 
       <div className="settings-form-grid">
         <label>
           <span>{text.provider}</span>
-          <select value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value })}>
-            <option value="openai-compatible">openai-compatible</option>
-            <option value="openai">openai</option>
-            <option value="local">local</option>
-          </select>
+          <AntdSelect
+            value={form.provider}
+            options={[
+              { value: "openai-compatible", label: "openai-compatible" },
+              { value: "openai", label: "openai" },
+              { value: "local", label: "local" },
+            ]}
+            onChange={(provider) => setForm({ ...form, provider })}
+          />
         </label>
         <label>
           <span>{text.model}</span>
-          <input value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} />
+          <AntdInput value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} />
         </label>
         <label className="settings-span-2">
           <span>{text.apiBase}</span>
-          <input
+          <AntdInput
             value={form.api_base}
             placeholder="https://api.openai.com/v1"
             onChange={(event) => setForm({ ...form, api_base: event.target.value })}
@@ -654,41 +608,32 @@ function LlmSettingsPanel({ text }: { locale: AppLocale; text: SettingsText }) {
         </label>
         <label className="settings-span-2">
           <span>{text.apiKey}</span>
-          <div className="settings-key-line">
-            <input
-              type={showKey ? "text" : "password"}
-              value={form.api_key}
-              placeholder={form.api_key_configured ? text.apiKeyKeep : text.apiKeyOptional}
-              onChange={(event) => setForm({ ...form, api_key: event.target.value })}
-              autoComplete="off"
-            />
-            <button type="button" className="button" onClick={() => setShowKey((value) => !value)}>
-              {showKey ? text.hide : text.show}
-            </button>
-          </div>
+          <AntdInput.Password
+            value={form.api_key}
+            placeholder={form.api_key_configured ? text.apiKeyKeep : text.apiKeyOptional}
+            onChange={(event) => setForm({ ...form, api_key: event.target.value })}
+            autoComplete="off"
+            
+          />
         </label>
         <label>
           <span>{text.authScheme}</span>
-          <select
+          <AntdSelect
             value={form.auth_scheme}
-            onChange={(event) => {
-              const auth_scheme = event.target.value as LLMAuthScheme;
+            options={LLM_AUTH_SCHEMES.map((scheme) => ({ value: scheme, label: scheme }))}
+            onChange={(auth_scheme) =>
               setForm({
                 ...form,
                 auth_scheme,
                 auth_header_name: auth_scheme === "header" ? form.auth_header_name : "",
-              });
-            }}
-          >
-            {LLM_AUTH_SCHEMES.map((scheme) => (
-              <option key={scheme} value={scheme}>{scheme}</option>
-            ))}
-          </select>
+              })
+            }
+          />
         </label>
         {form.auth_scheme === "header" ? (
           <label>
             <span>{text.authHeaderName}</span>
-            <input
+            <AntdInput
               value={form.auth_header_name}
               placeholder="X-Api-Key"
               onChange={(event) => setForm({ ...form, auth_header_name: event.target.value })}
@@ -704,60 +649,37 @@ function LlmSettingsPanel({ text }: { locale: AppLocale; text: SettingsText }) {
       <div className="settings-form-grid">
         <label>
           <span>{text.temperature} · {form.temperature.toFixed(1)}</span>
-          <input
-            type="range"
-            min={0}
-            max={2}
-            step={0.1}
-            value={form.temperature}
-            onChange={(event) => setForm({ ...form, temperature: Number(event.target.value) })}
-          />
+          <Slider min={0} max={2} step={0.1} value={form.temperature} onChange={(temperature) => setForm({ ...form, temperature })} />
         </label>
         <label>
           <span>{text.timeout}</span>
-          <input
-            type="number"
-            min={1}
-            max={7200}
-            value={form.timeout_seconds}
-            onChange={(event) => {
-              const n = Number(event.target.value);
-              setForm({
-                ...form,
-                timeout_seconds: Number.isFinite(n) ? Math.min(7200, Math.max(1, Math.round(n))) : form.timeout_seconds,
-              });
-            }}
-          />
+          <InputNumber min={1} max={7200} value={form.timeout_seconds} onChange={(value) => {
+            const n = Number(value);
+            setForm({ ...form, timeout_seconds: Number.isFinite(n) ? Math.min(7200, Math.max(1, Math.round(n))) : form.timeout_seconds });
+          }} style={{ width: "100%" }} />
         </label>
       </div>
 
       <section className="settings-planner-card">
         <strong>{text.plannerTitle}</strong>
         <p>{text.plannerSubtitle}</p>
-        <div className="settings-preset-row">
-          {(["cost", "balanced", "quality"] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={`button ${preset === item ? "primary" : ""}`}
-              onClick={() => applyPreset(item)}
-            >
-              {text[item]}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          value={preset}
+          onChange={(next) => applyPreset(next as "cost" | "balanced" | "quality")}
+          options={[
+            { value: "cost", label: text.cost },
+            { value: "balanced", label: text.balanced },
+            { value: "quality", label: text.quality },
+          ]}
+        />
       </section>
 
       <footer className="settings-footer">
         <span>{text.llmFooter}</span>
-        <div className="settings-footer-actions">
-          <button type="button" className="button" disabled={testing || saving} onClick={() => void test()}>
-            {testing ? text.testing : text.test}
-          </button>
-          <button type="submit" className="button primary" disabled={saving || testing}>
-            {saving ? "…" : text.save}
-          </button>
-        </div>
+        <Space size={8}>
+          <AntdButton disabled={testing || saving} loading={testing} onClick={() => void test()}>{text.test}</AntdButton>
+          <AntdButton type="primary" htmlType="submit" loading={saving} disabled={testing}>{text.save}</AntdButton>
+        </Space>
       </footer>
     </form>
   );
@@ -832,23 +754,19 @@ function SamSettingsPanel({ locale, text, onSamSettingsChange }: { locale: AppLo
         </div>
         <span className={`settings-status ${settings.enabled ? "ready" : "disabled"}`}>{status}</span>
       </header>
-      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
-      {message ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
+      {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
+      {message ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
       <div className="settings-form-grid">
-        <label className="settings-toggle">
-          <input
-            type="checkbox"
-            checked={settings.enabled}
-            onChange={(event) => setSettings({ ...settings, enabled: event.target.checked })}
-          />
-          <span>
+        <Flex align="center" gap={12}>
+          <Switch checked={settings.enabled} onChange={(enabled) => setSettings({ ...settings, enabled })} />
+          <div>
             <strong>{text.samEnabled}</strong>
-            <small>{settings.backend || (settings.model_configured ? settings.model : text.modelHint)}</small>
-          </span>
-        </label>
+            <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>{settings.backend || (settings.model_configured ? settings.model : text.modelHint)}</Typography.Paragraph>
+          </div>
+        </Flex>
         <label>
           <span>{text.samBackend}</span>
-          <input
+          <AntdInput
             value={settings.backend}
             placeholder="http://10.12.42.125:7860"
             onChange={(event) => setSettings({ ...settings, backend: event.target.value })}
@@ -857,49 +775,38 @@ function SamSettingsPanel({ locale, text, onSamSettingsChange }: { locale: AppLo
         </label>
         <label>
           <span>{text.modelSam}</span>
-          <input value={settings.model} placeholder="sam_b.pt" onChange={(event) => setSettings({ ...settings, model: event.target.value })} />
+          <AntdInput value={settings.model} placeholder="sam_b.pt" onChange={(event) => setSettings({ ...settings, model: event.target.value })} />
           <small>{text.modelHint}</small>
         </label>
         <label>
           <span>{text.device}</span>
-          <select value={settings.device} onChange={(event) => setSettings({ ...settings, device: event.target.value })}>
-            {!deviceOptions.some((option) => option.value === settings.device) ? (
-              <option value={settings.device}>{settings.device}</option>
-            ) : null}
-            {deviceOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{text.imageSize}</span>
-          <input
-            type="number"
-            min={64}
-            max={4096}
-            step={64}
-            value={settings.img_size}
-            onChange={(event) => setSettings({ ...settings, img_size: Number(event.target.value) })}
+          <AntdSelect
+            value={settings.device}
+            options={deviceOptions}
+            onChange={(device) => setSettings({ ...settings, device })}
           />
         </label>
         <label>
+          <span>{text.imageSize}</span>
+          <InputNumber min={64} max={4096} step={64} value={settings.img_size} onChange={(value) => setSettings({ ...settings, img_size: Number(value) || settings.img_size })} style={{ width: "100%" }} />
+        </label>
+        <label>
           <span>{text.fallback}</span>
-          <select
+          <AntdSelect
             value={settings.fallback_mode}
-            onChange={(event) => setSettings({ ...settings, fallback_mode: event.target.value as SamSettings["fallback_mode"] })}
-          >
-            <option value="box">{text.box}</option>
-            <option value="disabled">{text.disabled}</option>
-          </select>
+            options={[
+              { value: "box", label: text.box },
+              { value: "disabled", label: text.disabled },
+            ]}
+            onChange={(fallback_mode) => setSettings({ ...settings, fallback_mode: fallback_mode as SamSettings["fallback_mode"] })}
+          />
         </label>
       </div>
       {settings.backend ? <p className="settings-hint">{text.samLocalFallbackHint}</p> : null}
       {!devices.some((device) => device.type !== "cpu") ? <p className="settings-hint">{text.noDevice}</p> : null}
       <footer className="settings-footer">
         <span>{text.samFooter}</span>
-        <button className="button primary" disabled={saving} onClick={() => void save()}>
-          {saving ? "…" : text.saveSam}
-        </button>
+        <AntdButton type="primary" loading={saving} onClick={() => void save()}>{text.saveSam}</AntdButton>
       </footer>
     </section>
   );
@@ -981,51 +888,56 @@ function FtpSettingsPanel({ text }: { text: SettingsText }) {
           {form.host ? text.ftpConfigured : text.ftpNotConfigured}
         </span>
       </header>
-      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
-      {message ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
+      {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
+      {message ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
       <div className="settings-form-grid">
         <label>
           <span>{text.ftpHost}</span>
-          <input value={form.host} placeholder="ftp.example.com" onChange={(event) => setForm({ ...form, host: event.target.value })} />
+          <AntdInput value={form.host} placeholder="ftp.example.com" onChange={(event) => setForm({ ...form, host: event.target.value })} />
         </label>
         <label>
           <span>{text.ftpPort}</span>
-          <input type="number" min={1} max={65535} value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value) })} />
+          <InputNumber min={1} max={65535} value={form.port} onChange={(value) => setForm({ ...form, port: Number(value) || form.port })} style={{ width: "100%" }} />
         </label>
         <label>
           <span>{text.ftpUser}</span>
-          <input value={form.username} placeholder="anonymous" onChange={(event) => setForm({ ...form, username: event.target.value })} />
+          <AntdInput value={form.username} placeholder="anonymous" onChange={(event) => setForm({ ...form, username: event.target.value })} />
         </label>
         <label>
           <span>{text.ftpPassword}</span>
-          <input type="password" value={form.password} placeholder={passwordConfigured ? "••••••••" : ""} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+          <AntdInput.Password
+            value={form.password}
+            placeholder={passwordConfigured ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : ""}
+            onChange={(event) => setForm({ ...form, password: event.target.value })}
+          />
           <small>{passwordConfigured ? text.ftpPasswordKeep : ""}</small>
         </label>
         <label>
           <span>{text.ftpEncoding}</span>
-          <select value={form.encoding} onChange={(event) => setForm({ ...form, encoding: event.target.value })}>
-            {!FTP_ENCODINGS.includes(form.encoding) ? <option value={form.encoding}>{form.encoding}</option> : null}
-            {FTP_ENCODINGS.map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
+          <AntdSelect
+            value={form.encoding}
+            options={FTP_ENCODINGS.map((value) => ({ value, label: value }))}
+            onChange={(encoding) => setForm({ ...form, encoding })}
+          />
           <small>{text.ftpEncodingHint}</small>
         </label>
         <label>
           <span>{text.ftpTimeout}</span>
-          <input type="number" min={3} max={120} value={form.timeout_seconds} onChange={(event) => setForm({ ...form, timeout_seconds: Number(event.target.value) })} />
+          <InputNumber min={3} max={120} value={form.timeout_seconds} onChange={(value) => setForm({ ...form, timeout_seconds: Number(value) || form.timeout_seconds })} style={{ width: "100%" }} />
         </label>
-        <label className="settings-toggle">
-          <input type="checkbox" checked={form.passive} onChange={(event) => setForm({ ...form, passive: event.target.checked })} />
-          <span>
+        <Flex align="center" gap={12}>
+          <Switch checked={form.passive} onChange={(passive) => setForm({ ...form, passive })} />
+          <div>
             <strong>{text.ftpPassive}</strong>
-            <small>{text.ftpPassiveHint}</small>
-          </span>
-        </label>
+            <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>{text.ftpPassiveHint}</Typography.Paragraph>
+          </div>
+        </Flex>
       </div>
       <footer className="settings-footer">
-        <button type="button" className="button" disabled={testing || saving || !form.host} onClick={() => void test()}>
-          {testing ? text.ftpTesting : text.ftpTest}
-        </button>
-        <button className="button primary" disabled={saving}>{saving ? "…" : text.saveFtp}</button>
+        <Space size={8}>
+          <AntdButton disabled={saving || !form.host} loading={testing} onClick={() => void test()}>{text.ftpTest}</AntdButton>
+          <AntdButton type="primary" htmlType="submit" loading={saving}>{text.saveFtp}</AntdButton>
+        </Space>
       </footer>
     </form>
   );
@@ -1076,12 +988,6 @@ function BaseWeightsPanel({ text }: { text: SettingsText }) {
   };
 
   const remove = async (name: string) => {
-    const confirmed = await confirmDialog({
-      title: text.weightsDeleteConfirm.replace("{name}", name),
-      description: "删除后新任务将无法再使用该预置权重；已缓存在训练节点上的副本不受影响。",
-      confirmLabel: "删除权重",
-    });
-    if (!confirmed) return;
     setBusy(true); setError(""); setMessage("");
     try {
       await api.deleteWeight(name);
@@ -1102,20 +1008,31 @@ function BaseWeightsPanel({ text }: { text: SettingsText }) {
         </div>
         <span className="settings-status ready">{weights.length} 个</span>
       </header>
-      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
-      {message && !error ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
+      {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
+      {message && !error ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
 
       <div className="settings-form-grid">
-        <input ref={fileInput} type="file" accept=".pt" multiple hidden onChange={(event) => { void upload(event.target.files); }} />
         <label className="settings-span-2">
           <span>{text.weightsUpload}</span>
-          <button type="button" className="button primary" disabled={busy} onClick={() => fileInput.current?.click()}>选择 .pt 文件上传（可多选）</button>
+          <Upload.Dragger
+            accept=".pt"
+            multiple
+            showUploadList={false}
+            disabled={busy}
+            customRequest={() => undefined}
+            beforeUpload={(file) => { void upload({ 0: file, length: 1, item: file } as unknown as FileList); return false; }}
+          >
+            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+            <p className="ant-upload-text">点击或拖拽 .pt 文件到此处上传（可多选）</p>
+          </Upload.Dragger>
         </label>
         {weights.map((weight) => (
           <div key={weight.name} className="settings-weight-row">
             <strong title={weight.name}>{weight.name}</strong>
             <small>{Math.max(1, Math.round(weight.size_bytes / 1024))} KB · {formatWeightTime(weight.updated_at)}</small>
-            <button type="button" className="button" disabled={busy} onClick={() => void remove(weight.name)}>删除</button>
+            <Popconfirm title={text.weightsDeleteConfirm.replace("{name}", weight.name)} description="删除后新任务将无法再使用该预置权重；已缓存在训练节点上的副本不受影响。" okText="删除权重" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => void remove(weight.name)}>
+              <AntdButton danger disabled={busy}>删除</AntdButton>
+            </Popconfirm>
           </div>
         ))}
         {!weights.length && <p className="muted settings-span-2">{text.weightsEmpty}</p>}
@@ -1132,10 +1049,15 @@ function AgentNodesPanel({ text }: { text: SettingsText }) {
   const [mode, setMode] = useState<"training" | "om">("training");
   return (
     <>
-      <div className="import-origin-toggle base-data-tabs" role="tablist" aria-label="Agent 配置">
-        <button type="button" role="tab" aria-selected={mode === "training"} className={mode === "training" ? "active" : ""} onClick={() => setMode("training")}>{text.agentTrainingTab}</button>
-        <button type="button" role="tab" aria-selected={mode === "om"} className={mode === "om" ? "active" : ""} onClick={() => setMode("om")}>{text.agentOmTab}</button>
-      </div>
+      <Segmented
+        value={mode}
+        onChange={(next) => setMode(next as "training" | "om")}
+        options={[
+          { value: "training", label: text.agentTrainingTab },
+          { value: "om", label: text.agentOmTab },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
       <NodesPanel key={mode} kind={mode} text={text} />
     </>
   );
@@ -1148,7 +1070,6 @@ function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsTex
   const [busy, setBusy] = useState(true);
   const [adding, setAdding] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string>();
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -1223,7 +1144,6 @@ function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsTex
     try {
       if (kind === "training") await api.deleteTrainingNode(nodeId);
       else await api.deleteOmNode(nodeId);
-      setConfirmDeleteId(undefined);
       setMessage(text.nodeDeleted);
       await reload();
     } catch (reason) {
@@ -1244,8 +1164,8 @@ function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsTex
           {nodes.length ? text.nodesRegistered.replace("{count}", String(nodes.length)) : text.ftpNotConfigured}
         </span>
       </header>
-      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
-      {message ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
+      {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
+      {message ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
       {nodes.length ? (
         <div className="training-node-list">
           {nodes.map((node) => {
@@ -1262,11 +1182,9 @@ function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsTex
                 <span className={`status ${status?.status === "online" ? "ready" : "disabled"}`}>
                   {status?.status === "online" ? "在线" : "离线"}
                 </span>
-                {confirmDeleteId === node.id ? (
-                  <button type="button" className="button danger" onClick={() => void remove(node.id)}>{text.nodeConfirmDelete}</button>
-                ) : (
-                  <button type="button" className="button" onClick={() => setConfirmDeleteId(node.id)}>{text.nodeDelete}</button>
-                )}
+                <Popconfirm title={text.nodeConfirmDelete} okText="确认删除" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => void remove(node.id)}>
+                  <AntdButton danger disabled={busy}>{text.nodeDelete}</AntdButton>
+                </Popconfirm>
               </div>
             );
           })}
@@ -1277,22 +1195,22 @@ function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsTex
       <form className="training-node-form" onSubmit={(event) => void add(event)}>
         <label>
           <span>{text.nodeName}</span>
-          <input value={form.name} placeholder="gpu-server-01" onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          <AntdInput value={form.name} placeholder="gpu-server-01" onChange={(event) => setForm({ ...form, name: event.target.value })} />
         </label>
         <label>
           <span>{text.nodeUrl}</span>
-          <input value={form.url} placeholder="http://10.12.42.125:8010" onChange={(event) => setForm({ ...form, url: event.target.value })} />
+          <AntdInput value={form.url} placeholder="http://10.12.42.125:8010" onChange={(event) => setForm({ ...form, url: event.target.value })} />
           <small>{text.nodeUrlHint}</small>
         </label>
         <label>
           <span>{text.nodeToken}</span>
-          <input type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} />
+          <AntdInput.Password value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} />
           <small>{text.nodeTokenHint}</small>
         </label>
-        <div className="training-node-form-actions">
-          <button type="button" className="button" disabled={testing || !form.url.trim()} onClick={() => void test()}>{testing ? text.nodeTesting : text.nodeTest}</button>
-          <button type="submit" className="button primary" disabled={adding || !form.name.trim() || !form.url.trim()}>{text.nodeAdd}</button>
-        </div>
+        <Space size={8}>
+          <AntdButton disabled={!form.url.trim()} loading={testing} onClick={() => void test()}>{text.nodeTest}</AntdButton>
+          <AntdButton type="primary" htmlType="submit" disabled={adding || !form.name.trim() || !form.url.trim()} loading={adding}>{text.nodeAdd}</AntdButton>
+        </Space>
       </form>
     </section>
   );
@@ -1396,25 +1314,21 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
           {form.enabled && form.url ? text.webhookConfigured : text.ftpNotConfigured}
         </span>
       </header>
-      {error ? <Toast kind="error" message={error} onClose={() => setError("")} /> : null}
-      {message && !error ? <Toast kind="success" message={message} onClose={() => setMessage("")} /> : null}
+      {error ? <Alert type="error" showIcon title={error} closable={{ onClose: () => setError("") }} style={{ marginBottom: 12 }} /> : null}
+      {message && !error ? <Alert type="success" showIcon title={message} closable={{ onClose: () => setMessage("") }} style={{ marginBottom: 12 }} /> : null}
 
-      <label className="settings-toggle">
-        <input
-          type="checkbox"
-          checked={form.enabled}
-          onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
-        />
-        <span>
+      <Flex align="center" gap={12}>
+        <Switch checked={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
+        <div>
           <strong>{text.webhookEnabled}</strong>
-          <small>{text.webhookEnabledHint}</small>
-        </span>
-      </label>
+          <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>{text.webhookEnabledHint}</Typography.Paragraph>
+        </div>
+      </Flex>
 
       <div className="settings-form-grid">
         <label className="settings-span-2">
           <span>{text.webhookUrl}</span>
-          <input
+          <AntdInput
             value={form.url}
             placeholder="https://example.com/hook"
             onChange={(event) => setForm({ ...form, url: event.target.value })}
@@ -1423,14 +1337,15 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
         </label>
         <label>
           <span>{text.webhookMethod}</span>
-          <select value={form.method} onChange={(event) => setForm({ ...form, method: event.target.value as WebhookMethod })}>
-            {WEBHOOK_METHODS.map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
+          <AntdSelect
+            value={form.method}
+            options={WEBHOOK_METHODS.map((value) => ({ value, label: value }))}
+            onChange={(method) => setForm({ ...form, method: method as WebhookMethod })}
+          />
         </label>
         <label className="settings-span-2">
           <span>{text.webhookBody}</span>
-          <textarea
-            className="settings-textarea"
+          <AntdInput.TextArea
             rows={4}
             value={form.body_template}
             placeholder={'{"msgtype":"text","text":{"content":"{title}\n状态：{status}\n模型：{model}\n数据集：{dataset}（{dataset_version}）\n指标：{metrics}\n耗时：{duration}"}}'}
@@ -1445,8 +1360,7 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
         {WEBHOOK_EVENT_ITEMS.map((event) => (
           <label key={event}>
             <span>{webhookEventLabel(text, event)}</span>
-            <textarea
-              className="settings-textarea"
+            <AntdInput.TextArea
               rows={3}
               value={form.body_templates[event] ?? ""}
               placeholder={EVENT_TEMPLATE_PLACEHOLDERS[event]}
@@ -1458,23 +1372,26 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
             <small>{text.webhookEventTemplateFallback}</small>
           </label>
         ))}
-        {WEBHOOK_EVENT_ITEMS.map((event) => (
-          <label key={event} className="settings-toggle">
-            <input
-              type="checkbox"
-              checked={form.events.includes(event)}
-              onChange={(input) => toggleEvent(event, input.target.checked)}
-            />
-            <span><strong>{webhookEventLabel(text, event)}</strong></span>
-          </label>
-        ))}
+        <div className="settings-span-2">
+          <Space size={16} wrap>
+            {WEBHOOK_EVENT_ITEMS.map((event) => (
+              <Checkbox
+                key={event}
+                checked={form.events.includes(event)}
+                onChange={(input) => toggleEvent(event, input.target.checked)}
+              >
+                {webhookEventLabel(text, event)}
+              </Checkbox>
+            ))}
+          </Space>
+        </div>
       </div>
 
       <footer className="settings-footer">
-        <button type="button" className="button" disabled={testing || saving || !form.url.trim()} onClick={() => void test()}>
-          {testing ? text.webhookTesting : text.webhookTest}
-        </button>
-        <button className="button primary" disabled={saving}>{saving ? "…" : text.saveWebhook}</button>
+        <Space size={8}>
+          <AntdButton disabled={saving || !form.url.trim()} loading={testing} onClick={() => void test()}>{text.webhookTest}</AntdButton>
+          <AntdButton type="primary" htmlType="submit" loading={saving}>{text.saveWebhook}</AntdButton>
+        </Space>
       </footer>
     </form>
   );
@@ -1505,10 +1422,14 @@ function LanguageSettingsPanel({
       </header>
       <div className="language-card-body">
         <strong>{text.displayLanguage}</strong>
-        <div className="language-segment" role="group" aria-label={text.displayLanguage}>
-          <button type="button" className={locale === "zh" ? "active" : ""} onClick={() => change("zh")}>{text.chinese}</button>
-          <button type="button" className={locale === "en" ? "active" : ""} onClick={() => change("en")}>{text.english}</button>
-        </div>
+        <Segmented
+          value={locale}
+          onChange={(next) => change(next as AppLocale)}
+          options={[
+            { value: "zh", label: text.chinese },
+            { value: "en", label: text.english },
+          ]}
+        />
       </div>
       <footer className="settings-footer"><span>{text.applied}</span></footer>
     </section>
