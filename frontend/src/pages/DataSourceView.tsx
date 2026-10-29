@@ -3,6 +3,8 @@ import {
   Alert,
   App as AntdApp,
   Button as AntdButton,
+  Breadcrumb,
+  Checkbox,
   Empty,
   Flex,
   Image as AntdImage,
@@ -13,6 +15,7 @@ import {
   Space,
   Pagination,
   Segmented,
+  Select as AntdSelect,
   Table,
   Tag as AntdTag,
   Typography,
@@ -749,105 +752,126 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
         </Flex>
       )}
 
-      {ftpOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setFtpOpen(false)}>
-          <section className="dataset-dialog ftp-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="source-ftp-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header className="data-exchange-header"><div><span className="eyebrow">FTP SYNC</span><h2 id="source-ftp-title">从 FTP 选择图片</h2><p>浏览 FTP 目录后可整个文件夹同步，或勾选多个文件导入，可先选标签附加到导入的图片；连接配置在“设置 → FTP 服务”。非图片和超限文件会跳过。</p></div><button className="icon-button" onClick={() => setFtpOpen(false)} aria-label="关闭">×</button></header>
-            <div className="ftp-picker">
-              <div className="ftp-toolbar">
-                <button className="button" disabled={ftpLoading || ftpPath === "/"} onClick={() => void loadFtp(parentFtpPath(ftpPath))}>返回上级</button>
-                <nav className="ftp-breadcrumb" aria-label="FTP 路径">
-                  <button disabled={ftpLoading} onClick={() => void loadFtp("/")}>/</button>
-                  {ftpPath !== "/" && ftpPath.slice(1).split("/").map((crumb, index, parts) => {
-                    const target = `/${parts.slice(0, index + 1).join("/")}`;
-                    return <span key={target}>/ <button disabled={ftpLoading} onClick={() => void loadFtp(target)}>{crumb}</button></span>;
-                  })}
-                </nav>
-                <button className="button" disabled={ftpLoading} onClick={() => void loadFtp(ftpPath)}>刷新</button>
-              </div>
-              <div className="ftp-picker-list">
-                {ftpLoading ? (
-                  <p className="muted">正在读取目录…</p>
-                ) : ftpEntries.length ? (
-                  <table className="ftp-table">
-                    <thead>
-                      <tr><th className="ftp-check-col" aria-label="选择" /><th>名称</th><th>大小</th></tr>
-                    </thead>
-                    <tbody>
-                      {ftpEntries.map((entry) => {
-                        if (entry.is_dir) {
-                          return (
-                            <tr key={entry.path}>
-                              <td className="ftp-check-col" />
-                              <td>
-                                <button className="ftp-name dir" onClick={() => void loadFtp(entry.path)} title="打开目录">
-                                  <span aria-hidden="true">📁</span><span>{entry.name}</span>
-                                </button>
-                              </td>
-                              <td className="muted">文件夹</td>
-                            </tr>
-                          );
-                        }
-                        const isImage = IMAGE_RE.test(entry.name);
-                        const checked = ftpSelected.includes(entry.path);
-                        const toggleSelected = () => setFtpSelected((paths) => (checked ? paths.filter((item) => item !== entry.path) : [...paths, entry.path]));
-                        return (
-                          <tr
-                            key={entry.path}
-                            className={`ftp-file-row${isImage ? "" : " unsupported"}${checked ? " selected" : ""}`}
-                            onClick={() => {
-                              if (isImage && !busy) toggleSelected();
-                            }}
-                          >
-                            <td className="ftp-check-col">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={!isImage || busy}
-                                onClick={(event) => event.stopPropagation()}
-                                onChange={toggleSelected}
-                              />
-                            </td>
-                            <td>
-                              <span className={`ftp-name${isImage ? "" : " disabled"}`} title={isImage ? undefined : "仅支持 jpg / jpeg / png / bmp / webp 图片"}>
-                                <span aria-hidden="true">📄</span><span>{entry.name}</span>
-                              </span>
-                            </td>
-                            <td>{entry.size != null ? formatSize(entry.size) : "—"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="muted ftp-empty">此目录为空。</p>
-                )}
-              </div>
-              <div className="source-batch-tags ftp-picker-tags" role="group" aria-label="FTP 导入标签">
-                {tags.length ? tags.map((tag) => {
-                  const enabled = ftpTagIds.includes(tag.id);
+      <Modal
+        title="从 FTP 选择图片"
+        open={ftpOpen}
+        onCancel={() => setFtpOpen(false)}
+        width={720}
+        footer={null}
+        destroyOnHidden
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          浏览 FTP 目录后可整个文件夹同步，或勾选多个文件导入，可先选标签附加到导入的图片。非图片和超限文件会跳过。
+        </Typography.Paragraph>
+
+        {/* 路径导航 */}
+        <Flex align="center" gap={8} style={{ marginBottom: 10 }}>
+          <AntdButton size="small" disabled={ftpLoading || ftpPath === "/"} onClick={() => void loadFtp(parentFtpPath(ftpPath))}>返回上级</AntdButton>
+          <Breadcrumb
+            items={[
+              { title: <AntdButton type="link" size="small" disabled={ftpLoading} onClick={() => void loadFtp("/")}>/</AntdButton> },
+              ...ftpPath !== "/" ? ftpPath.slice(1).split("/").map((crumb, index, parts) => {
+                const target = `/${parts.slice(0, index + 1).join("/")}`;
+                return { title: <AntdButton type="link" size="small" disabled={ftpLoading} onClick={() => void loadFtp(target)}>{crumb}</AntdButton> };
+              }) : [],
+            ]}
+          />
+          <AntdButton size="small" disabled={ftpLoading} onClick={() => void loadFtp(ftpPath)}>刷新</AntdButton>
+        </Flex>
+
+        {/* 文件列表 */}
+        <div style={{ border: "1px solid #e7eaf0", borderRadius: 8, maxHeight: 320, overflowY: "auto", marginBottom: 12 }}>
+          {ftpLoading ? (
+            <Typography.Paragraph type="secondary" style={{ padding: 16, textAlign: "center" }}>正在读取目录…</Typography.Paragraph>
+          ) : ftpEntries.length ? (
+            <Table<FtpEntry>
+              rowKey="path"
+              size="small"
+              pagination={false}
+              dataSource={ftpEntries}
+              showHeader={false}
+              columns={[
+                { title: "", key: "check", width: 36, render: (_, entry) => {
+                  if (entry.is_dir) return null;
+                  const isImage = IMAGE_RE.test(entry.name);
+                  const checked = ftpSelected.includes(entry.path);
                   return (
-                    <span key={tag.id} className={`source-tag-chip enum${enabled ? " active" : ""}`} style={{ borderColor: tag.color }}>
-                      <button type="button" onClick={() => setFtpTagIds((ids) => (ids.includes(tag.id) ? ids.filter((item) => item !== tag.id) : [...ids, tag.id]))}>{tag.name}</button>
-                      {enabled && tag.values && (
-                        <select aria-label={`${tag.name} 取值`} value={ftpTagValues[tag.id] ?? tag.values[0]} onChange={(event) => setFtpTagValues((prev) => ({ ...prev, [tag.id]: event.target.value }))}>
-                          {tag.values.map((value) => <option key={value} value={value}>{value}</option>)}
-                        </select>
-                      )}
-                    </span>
+                    <Checkbox
+                      checked={checked}
+                      disabled={!isImage || busy}
+                      onChange={() => setFtpSelected((paths) => (checked ? paths.filter((item) => item !== entry.path) : [...paths, entry.path]))}
+                    />
                   );
-                }) : <span className="muted">还没有标签，请到「设置 → 基础数据 → 标签库」维护。</span>}
-              </div>
-              <footer className="ftp-picker-actions">
-                <label className="source-toggle"><input type="checkbox" checked={ftpRecursive} onChange={(event) => setFtpRecursive(event.target.checked)} />包含子目录</label>
-                <button className="button" disabled={busy || ftpLoading} onClick={() => void syncFtpFolder()}>同步整个文件夹</button>
-                <button className="button primary" disabled={busy || !ftpSelected.length} onClick={() => void syncFtpFiles()}>导入所选 {ftpSelected.length} 张</button>
-                <button className="button" onClick={() => setFtpOpen(false)}>取消</button>
-              </footer>
-            </div>
-          </section>
+                }},
+                { title: "名称", key: "name", render: (_, entry) => {
+                  if (entry.is_dir) {
+                    return <AntdButton type="link" size="small" onClick={() => void loadFtp(entry.path)}>📁 {entry.name}</AntdButton>;
+                  }
+                  const isImage = IMAGE_RE.test(entry.name);
+                  return (
+                    <Typography.Text type={isImage ? undefined : "secondary"} style={{ fontSize: 13 }}>
+                      📄 {entry.name}{!isImage && "（不支持）"}
+                    </Typography.Text>
+                  );
+                }},
+                { title: "大小", key: "size", width: 90, render: (_, entry) => (
+                  <Typography.Text type="secondary">{entry.is_dir ? "文件夹" : entry.size != null ? formatSize(entry.size) : "—"}</Typography.Text>
+                )},
+              ]}
+              onRow={(entry) => ({
+                onClick: () => {
+                  if (entry.is_dir) { void loadFtp(entry.path); return; }
+                  const isImage = IMAGE_RE.test(entry.name);
+                  if (isImage && !busy) {
+                    setFtpSelected((paths) => (paths.includes(entry.path) ? paths.filter((item) => item !== entry.path) : [...paths, entry.path]));
+                  }
+                },
+                style: { cursor: entry.is_dir ? "pointer" : IMAGE_RE.test(entry.name) && !busy ? "pointer" : "default" },
+              })}
+            />
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="此目录为空" style={{ padding: 24 }} />
+          )}
         </div>
-      )}
+
+        {/* 标签选择 */}
+        <div style={{ marginBottom: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 6 }}>附加标签（可选）</Typography.Text>
+          <Space size={6} wrap>
+            {tags.length ? tags.map((tag) => {
+              const enabled = ftpTagIds.includes(tag.id);
+              return (
+                <Space key={tag.id} size={4}>
+                  <Checkbox
+                    checked={enabled}
+                    onChange={() => setFtpTagIds((ids) => (ids.includes(tag.id) ? ids.filter((item) => item !== tag.id) : [...ids, tag.id]))}
+                  >
+                    <span style={{ color: tag.color }}>●</span> {tag.name}
+                  </Checkbox>
+                  {enabled && tag.values && (
+                    <AntdSelect
+                      size="small"
+                      style={{ width: 90 }}
+                      value={ftpTagValues[tag.id] ?? tag.values[0]}
+                      options={tag.values.map((value) => ({ value, label: value }))}
+                      onChange={(value: string) => setFtpTagValues((prev) => ({ ...prev, [tag.id]: value }))}
+                    />
+                  )}
+                </Space>
+              );
+            }) : <Typography.Text type="secondary">还没有标签，请到「设置 → 基础数据 → 标签库」维护。</Typography.Text>}
+          </Space>
+        </div>
+
+        {/* 操作按钮 */}
+        <Flex justify="space-between" align="center">
+          <Checkbox checked={ftpRecursive} onChange={(event) => setFtpRecursive(event.target.checked)}>包含子目录</Checkbox>
+          <Space size={8}>
+            <AntdButton disabled={busy || ftpLoading} onClick={() => void syncFtpFolder()}>同步整个文件夹</AntdButton>
+            <AntdButton type="primary" disabled={busy || !ftpSelected.length} onClick={() => void syncFtpFiles()}>导入所选 {ftpSelected.length} 张</AntdButton>
+          </Space>
+        </Flex>
+      </Modal>
 
       {uploadOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setUploadOpen(false)}>
