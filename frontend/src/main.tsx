@@ -21,6 +21,13 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           colorBorder: "#cbd5e1",
           colorText: "#172033",
         },
+        components: {
+          Layout: {
+            headerBg: "#f5f7fc",
+            headerColor: "#172033",
+            siderBg: "#ffffff",
+          },
+        },
       }}
     >
       <AntdApp>
