@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { App as AntdApp, Button as AntdButton, Form as AntdForm, Input as AntdInput, Modal, Popconfirm, Table, type TableProps } from "antd";
+import { App as AntdApp, Button as AntdButton, Flex, Form as AntdForm, Input as AntdInput, Modal, Popconfirm, Space, Table, type TableProps } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
@@ -431,21 +431,21 @@ function MaterialTypePanel() {
       key: "actions",
       width: 140,
       render: (_, item) => (
-        <>
+        <Space size="small">
           <AntdButton type="link" size="small" onClick={() => openEdit(item)}>编辑</AntdButton>
           <Popconfirm title={`删除素材类型“${item.name}”？`} description="数据源上已选择的该类型会同步移除。" okText="删除" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => void remove(item)}>
             <AntdButton type="link" size="small" danger>删除</AntdButton>
           </Popconfirm>
-        </>
+        </Space>
       ),
     },
   ];
 
   return (
     <>
-      <div className="header-actions" style={{ justifyContent: "flex-end" }}>
+      <Flex justify="flex-end" style={{ marginBottom: 16 }}>
         <AntdButton type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增素材类型</AntdButton>
-      </div>
+      </Flex>
       <Table<MaterialType>
         rowKey="id"
         columns={columns}
