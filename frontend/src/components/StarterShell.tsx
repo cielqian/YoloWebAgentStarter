@@ -101,20 +101,20 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
 }
 
 const SECTION_INFO: Record<string, { title: string; description: string }> = {
-  datasources: { title: "数据源", description: "管理原始图片素材池,支持 FTP 同步、本地上传与多值标签筛选" },
+  datasources: { title: "数据源", description: "管理原始图片集合：可从 FTP 同步或本地上传，用标签组织和检索图片，与数据集互相独立。" },
   workspace: { title: "所有数据集", description: "在这里创建、导入和管理你的数据集。" },
-  training: { title: "训练", description: "训练任务下发、实时进度与历史记录" },
-  models: { title: "模型", description: "训练产出的受管模型,支持 PT/ONNX/OM 格式转换" },
+  training: { title: "训练", description: "训练任务下发到远程节点,实时查看进度与指标" },
+  models: { title: "模型", description: "训练产出的受管模型,按数据集/版本/格式浏览与转换" },
   agent: { title: "智能体", description: "AI 助手对话,支持数据问答与受管任务提交" },
-  logs: { title: "日志", description: "后端运行日志与插件日志排查" },
-  ftp: { title: "FTP 管理", description: "浏览、上传与删除 FTP 服务器上的文件" },
+  logs: { title: "日志", description: "查看后端运行日志与插件日志,定位服务和插件问题" },
+  ftp: { title: "FTP 管理", description: "浏览 FTP 服务器文件，支持上传、下载、移动与删除。" },
   "plugin-manager": { title: "插件管理", description: "安装/卸载插件包,查看插件运行日志" },
-  "settings-llm": { title: "Agent LLM", description: "Provider、模型与 API Key" },
+  "settings-llm": { title: "Agent LLM", description: "管理此设备上的 Agent LLM Provider、模型与 API Key。配置保存在本地 data 目录。" },
   "settings-sam": { title: "SAM 辅助", description: "模型、设备与建议方式" },
   "settings-ftp": { title: "FTP 连接", description: "FTP 服务器连接配置与连通性测试" },
   "settings-nodes": { title: "Agent 配置", description: "训练与 OM 转换节点的注册与管理" },
   "settings-weights": { title: "基础权重", description: "预置 .pt 权重上传与删除" },
-  "settings-basedata": { title: "基础数据", description: "全局类别库、标签库与素材类型管理" },
+  "settings-basedata": { title: "基础数据", description: "维护全局类别库、标签库与素材类型;数据集导入类别、数据源打标签和选素材类型都从这里取数。" },
   "settings-webhook": { title: "Webhook 通知", description: "训练生命周期事件 HTTP 回调配置" },
   "settings-language": { title: "语言", description: "工作台显示语言偏好" },
 };

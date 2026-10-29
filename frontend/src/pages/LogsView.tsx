@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Flex } from "antd";
 import { api } from "../api/client";
 import { Toast } from "../components/Toast";
 import type { PluginLogEntry, RuntimeLogResponse } from "../types";
@@ -72,14 +73,14 @@ export function LogsView({ locale }: { locale: AppLocale }) {
   const selectedPlugin = plugins.find((item) => item.plugin_id === pluginId);
 
   return <main className="logs-layout">
-    <header className="logs-head"><div><span className="eyebrow">{copy.eyebrow}</span><h1>{copy.title}</h1><p>{copy.subtitle}</p></div><div className="header-actions">
+    <Flex justify="flex-end" align="center" gap={8} style={{ marginBottom: 12 }}>
       <div className="log-levels logs-source-toggle" role="tablist" aria-label="log source">
         <button role="tab" aria-selected={source === "runtime"} className={source === "runtime" ? "active" : ""} onClick={() => setSource("runtime")}>{copy.sourceRuntime}</button>
         <button role="tab" aria-selected={source === "plugins"} className={source === "plugins" ? "active" : ""} onClick={() => setSource("plugins")}>{copy.sourcePlugins}</button>
       </div>
       <button className="button" onClick={() => void load()} disabled={loading}>{copy.refresh}</button>
       <button className="button" onClick={() => void copyPath()} disabled={!result.path}>{copy.copy}</button>
-    </div></header>
+    </Flex>
     {error && <Toast kind="error" message={error} onClose={() => setError("")} />}
 
     {source === "plugins" ? (

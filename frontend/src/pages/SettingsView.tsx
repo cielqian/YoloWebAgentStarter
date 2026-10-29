@@ -422,14 +422,7 @@ export function SettingsView({
   const text = copy[locale];
   return (
     <main className="settings-layout">
-      <header className="settings-page-head">
-        <div>
-          <span className="eyebrow">{text.eyebrow}</span>
-          <h1>{text.title}</h1>
-          <p>{text.subtitle}</p>
-        </div>
-        <span className="settings-page-badge">{text.local}</span>
-      </header>
+
       <div className="settings-section-content">
         {tab === "llm" ? (
           <LlmSettingsPanel locale={locale} text={text} />

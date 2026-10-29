@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Flex } from "antd";
 import { api, apiUrl, type FtpSyncProgressEvent } from "../api/client";
 import { Toast } from "../components/Toast";
 import { confirmDialog } from "../components/confirm";
@@ -154,17 +155,10 @@ export function DataSourceView() {
         />
       ) : (
         <>
-          <header className="ftp-head">
-            <div>
-              <span className="eyebrow">DATA SOURCES</span>
-              <h1>数据源</h1>
-              <p>管理原始图片集合：可从 FTP 同步或本地上传，用标签组织和检索图片，与数据集互相独立。</p>
-            </div>
-            <div className="header-actions">
-              <button className="button primary" onClick={() => { setCreateName(""); setCreateDescription(""); setCreateOpen(true); }}>新建数据集</button>
-              <button className="button" disabled={loading} onClick={() => void load()}>刷新</button>
-            </div>
-          </header>
+          <Flex justify="flex-end" gap={8} style={{ marginBottom: 12 }}>
+            <button className="button primary" onClick={() => { setCreateName(""); setCreateDescription(""); setCreateOpen(true); }}>新建数据集</button>
+            <button className="button" disabled={loading} onClick={() => void load()}>刷新</button>
+          </Flex>
           <Toast kind="error" message={error} onClose={() => setError("")} />
           <Toast kind="success" message={notice} onClose={() => setNotice("")} />
           {loading ? (
@@ -515,16 +509,13 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
 
   return (
     <>
-      <header className="ftp-head">
+      <Flex justify="space-between" align="center" style={{ marginBottom: 12 }}>
         <div>
-          <span className="eyebrow">DATA SOURCE</span>
-          <h1>{dataset.name}</h1>
-          <p>{dataset.description || "管理该数据集的图片与标签。"} · 共 {page?.total ?? dataset.image_count} 张图片 · {tags.length} 个标签</p>
+          <strong style={{ fontSize: 16 }}>{dataset.name}</strong>
+          <small style={{ marginLeft: 10, color: "#7d8799" }}>{dataset.description || ""} · {page?.total ?? dataset.image_count} 张图片 · {tags.length} 个标签</small>
         </div>
-        <div className="header-actions">
-          <button className="button" onClick={onBack}>← 返回列表</button>
-        </div>
-      </header>
+        <button className="button" onClick={onBack}>← 返回列表</button>
+      </Flex>
       <Toast kind="error" message={error} onClose={() => setError("")} />
       <Toast kind="success" message={notice} onClose={() => setNotice("")} />
       {syncProgress && (

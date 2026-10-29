@@ -49,12 +49,7 @@ function formatTime(value: string): string {
 export function ClassTemplatesView() {
   return (
     <main className="class-library-page">
-      <header className="dataset-home-header">
-        <div>
-          <h1>基础数据管理</h1>
-          <p>维护全局类别库、标签库与素材类型;数据集导入类别、数据源打标签和选素材类型都从这里取数。标签支持枚举取值(如 光线=强/弱)。</p>
-        </div>
-      </header>
+
       <Tabs
         defaultActiveKey="classes"
         items={[
