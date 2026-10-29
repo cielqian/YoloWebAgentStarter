@@ -1,4 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  Alert,
+  Button as AntdButton,
+  Empty as AntdEmpty,
+  Flex,
+  Input as AntdInput,
+  Popconfirm,
+  Progress,
+  Space,
+  Table,
+  Tag as AntdTag,
+  Typography,
+  type TableProps,
+} from "antd";
+import { DownloadOutlined, PlusOutlined } from "@ant-design/icons";
 import { AnnotationCanvas, type AnnotationDraft } from "./annotation/AnnotationCanvas";
 import { api, apiUrl, type UploadProgress } from "./api/client";
 import { StarterShell, type StarterSection } from "./components/StarterShell";
@@ -843,51 +858,95 @@ export function DatasetHome(props: {
     ? props.datasets.filter((dataset) => dataset.name.toLowerCase().includes(searchKeyword))
     : props.datasets;
 
+  // antd Table 列定义
+  const datasetColumns: TableProps<Dataset>["columns"] = [
+    { title: "#", key: "_index", width: 50, render: (_, __, index) => index + 1 },
+    { title: "名称", dataIndex: "name", key: "name", render: (_, ds) => (
+      <Space size={8}>
+        <strong>{ds.name}</strong>
+        <AntdTag>{taskTypeLabel(ds.task_type)}</AntdTag>
+      </Space>
+    ) },
+    { title: "状态", key: "status", width: 100, render: (_, ds) => {
+      const importing = ds.import_state === "importing";
+      const merging = ds.import_state === "merging";
+      const failed = ds.import_state === "failed" || ds.import_state === "merge_failed";
+      const inFlight = importing || merging;
+      if (inFlight) return <AntdTag color="processing">{merging ? "合并中" : `导入 ${Math.round(ds.import_progress ?? 0)}%`}</AntdTag>;
+      if (failed) return <AntdTag color="error">失败</AntdTag>;
+      return <AntdTag color="success">就绪</AntdTag>;
+    } },
+    { title: "图片", dataIndex: "image_count", key: "image_count", width: 80, render: (v: number) => <Typography.Text style={{ fontVariantNumeric: "tabular-nums", fontWeight: 650 }}>{(v ?? 0).toLocaleString()}</Typography.Text> },
+    { title: "类别", dataIndex: "class_count", key: "class_count", width: 70, render: (v: number) => <Typography.Text style={{ fontVariantNumeric: "tabular-nums", fontWeight: 650 }}>{(v ?? 0).toLocaleString()}</Typography.Text> },
+    { title: "标注进度", key: "progress", width: 120, render: (_, ds) => {
+      const percent = ds.image_count ? Math.round(ds.annotated_image_count / ds.image_count * 100) : 0;
+      return ds.image_count ? <Progress percent={percent} size="small" style={{ margin: 0 }} /> : <Typography.Text type="secondary">—</Typography.Text>;
+    } },
+    { title: "版本", key: "version", width: 100, render: (_, ds) => {
+      if (!ds.latest_version_number) return <Typography.Text type="secondary">未创建</Typography.Text>;
+      const historical = ds.active_version_number != null && ds.latest_version_number != null && ds.active_version_number !== ds.latest_version_number;
+      return (
+        <Space size={4}>
+          <span>{ds.latest_version_label || `v${ds.latest_version_number}`}</span>
+          {historical && <AntdTag color="warning">只读</AntdTag>}
+        </Space>
+      );
+    } },
+    { title: "操作", key: "actions", width: 220, render: (_, ds) => {
+      const importing = ds.import_state === "importing" || ds.import_state === "merging";
+      const inFlight = importing;
+      const historical = ds.active_version_number != null && ds.latest_version_number != null && ds.active_version_number !== ds.latest_version_number;
+      return (
+        <Space size="small" onClick={(e) => e.stopPropagation()}>
+          <AntdButton type="link" size="small" disabled={props.busy || inFlight || !ds.image_count} onClick={() => props.onContinueAnnotation(ds)}>标注</AntdButton>
+          <AntdButton type="link" size="small" disabled={props.busy || inFlight || historical} onClick={() => setUploadTarget(ds)}>添加</AntdButton>
+          <AntdButton type="link" size="small" disabled={props.busy || inFlight} onClick={() => props.onTrain(ds)}>训练</AntdButton>
+          <Popconfirm title={`删除数据集"${ds.name}"？`} description="所有图片、标注、训练记录和关联文件将永久删除，不可恢复。" okText="删除" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => props.onDelete(ds)}>
+            <AntdButton type="link" size="small" danger disabled={props.busy}>删除</AntdButton>
+          </Popconfirm>
+        </Space>
+      );
+    } },
+  ];
+
   return <main className="dataset-home-page">
     <section className="dataset-overview">
-      <div className="dataset-list-tools" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, justifyContent: "flex-end" }}><input className="dataset-search" aria-label="搜索数据集" placeholder="搜索数据集名称…" value={datasetSearch} onChange={(event) => setDatasetSearch(event.target.value)} />{datasetSearch.trim() && <button type="button" className="icon-button" aria-label="清空搜索" onClick={() => setDatasetSearch("")}>×</button>}<span className="dataset-total">{datasetSearch.trim() ? `${visibleDatasets.length} / ${props.datasets.length}` : props.datasets.length} 个数据集</span><button className="button" onClick={() => setDialog("import")}>导入数据</button><button className="button primary" onClick={() => setDialog("create")}>新建数据集</button></div>
-      <div className="dataset-list-wrap">
-        <div className="dataset-list">
-          <div className="dataset-list-head"><span>名称</span><span>类型</span><span>状态</span><span>图片</span><span>类别</span><span>标注进度</span><span>版本</span><span>创建时间</span><span className="dataset-list-head-actions">操作</span></div>
-          {visibleDatasets.map((dataset, index) => { const importing = dataset.import_state === "importing"; const merging = dataset.import_state === "merging"; const inFlight = importing || merging; const expanded = Boolean(expandedRows[dataset.id]); const annotatedPercent = dataset.image_count ? Math.round(dataset.annotated_image_count / dataset.image_count * 100) : 0; const historical = dataset.active_version_number != null && dataset.latest_version_number != null && dataset.active_version_number !== dataset.latest_version_number; return <div key={dataset.id} className={`dataset-row${expanded ? " expanded" : ""}`}>
-            <div className="dataset-row-name"><span className={`dataset-icon tone-${index % 3}`}>{dataset.task_type === "segment" || dataset.task_type === "obb" ? "◇" : dataset.task_type === "classify" ? "○" : dataset.task_type === "pose" ? "✥" : "□"}</span><div><strong title={dataset.name}>{dataset.name}</strong><small>{taskDescription(dataset.task_type)}{dataset.task_type === "pose" && dataset.pose_config ? ` · ${dataset.pose_config.kpt_count} 关键点` : ""}</small></div></div>
-            <span className="dataset-row-type">{taskTypeLabel(dataset.task_type)}</span>
-            <span className={`status ${dataset.import_state === "failed" || dataset.import_state === "merge_failed" ? "failed" : dataset.import_state === "stopped" || dataset.import_state === "merge_stopped" ? "stopped" : inFlight ? "running" : "ready"}`}>{merging ? "合并中" : importing ? `导入中 ${Math.round(dataset.import_progress ?? 0)}%` : dataset.import_state === "failed" ? "导入失败" : dataset.import_state === "stopped" ? "已停止" : dataset.import_state === "merge_failed" ? "合并失败" : dataset.import_state === "merge_stopped" ? "已停止" : "就绪"}</span>
-            <span className="dataset-row-num">{dataset.image_count.toLocaleString()}</span>
-            <span className="dataset-row-num">{dataset.class_count.toLocaleString()}</span>
-            <div className="dataset-row-progress"><strong>{dataset.image_count ? `${annotatedPercent}%` : "等待导入"}</strong><div className="progress-track"><i style={{ width: `${annotatedPercent}%` }} /></div></div>
-            <span className="dataset-row-version" title={historical ? `只读 · 已激活 ${dataset.active_version_label || `v${dataset.active_version_number}`}（非最新）` : undefined}>{dataset.latest_version_number ? <>{dataset.latest_version_label || `v${dataset.latest_version_number}`}{historical ? <em>只读</em> : null}</> : <span className="muted">未创建</span>}</span>
-            <span className="dataset-row-num">{formatDatasetDate(dataset.created_at)}</span>
-            <div className="dataset-row-actions">
-              <button className="button primary" disabled={props.busy || inFlight || !dataset.image_count} onClick={() => props.onContinueAnnotation(dataset)}>继续标注</button>
-              <button className="button" disabled={props.busy || inFlight || isHistoricalActive(dataset)} onClick={() => setUploadTarget(dataset)}>添加图片</button>
-              <button className="button" disabled={props.busy || inFlight} onClick={() => props.onTrain(dataset)}>训练</button>
-              <button className="button" aria-expanded={expanded} onClick={() => setExpandedRows((current) => ({ ...current, [dataset.id]: !current[dataset.id] }))}>{expanded ? "收起" : "更多"}</button>
-            </div>
-            {inFlight && <div className="dataset-row-sub" role="status"><div className="dataset-import-progress-top"><span>{dataset.import_message ?? "正在导入…"}</span><span>{Math.round(dataset.import_progress ?? 0)}%</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, Math.max(2, dataset.import_progress ?? 0))}%` }} /></div></div>}
-            {dataset.import_state === "failed" && <div className="dataset-row-sub"><div className="validation invalid"><span>导入失败：{dataset.import_message ?? "未知错误"}</span></div></div>}
-            {dataset.import_state === "merge_failed" && <div className="dataset-row-sub"><div className="validation invalid"><span>合并失败：{dataset.import_message ?? "未知错误"}</span><small>数据集仍可正常使用；重新上传压缩包会跳过已合并的同名图片。</small></div></div>}
-            {dataset.import_state === "merge_stopped" && <div className="dataset-row-sub"><div className="validation valid"><span>合并已停止：已合并部分保留，可重新上传继续。</span></div></div>}
-            <div className={`dataset-row-detail${expanded ? " open" : ""}`}>
-              <div className="dataset-row-detail-actions">
-                {inFlight ? <button className="button danger" disabled={props.busy} onClick={() => props.onCancelImport?.(dataset)}>{importing ? "停止导入" : "停止合并"}</button> : null}
-                {props.onAskAgent ? <button className="button" disabled={props.busy || inFlight} onClick={() => props.onAskAgent?.(dataset)}>{props.agentLabel ?? "询问助手"}</button> : null}
-                <button className="button" disabled={props.busy || inFlight} onClick={() => openBasicInfo(dataset)}>基础信息维护</button>
-                <button className="button dataset-auto-annotation-action" disabled={props.busy || inFlight || !dataset.image_count || isHistoricalActive(dataset)} onClick={() => setAutoAnnotationTarget(dataset)}>自动标注</button>
-                <button className="button" disabled={props.busy || inFlight || !dataset.image_count} onClick={() => openExport(dataset)}>导出数据</button>
-                <button className="button" disabled={props.busy || inFlight || !dataset.image_count} onClick={() => void toggleDuplicates(dataset)}>{isReportOpen(dataset.id, "duplicates") ? "收起重复图" : "重复/相似图"}</button>
-                <button className="button" disabled={props.busy || inFlight} onClick={() => void toggleQuality(dataset)}>{isReportOpen(dataset.id, "quality") ? "收起报告" : "质量报告"}</button>
-                <button className="button" disabled={props.busy || inFlight} onClick={() => setVersionTarget(dataset)}>版本管理</button>
-                <button className="button dataset-delete-action" disabled={props.busy} onClick={() => setDeleteTarget(dataset)}>删除</button>
-              </div>
-              {isReportOpen(dataset.id, "quality") && qualityReports[dataset.id] && <CardReport onClose={() => closeReport(dataset.id)}><QualityPanel report={qualityReports[dataset.id]} compact /></CardReport>}
-              {isReportOpen(dataset.id, "duplicates") && duplicateReports[dataset.id] && <CardReport onClose={() => closeReport(dataset.id)}><DuplicatePanel report={duplicateReports[dataset.id]} compact /></CardReport>}
-            </div>
-          </div>; })}
-        </div>
-        {!props.datasets.length && <section className="dataset-empty-card"><span className="dataset-empty-icon">□</span><h2>还没有数据集</h2><p>新建一个空数据集，或导入已有的 YOLO ZIP 数据集。</p><div><button className="button" onClick={() => setDialog("import")}>导入数据</button><button className="button primary" onClick={() => setDialog("create")}>新建数据集</button></div></section>}
-        {Boolean(props.datasets.length) && !visibleDatasets.length && <section className="dataset-empty-card"><span className="dataset-empty-icon">⌕</span><h2>没有匹配的数据集</h2><p>没有名称包含「{datasetSearch.trim()}」的数据集，换个关键词试试。</p><div><button className="button" onClick={() => setDatasetSearch("")}>清空搜索</button></div></section>}
-      </div>
+      <Flex justify="flex-end" gap={8} style={{ marginBottom: 12 }}>
+        <AntdInput.Search
+          placeholder="搜索数据集名称…"
+          value={datasetSearch}
+          onChange={(e) => setDatasetSearch(e.target.value)}
+          allowClear
+          style={{ width: 220 }}
+        />
+        <AntdButton icon={<DownloadOutlined />} onClick={() => setDialog("import")}>导入数据</AntdButton>
+        <AntdButton type="primary" icon={<PlusOutlined />} onClick={() => setDialog("create")}>新建数据集</AntdButton>
+      </Flex>
+      <Table<Dataset>
+        rowKey="id"
+        columns={datasetColumns}
+        dataSource={visibleDatasets}
+        loading={props.busy}
+        pagination={{
+          showSizeChanger: false,
+          showTotal: (total) => `共 ${total} 个`,
+          pageSize: 10,
+        }}
+        size="middle"
+        expandable={{
+          expandedRowRender: (dataset) => (
+            <Space size={4} wrap>
+              <AntdButton size="small" disabled={props.busy || dataset.import_state === "importing"} onClick={() => openBasicInfo(dataset)}>基础信息</AntdButton>
+              <AntdButton size="small" disabled={props.busy || dataset.import_state === "importing" || !dataset.image_count || isHistoricalActive(dataset)} onClick={() => setAutoAnnotationTarget(dataset)}>自动标注</AntdButton>
+              <AntdButton size="small" disabled={props.busy || dataset.import_state === "importing" || !dataset.image_count} onClick={() => openExport(dataset)}>导出</AntdButton>
+              <AntdButton size="small" disabled={props.busy || dataset.import_state === "importing"} onClick={() => setVersionTarget(dataset)}>版本管理</AntdButton>
+              {(dataset.import_state === "importing" || dataset.import_state === "merging") && (
+                <AntdButton size="small" danger disabled={props.busy} onClick={() => props.onCancelImport(dataset)}>停止{dataset.import_state === "importing" ? "导入" : "合并"}</AntdButton>
+              )}
+            </Space>
+          ),
+        }}
+      />
     </section>
     {autoAnnotationTarget && <AutoAnnotationModal dataset={autoAnnotationTarget} onClose={() => setAutoAnnotationTarget(undefined)} onChanged={() => props.onAutoAnnotationComplete?.()} />}
     {dialog === "import" && <ImportCenterModal busy={props.busy} onClose={closeDialog} onArchiveImport={props.onImport} onFtpImport={props.onFtpImport} onVideoCompleted={(task) => props.onVideoImportComplete?.(task)} />}
@@ -1032,6 +1091,7 @@ export function DatasetHome(props: {
     {versionTarget && <DatasetVersionDialog dataset={versionTarget} onClose={() => setVersionTarget(undefined)} onChanged={() => props.onVersionsChange?.()} />}
   </main>;
 }
+
 
 function CardReport({ children, onClose }: { children: ReactNode; onClose: () => void }) { return <div className="dataset-card-report"><button className="dataset-card-report-close" onClick={onClose}>收起结果</button>{children}</div>; }
 function QualityPanel({ report, compact = false }: { report: DatasetQualityReport; compact?: boolean }) { return <section className={compact ? "quality-panel compact-quality-panel" : "quality-panel"}><div className="quality-summary"><span><small>标注覆盖率</small><strong>{Math.round(report.summary.coverage * 100)}%</strong></span><span><small>标注总数</small><strong>{report.summary.annotation_count}</strong></span><span><small>小目标</small><strong>{report.summary.small_object_count}</strong></span><span><small>问题</small><strong>{report.issues.length}</strong></span></div>{!compact && <div className="quality-grid"><div><h3>类别分布</h3>{report.class_distribution.map((item) => <p key={item.class_id}><span>{item.class_index}. {item.name}</span><b>{item.count}</b><i><em style={{ width: `${Math.max(item.ratio * 100, item.count ? 3 : 0)}%` }} /></i></p>)}</div><div><h3>需要关注</h3>{report.issues.slice(0, 5).map((item, index) => <p key={`${item.type}-${index}`}><b>{item.level}</b><span>{item.message}</span></p>)}{!report.issues.length && <p>当前未发现需要关注的问题。</p>}</div></div>}</section>; }
