@@ -292,11 +292,9 @@ export default function App() {
   const activeSection: StarterSection =
     view === "annotation"
       ? "workspace"
-      : view === "settings-llm" || view === "settings-sam" || view === "settings-ftp" || view === "settings-nodes" || view === "settings-weights" || view === "settings-basedata" || view === "settings-webhook" || view === "settings-language"
-        ? "settings"
-        : view === "plugin"
-          ? `plugin:${activePluginId ?? ""}`
-          : view;
+      : view === "plugin"
+        ? `plugin:${activePluginId ?? ""}`
+        : (view as StarterSection);
   const navigate = (section: StarterSection) => {
     const proceed = () => {
       setNotice("");
@@ -316,12 +314,12 @@ export default function App() {
         setView(section);
         return;
       }
-      const globalSection = section === "settings" || section === "logs" || section === "agent" || section === "ftp" || section === "datasources";
+      const globalSection = section.startsWith("settings") || section === "logs" || section === "agent" || section === "ftp" || section === "datasources";
       if (!globalSection && section !== "workspace" && !selected) {
         setNotice("请先创建或选择一个数据集。");
         return;
       }
-      setView((section === "settings" ? "settings-llm" : section) as View);
+      setView(section as View);
     };
     if (view === "annotation" && annotationDirty) {
       requestLeave(() => {

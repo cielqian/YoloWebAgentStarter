@@ -3,7 +3,7 @@ import { Layout, Menu } from "antd";
 import type { AppLocale } from "../locale";
 import { localeText } from "../locale";
 
-export type StarterSection = "workspace" | "training" | "models" | "agent" | "logs" | "ftp" | "datasources" | "plugin-manager" | `plugin:${string}` | "settings";
+export type StarterSection = "workspace" | "training" | "models" | "agent" | "logs" | "ftp" | "datasources" | "plugin-manager" | `plugin:${string}` | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language";
 
 interface Props {
   active: StarterSection;
@@ -21,7 +21,7 @@ const Content = Layout.Content;
 /** 应用外壳:antd Layout + Sider + Header + Content。 */
 export function StarterShell({ active, onNavigate, locale = "zh", focusMode = false, plugins = [], children }: Props) {
   const text = localeText[locale];
-  const labels: Partial<Record<StarterSection, string>> = {
+  const labels: Partial<Record<string, string>> = {
     workspace: text.datasets,
     training: text.training,
     models: text.models,
@@ -48,13 +48,20 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
   ];
 
   const settingsItems = [
-    { key: "settings", label: labels.settings ?? "设置" },
+    { key: "settings-llm", label: locale === "zh" ? "Agent LLM" : "Agent LLM" },
+    { key: "settings-sam", label: locale === "zh" ? "SAM 辅助" : "SAM Assist" },
+    { key: "settings-ftp", label: locale === "zh" ? "FTP 连接" : "FTP Connection" },
+    { key: "settings-nodes", label: locale === "zh" ? "Agent 配置" : "Agent Nodes" },
+    { key: "settings-weights", label: locale === "zh" ? "基础权重" : "Base Weights" },
+    { key: "settings-basedata", label: locale === "zh" ? "基础数据" : "Base Data" },
+    { key: "settings-webhook", label: locale === "zh" ? "Webhook 通知" : "Webhook" },
+    { key: "settings-language", label: locale === "zh" ? "语言" : "Language" },
   ];
 
   const menuItems = [
     { type: "group" as const, label: text.workspaceGroup, children: workspaceItems },
     ...(pluginItems.length ? [{ type: "group" as const, label: text.pluginsGroup, children: pluginItems }] : []),
-    { type: "group" as const, label: text.settingsGroup, children: settingsItems },
+    { type: "group" as const, label: text.settingsGroup, children: [{ key: "settings-group", label: text.settingsGroup, children: settingsItems }] },
   ];
 
   return (
@@ -84,9 +91,21 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
   );
 }
 
+const SETTINGS_LABELS: Record<string, string> = {
+  "settings-llm": "Agent LLM",
+  "settings-sam": "SAM 辅助",
+  "settings-ftp": "FTP 连接",
+  "settings-nodes": "Agent 配置",
+  "settings-weights": "基础权重",
+  "settings-basedata": "基础数据",
+  "settings-webhook": "Webhook 通知",
+  "settings-language": "语言",
+};
+
 function currentLabel(active: StarterSection, labels: Partial<Record<StarterSection, string>>): string {
   if (active.startsWith("plugin:")) return "插件";
   if (active === "plugin-manager") return "插件管理";
+  if (active in SETTINGS_LABELS) return `设置 · ${SETTINGS_LABELS[active]}`;
   return labels[active] ?? "";
 }
 

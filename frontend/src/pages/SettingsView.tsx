@@ -420,16 +420,6 @@ export function SettingsView({
   onTabChange: (tab: SettingsTab) => void;
 }) {
   const text = copy[locale];
-  const navItems = [
-    { key: "llm", icon: <LlmIcon />, title: text.llmNav, description: text.llmNavDescription },
-    { key: "sam", icon: <SamIcon />, title: text.samNav, description: text.samNavDescription },
-    { key: "ftp", icon: <FtpIcon />, title: text.ftpNav, description: text.ftpNavDescription },
-    { key: "nodes", icon: <NodeIcon />, title: text.nodesNav, description: text.nodesNavDescription },
-    { key: "weights", icon: <NodeIcon />, title: text.weightsNav, description: text.weightsNavDescription },
-    { key: "basedata", icon: <ClassIcon />, title: text.basedataNav, description: text.basedataNavDescription },
-    { key: "webhook", icon: <WebhookIcon />, title: text.webhookNav, description: text.webhookNavDescription },
-    { key: "language", icon: <LanguageIcon />, title: text.languageNav, description: text.languageNavDescription },
-  ];
   return (
     <main className="settings-layout">
       <header className="settings-page-head">
@@ -440,43 +430,24 @@ export function SettingsView({
         </div>
         <span className="settings-page-badge">{text.local}</span>
       </header>
-      <div className="settings-section-layout">
-        <Tabs
-          tabPlacement="start"
-          activeKey={tab}
-          onChange={(key) => onTabChange(key as SettingsTab)}
-          items={navItems.map((item) => ({
-            key: item.key,
-            label: (
-              <span className="settings-nav-label">
-                <span className="settings-nav-icon">{item.icon}</span>
-                <span className="settings-nav-copy">
-                  <strong>{item.title}</strong>
-                  <small>{item.description}</small>
-                </span>
-              </span>
-            ),
-          }))}
-        />
-        <div className="settings-section-content">
-          {tab === "llm" ? (
-            <LlmSettingsPanel locale={locale} text={text} />
-          ) : tab === "sam" ? (
-            <SamSettingsPanel locale={locale} text={text} onSamSettingsChange={onSamSettingsChange} />
-          ) : tab === "ftp" ? (
-            <FtpSettingsPanel text={text} />
-          ) : tab === "nodes" ? (
-            <AgentNodesPanel text={text} />
-          ) : tab === "weights" ? (
-            <BaseWeightsPanel text={text} />
-          ) : tab === "basedata" ? (
-            <BaseDataPanel />
-          ) : tab === "webhook" ? (
-            <WebhookSettingsPanel text={text} />
-          ) : (
-            <LanguageSettingsPanel locale={locale} text={text} onLocaleChange={onLocaleChange} />
-          )}
-        </div>
+      <div className="settings-section-content">
+        {tab === "llm" ? (
+          <LlmSettingsPanel locale={locale} text={text} />
+        ) : tab === "sam" ? (
+          <SamSettingsPanel locale={locale} text={text} onSamSettingsChange={onSamSettingsChange} />
+        ) : tab === "ftp" ? (
+          <FtpSettingsPanel text={text} />
+        ) : tab === "nodes" ? (
+          <AgentNodesPanel text={text} />
+        ) : tab === "weights" ? (
+          <BaseWeightsPanel text={text} />
+        ) : tab === "basedata" ? (
+          <BaseDataPanel />
+        ) : tab === "webhook" ? (
+          <WebhookSettingsPanel text={text} />
+        ) : (
+          <LanguageSettingsPanel locale={locale} text={text} onLocaleChange={onLocaleChange} />
+        )}
       </div>
     </main>
   );
