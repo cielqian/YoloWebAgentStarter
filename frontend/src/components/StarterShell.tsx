@@ -11,6 +11,7 @@ interface Props {
   locale?: AppLocale;
   focusMode?: boolean;
   plugins?: Array<{ id: string; name: string; icon: string | null }>;
+  headerExtra?: ReactNode;
   children: ReactNode;
 }
 
@@ -19,7 +20,7 @@ const Header = Layout.Header;
 const Content = Layout.Content;
 
 /** 应用外壳:antd Layout + Sider + Header + Content。 */
-export function StarterShell({ active, onNavigate, locale = "zh", focusMode = false, plugins = [], children }: Props) {
+export function StarterShell({ active, onNavigate, locale = "zh", focusMode = false, plugins = [], headerExtra, children }: Props) {
   const text = localeText[locale];
   const labels: Partial<Record<string, string>> = {
     workspace: text.datasets,
@@ -84,9 +85,12 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
         </Sider>
         <Layout>
           <Header className="starter-antd-header">
-            <Flex align="baseline" gap={12}>
+            <Flex align="baseline" gap={12} style={{ flex: 1, minWidth: 0 }}>
               <span className="starter-antd-header-title">{currentInfo(active, labels).title}</span>
               <span className="starter-antd-header-desc">{currentInfo(active, labels).description}</span>
+            </Flex>
+            <Flex align="center" gap={8}>
+              {headerExtra}
             </Flex>
           </Header>
           <Content className="starter-antd-content">{children}</Content>
@@ -98,7 +102,7 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
 
 const SECTION_INFO: Record<string, { title: string; description: string }> = {
   datasources: { title: "数据源", description: "管理原始图片素材池,支持 FTP 同步、本地上传与多值标签筛选" },
-  workspace: { title: "数据集", description: "在这里创建、导入和管理你的数据集。" },
+  workspace: { title: "所有数据集", description: "在这里创建、导入和管理你的数据集。" },
   training: { title: "训练", description: "训练任务下发、实时进度与历史记录" },
   models: { title: "模型", description: "训练产出的受管模型,支持 PT/ONNX/OM 格式转换" },
   agent: { title: "智能体", description: "AI 助手对话,支持数据问答与受管任务提交" },
