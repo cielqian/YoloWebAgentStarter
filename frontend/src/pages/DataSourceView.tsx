@@ -5,6 +5,7 @@ import {
   Button as AntdButton,
   Empty,
   Flex,
+  Image as AntdImage,
   Form as AntdForm,
   Input as AntdInput,
   Modal,
@@ -642,20 +643,28 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
           {items.map((image) => {
             const isSelected = selectedIds.includes(image.id);
             return (
-              <button
+              <div
                 key={image.id}
                 className={`source-image-card${selectMode ? " selectable" : ""}${selectMode && isSelected ? " selected" : ""}`}
-                onClick={() => { if (selectMode) toggleSelected(image.id); else { setViewMode("browser"); setPreview(image); } }}
+                onClick={() => { if (selectMode) toggleSelected(image.id); }}
+                style={{ cursor: selectMode ? "pointer" : "default" }}
               >
                 {selectMode && <span className="source-check" aria-hidden="true">{isSelected ? "✓" : ""}</span>}
-                <img src={apiUrl(image.thumbnail_url)} alt={image.file_name} loading="lazy" />
+                <AntdImage
+                  src={apiUrl(image.thumbnail_url)}
+                  alt={image.file_name}
+                  width="100%"
+                  height={140}
+                  style={{ objectFit: "cover" }}
+                  preview={{ src: apiUrl(image.file_url) }}
+                />
                 <span className="source-image-name">{image.file_name}</span>
                 <span className="source-image-meta">
                   {image.source_type === "ftp" ? "FTP" : "上传"} · {formatSize(image.size_bytes)}
                   <small>导入 {formatImportTime(image.created_at)}</small>
                   {image.tags.length > 0 && <i>{image.tags.map((tag) => tag.name + (tag.value ? ":" + tag.value : "")).join(" · ")}</i>}
                 </span>
-              </button>
+              </div>
             );
           })}
         </section>
@@ -665,7 +674,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
             {items.map((image) => (
               <div key={image.id} className={`source-browser-item${preview?.id === image.id ? " active" : ""}`}>
                 <button type="button" className="source-browser-item-main" onClick={() => setPreview(image)}>
-                  <img src={apiUrl(image.thumbnail_url)} alt="" loading="lazy" />
+                  <AntdImage src={apiUrl(image.thumbnail_url)} alt="" width={56} height={56} style={{ objectFit: "cover", borderRadius: 6 }} preview={false} />
                   <div>
                     <strong title={image.file_name}>{image.file_name}</strong>
                     <small>{formatSize(image.size_bytes)}{image.tags.length ? ` · ${image.tags.map((tag) => tag.name + (tag.value ? ":" + tag.value : "")).join("、")}` : ""}</small>
@@ -686,7 +695,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
           <div className="source-browser-main">
             {preview ? (
               <>
-                <img src={apiUrl(preview.file_url)} alt={preview.file_name} />
+                <AntdImage src={apiUrl(preview.file_url)} alt={preview.file_name} style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain" }} preview={false} />
                 <div className="source-browser-bar">
                   <span>{previewIndex >= 0 ? `${previewIndex + 1} / ${items.length}` : ""} · {preview.file_name}</span>
                   <span className="muted">{preview.width}×{preview.height} · {formatSize(preview.size_bytes)}</span>
