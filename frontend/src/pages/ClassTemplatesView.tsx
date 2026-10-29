@@ -263,6 +263,7 @@ function TagLibraryPanel() {
   };
 
   const columns: TableProps<TagTemplate>["columns"] = [
+    { title: "#", key: "_index", width: 50, render: (_, __, index) => index + 1 },
     {
       title: "标签",
       dataIndex: "name",
@@ -396,6 +397,7 @@ function MaterialTypePanel() {
   };
 
   const columns: TableProps<MaterialType>["columns"] = [
+    { title: "#", key: "_index", width: 50, render: (_, __, index) => index + 1 },
     { title: "素材类型", dataIndex: "name", key: "name" },
     { title: "备注", dataIndex: "description", key: "description", render: (value: string | null) => value || <Text type="secondary">—</Text> },
     { title: "更新时间", dataIndex: "updated_at", key: "updated_at", width: 180, render: (value: string) => formatTime(value) },

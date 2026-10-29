@@ -156,6 +156,7 @@ export function DataSourceView() {
   const active = datasets.find((item) => item.id === activeId);
 
   const columns: TableProps<SourceDataset>["columns"] = [
+    { title: "#", key: "_index", width: 50, render: (_, __, index) => index + 1 },
     { title: "名称", dataIndex: "name", key: "name", render: (_, item) => (
       <Space size={4}>
         <strong>{item.name}</strong>
