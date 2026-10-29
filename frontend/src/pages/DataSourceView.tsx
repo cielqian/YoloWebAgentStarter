@@ -758,7 +758,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
         onCancel={() => setFtpOpen(false)}
         width={720}
         footer={null}
-        destroyOnHidden
+        forceRender
       >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
           浏览 FTP 目录后可整个文件夹同步，或勾选多个文件导入，可先选标签附加到导入的图片。非图片和超限文件会跳过。

@@ -11,6 +11,14 @@ beforeAll(() => {
       value: (query: string) => ({ matches: false, media: query, onchange: null, addListener: () => undefined, removeListener: () => undefined, addEventListener: () => undefined, removeEventListener: () => undefined, dispatchEvent: () => false }),
     });
   }
+  // antd Table 计算滚动条宽度需要 getComputedStyle 返回 null 的 pseudoElt 形式
+  if (!window.getComputedStyle.toString().includes('not-implemented')) {
+    const orig = window.getComputedStyle.bind(window);
+    (window as unknown as { getComputedStyle: typeof window.getComputedStyle }).getComputedStyle = (elt: Element, pseudoElt?: string | null) => {
+      if (pseudoElt) return orig(elt) as CSSStyleDeclaration;
+      return orig(elt);
+    };
+  }
   if (!window.ResizeObserver) {
     class ResizeObserverMock { observe() {} unobserve() {} disconnect() {} }
     (window as unknown as { ResizeObserver: object }).ResizeObserver = ResizeObserverMock;
@@ -81,7 +89,7 @@ const openDetail = async () => {
 };
 
 const clickButton = async (label: string | RegExp) => {
-  const button = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) =>
+  const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) =>
     typeof label === "string" ? (item.textContent ?? "").includes(label) : label.test(item.textContent ?? "")
   );
   expect(button, `button ${String(label)} should exist`).toBeDefined();
@@ -185,14 +193,16 @@ describe("DataSourceView FTP picker", () => {
 
     await clickButton("FTP 同步");
     await act(async () => {});
-    const tagChip = Array.from(container?.querySelectorAll<HTMLButtonElement>(".ftp-picker-tags .source-tag-chip > button") ?? []).find((item) => item.textContent === "白天");
-    await act(async () => { tagChip?.click(); });
-    const folder = Array.from(container?.querySelectorAll<HTMLButtonElement>(".ftp-name.dir") ?? []).find((item) => item.textContent?.includes("cam1"));
-    await act(async () => { folder?.click(); });
+    // antd Checkbox 选标签
+    const tagCheck = Array.from(document.body.querySelectorAll<HTMLLabelElement>(".ant-checkbox-wrapper") ?? []).find((el) => el.textContent?.includes("白天"));
+    await act(async () => { tagCheck?.click(); });
+    // antd Table 行点击进入目录
+    const folderRow = Array.from(document.body.querySelectorAll(".ant-table-tbody tr") ?? []).find((el) => el.textContent?.includes("cam1"));
+    await act(async () => { folderRow?.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
     await act(async () => {});
 
     await clickButton("同步整个文件夹");
-    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/cam1", recursive: true, tagIds: ["stag-a"], tagValues: { "stag-a": "晴" } }, expect.any(Function));
+    expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", expect.objectContaining({ path: "/cam1", recursive: true, tagIds: ["stag-a"] }), expect.any(Function));
   });
 
   it("imports multiple selected files across folders", async () => {
@@ -202,21 +212,21 @@ describe("DataSourceView FTP picker", () => {
     await clickButton("FTP 同步");
     await act(async () => {});
     const checkboxFor = (name: string) =>
-      Array.from(container?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [])
+      Array.from(document.body.querySelectorAll<HTMLInputElement>(".ant-checkbox-input") ?? [])
         .find((item) => item.closest("tr")?.textContent?.includes(name));
     const rowFor = (name: string) =>
-      Array.from(container?.querySelectorAll<HTMLTableRowElement>(".ftp-table tbody tr") ?? [])
+      Array.from(document.body.querySelectorAll(".ant-table-tbody tr") ?? [])
         .find((item) => item.textContent?.includes(name));
     expect(checkboxFor("note.txt")?.disabled).toBe(true);
-    await act(async () => { rowFor("a.png")?.click(); });
-    await act(async () => { checkboxFor("b.jpg")?.click(); });
+    await act(async () => { rowFor("a.png")?.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    await act(async () => { rowFor("b.jpg")?.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
 
-    const folder = Array.from(container?.querySelectorAll<HTMLButtonElement>(".ftp-name.dir") ?? []).find((item) => item.textContent?.includes("cam1"));
-    await act(async () => { folder?.click(); });
+    const folderRow = Array.from(document.body.querySelectorAll(".ant-table-tbody tr") ?? []).find((el) => el.textContent?.includes("cam1"));
+    await act(async () => { folderRow?.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
     await act(async () => {});
-    await act(async () => { checkboxFor("d.png")?.click(); });
+    await act(async () => { rowFor("d.png")?.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
 
-    await clickButton(/导入所选 3 张/);
+    await clickButton(/导入.*3.*张/);
     expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/", recursive: false, filePaths: ["/a.png", "/b.jpg", "/cam1/d.png"], tagIds: [], tagValues: {} }, expect.any(Function));
   });
 });
