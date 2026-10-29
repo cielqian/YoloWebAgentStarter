@@ -395,7 +395,6 @@ export function TrainingView({
       <header className="training-page-header">
         <div className="training-page-header-main">
           <div>
-            <span className="eyebrow">{mode === "create" && activeDataset ? `TRAINING / ${activeDataset.task_type.toUpperCase()}` : "TRAINING"}</span>
             <h1>训练工作区</h1>
             <p className="muted">
               {mode === "create"

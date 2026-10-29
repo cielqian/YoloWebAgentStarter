@@ -551,12 +551,7 @@ export function AgentView({ locale, context: pageContext, onOpenDataset, onOpenT
 
   return (
     <main className="agent-layout">
-      <header className="agent-head">
-        <div>
-          <span className="eyebrow">{text.eyebrow}</span>
-          <h1>{text.title}</h1>
-          <p>{text.subtitle}</p>
-        </div>
+      <header className="agent-head" style={{ display: "none" }}>
         <div className="header-actions">
           {status ? (
             <span className="agent-provider-badge" title={`${text.provider}: ${status.provider}/${status.model}`}>
