@@ -231,7 +231,7 @@ function TaskCard({
           </Typography.Text>
         </Flex>
         <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-          {task.model_name} · {task.epochs} ep · batch {task.batch_size} · {task.img_size}px · {task.device}
+          {[task.model_name, task.epochs != null ? `${task.epochs} ep` : null, task.batch_size != null ? `batch ${task.batch_size}` : null, task.img_size != null ? `${task.img_size}px` : null, task.device].filter(Boolean).join(" · ")}
         </Typography.Text>
         {task.status === "failed" && task.error_message && (
           <Typography.Text type="danger" style={{ fontSize: 11, display: "block", marginTop: 2 }}>
@@ -253,7 +253,7 @@ function TaskCard({
           percent={progress}
           size="small"
           style={{ width: 100, margin: 0, flexShrink: 0 }}
-          format={() => `${task.progress_epoch}/${task.progress_total_epochs || task.epochs}`}
+          format={() => `${task.progress_epoch}/${task.progress_total_epochs || task.epochs || "—"}`}
         />
       )}
 

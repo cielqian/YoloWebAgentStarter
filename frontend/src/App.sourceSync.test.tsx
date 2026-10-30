@@ -28,7 +28,7 @@ const dataset: Dataset = {
 
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
-(globalThis as typeof globalThis & { IS_REACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
 afterEach(() => { act(() => root?.unmount()); container?.remove(); });

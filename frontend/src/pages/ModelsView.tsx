@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Breadcrumb, Button as AntdButton, Checkbox, Empty as AntdEmpty, Flex, Form, Input as AntdInput, Modal, Segmented, Select as AntdSelect, Space, Table, Tag as AntdTag, Typography, type TableProps } from "antd";
 import { api, apiUrl } from "../api/client";
 import { Toast } from "../components/Toast";
 import { confirmDialog } from "../components/confirm";
@@ -9,7 +10,6 @@ import { ModelLibraryStats } from "../components/model-list/ModelLibraryStats";
 import { ModelDetailView } from "../components/model-detail/ModelDetailView";
 import { formatDelta, formatMetric, pickBestModel } from "../models/helpers";
 import { formatRelativeTime } from "../training/helpers";
-import { IconSearch } from "../components/training/icons";
 
 interface Props {
   /** 模型库按 数据集 → 版本 → 格式(PT/ONNX/OM) 组织展示。 */
@@ -251,8 +251,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     }
   };
 
-  const submitOnnxExport = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submitOnnxExport = () => {
     if (!onnxTarget) return;
     const target = onnxTarget;
     void run(async () => {
@@ -275,8 +274,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
       .catch((reason) => setError(errorMessage(reason)));
   };
 
-  const submitOmConvert = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submitOmConvert = () => {
     if (!omTarget || !omNodeId) return;
     const target = omTarget;
     void run(async () => {
@@ -373,7 +371,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
       <main className="models-layout models-workspace-page">
         {error && <Toast kind="error" message={error} onClose={() => setError("")} />}
         {notice && <Toast kind="success" message={notice} onClose={() => setNotice("")} />}
-        {onAskAgent ? <button type="button" className="button" onClick={() => onAskAgent(detailModel)}>询问智能体：此模型</button> : null}
+        {onAskAgent ? <AntdButton onClick={() => onAskAgent(detailModel)}>询问智能体：此模型</AntdButton> : null}
         <ModelDetailView
           dataset={detailDataset}
           model={detailModel}
@@ -404,14 +402,20 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
         {error && <Toast kind="error" message={error} onClose={() => setError("")} />}
         <header className="models-page-header">
           <div>
-            <span className="eyebrow">MODEL REGISTRY</span>
-            <h1>模型库</h1>
+            <Typography.Text type="secondary" className="models-eyebrow">MODEL REGISTRY</Typography.Text>
+            <Typography.Title level={3} style={{ margin: 0 }}>模型库</Typography.Title>
           </div>
         </header>
-        <div className="models-library-empty">
-          <strong>暂无模型</strong>
-          <p>完成训练后，best.pt 与 last.pt 会自动进入模型库，并可继续导出 ONNX / 转换 OM。</p>
-        </div>
+        <AntdEmpty
+          image={AntdEmpty.PRESENTED_IMAGE_SIMPLE}
+          description={(
+            <span>
+              <strong>暂无模型</strong>
+              <br />
+              <Typography.Text type="secondary">完成训练后，best.pt 与 last.pt 会自动进入模型库，并可继续导出 ONNX / 转换 OM。</Typography.Text>
+            </span>
+          )}
+        />
       </main>
     );
   }
@@ -430,19 +434,65 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const isActiveVersion = (datasetId: string, number: number) =>
     (versionLists[datasetId] ?? []).some((version) => version.version_number === number && version.is_active);
 
+  const modelColumns = (format: "pt" | "onnx" | "om"): TableProps<ModelVersion>["columns"] => [
+    {
+      title: "名称",
+      key: "name",
+      render: (_, model) => (
+        <Space orientation="vertical" size={0} style={{ alignItems: "flex-start" }}>
+          <AntdButton type="link" size="small" style={{ padding: 0, height: "auto" }} title={model.name} onClick={() => setDetailId(model.id)}>{model.name}</AntdButton>
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>{model.version}</Typography.Text>
+        </Space>
+      ),
+    },
+    { title: "类型", key: "type", width: 80, render: (_, model) => model.artifact_type.toUpperCase() },
+    { title: "mAP50", key: "map50", width: 90, align: "right", render: (_, model) => <span className="model-table-metric">{formatMetric(model.map50)}</span> },
+    { title: "mAP50-95", key: "map50_95", width: 100, align: "right", render: (_, model) => <span className="model-table-metric">{formatMetric(model.map50_95)}</span> },
+    { title: "Precision", key: "precision", width: 100, align: "right", render: (_, model) => <span className="model-table-metric">{formatMetric(model.precision)}</span> },
+    { title: "Recall", key: "recall", width: 90, align: "right", render: (_, model) => <span className="model-table-metric">{formatMetric(model.recall)}</span> },
+    { title: "状态", key: "status", width: 110, render: (_, model) => <span className={`model-table-status ${model.status}`}>{modelStatusLabel(model.status)}</span> },
+    { title: "创建", key: "created", width: 100, render: (_, model) => <Typography.Text type="secondary" title={model.created_at}>{formatRelativeTime(model.created_at)}</Typography.Text> },
+    {
+      title: "操作",
+      key: "actions",
+      width: 300,
+      render: (_, model) => {
+        if (model.status === "converting") return <Typography.Text type="secondary">转换进行中…</Typography.Text>;
+        return (
+          <Space size={0} wrap>
+            {model.format === "pt" ? (
+              <>
+                <AntdButton type="link" size="small" autoInsertSpace={false} disabled={busy} onClick={() => setTesting(model)}>测试</AntdButton>
+                <AntdButton type="link" size="small" disabled={busy} onClick={() => { setOnnxTarget(model); setOnnxDynamic(true); }}>转ONNX</AntdButton>
+              </>
+            ) : null}
+            {model.format === "onnx" ? (
+              <AntdButton type="link" size="small" disabled={busy} onClick={() => openOmConvert(model)}>转OM</AntdButton>
+            ) : null}
+            <AntdButton type="link" size="small" disabled={busy} onClick={() => openFtpSave(model)}>转存FTP</AntdButton>
+            <AntdButton type="link" size="small" autoInsertSpace={false} onClick={() => setDetailId(model.id)}>详情</AntdButton>
+            <AntdButton type="link" size="small" danger autoInsertSpace={false} disabled={busy} onClick={() => remove(model)}>删除</AntdButton>
+          </Space>
+        );
+      },
+    },
+  ];
+
   return (
     <main className="models-layout models-workspace-page">
       <header className="models-page-header">
         <div className="models-page-header-main">
           <div>
-            <span className="eyebrow">MODEL REGISTRY</span>
-            <h1>模型库</h1>
-            <p className="muted">按 数据集 → 版本 组织，每个版本下包含 PT / ONNX / OM 三类模型。</p>
+            <Typography.Text type="secondary" className="models-eyebrow">MODEL REGISTRY</Typography.Text>
+            <Typography.Title level={3} style={{ margin: 0 }}>模型库</Typography.Title>
+            <Typography.Text type="secondary">按 数据集 → 版本 组织，每个版本下包含 PT / ONNX / OM 三类模型。</Typography.Text>
           </div>
         </div>
         <div className="models-page-header-meta">
-          <span className="models-chip"><strong>{tree.size} 个数据集</strong></span>
-          <span className="models-chip models-chip--accent">{models.length} 个模型</span>
+          <Space size={8}>
+            <AntdTag>{tree.size} 个数据集</AntdTag>
+            <AntdTag color="blue">{models.length} 个模型</AntdTag>
+          </Space>
         </div>
       </header>
 
@@ -460,10 +510,10 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
         <section className="models-comparison-result">
           <div className="models-comparison-result-head">
             <div>
-              <span className="eyebrow">MODEL COMPARISON</span>
-              <h3>{comparison.candidate.name} vs {comparison.baseline.name}</h3>
+              <Typography.Text type="secondary" className="models-eyebrow">MODEL COMPARISON</Typography.Text>
+              <Typography.Title level={5} style={{ margin: 0 }}>{comparison.candidate.name} vs {comparison.baseline.name}</Typography.Title>
             </div>
-            <button type="button" className="button" onClick={() => setComparison(undefined)}>关闭</button>
+            <AntdButton size="small" autoInsertSpace={false} onClick={() => setComparison(undefined)}>关闭</AntdButton>
           </div>
           <div className="models-comparison-deltas">
             {Object.entries(comparison.deltas).map(([key, value]) => (
@@ -475,48 +525,45 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
               </span>
             ))}
           </div>
-          {comparison.suggestions[0] && <p className="muted">{comparison.suggestions[0]}</p>}
+          {comparison.suggestions[0] && <Typography.Text type="secondary">{comparison.suggestions[0]}</Typography.Text>}
         </section>
       )}
 
-      <nav className="models-crumb" aria-label="模型库导航">
-        <button type="button" onClick={() => { setDrillDataset(undefined); setDrillVersion(undefined); }}>模型库</button>
-        {drillDataset && (
-          <>
-            <span>›</span>
-            <button type="button" onClick={() => setDrillVersion(undefined)}>{datasetName(drillDataset)}</button>
-          </>
-        )}
-        {drillDataset && drillVersion !== undefined && (
-          <>
-            <span>›</span>
-            <strong>{drillVersion != null ? `v${drillVersion}` : "未指定版本"}</strong>
-          </>
-        )}
-      </nav>
+      <Breadcrumb
+        className="models-crumb"
+        aria-label="模型库导航"
+        items={[
+          { title: <button type="button" onClick={() => { setDrillDataset(undefined); setDrillVersion(undefined); }}>模型库</button> },
+          ...(drillDataset ? [{ title: <button type="button" onClick={() => setDrillVersion(undefined)}>{datasetName(drillDataset)}</button> }] : []),
+          ...(drillDataset && drillVersion !== undefined
+            ? [{ title: <span>{drillVersion != null ? `v${drillVersion}` : "未指定版本"}</span> }]
+            : []),
+        ]}
+      />
 
       {drillDataset === undefined ? (
         <section className="models-library-section">
           <div className="models-library-toolbar">
             <div>
-              <h2>数据集</h2>
-              <p className="models-library-sub">选择数据集查看其各版本的模型</p>
+              <Typography.Title level={5} style={{ margin: 0 }}>数据集</Typography.Title>
+              <Typography.Text type="secondary">选择数据集查看其各版本的模型</Typography.Text>
             </div>
           </div>
           <div className="models-drill-list">
             {treeEntries.map(([datasetId, versions]) => {
               const total = [...versions.values()].reduce((sum, list) => sum + list.length, 0);
               return (
-                <button
+                <AntdButton
                   key={datasetId}
-                  type="button"
+                  type="text"
+                  block
                   className="models-drill-row"
                   onClick={() => { setDrillDataset(datasetId); setDrillVersion(undefined); }}
                 >
                   <strong>{datasetName(datasetId)}</strong>
                   <small>{versions.size} 个版本 · {total} 个模型</small>
                   <em>›</em>
-                </button>
+                </AntdButton>
               );
             })}
           </div>
@@ -525,141 +572,82 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
         <section className="models-library-section">
           <div className="models-library-toolbar">
             <div>
-              <h2>{datasetName(drillDataset)}</h2>
-              <p className="models-library-sub">选择版本查看 PT / ONNX / OM 模型</p>
+              <Typography.Title level={5} style={{ margin: 0 }}>{datasetName(drillDataset)}</Typography.Title>
+              <Typography.Text type="secondary">选择版本查看 PT / ONNX / OM 模型</Typography.Text>
             </div>
           </div>
           <div className="models-drill-list">
             {versionKeysFor(drillDataset, tree.get(drillDataset) ?? new Map()).map((number) => {
               const meta = (versionLists[drillDataset] ?? []).find((version) => version.version_number === number);
               return (
-                <button
-                  key={number}
-                  type="button"
-                  className="models-drill-row"
-                  onClick={() => setDrillVersion(number)}
-                >
+                <AntdButton key={number} type="text" block className="models-drill-row" onClick={() => setDrillVersion(number)}>
                   <strong>v{number}{meta?.is_active ? " · 当前激活" : ""}</strong>
                   <small>{tree.get(drillDataset)?.get(number)?.length ?? 0} 个模型{meta ? ` · ${meta.image_count} 张图` : ""}{meta?.note ? ` · ${meta.note}` : ""}</small>
                   <em>›</em>
-                </button>
+                </AntdButton>
               );
             })}
             {(tree.get(drillDataset)?.has(null)) && (
-              <button
-                type="button"
-                className="models-drill-row"
-                onClick={() => setDrillVersion(null)}
-              >
+              <AntdButton type="text" block className="models-drill-row" onClick={() => setDrillVersion(null)}>
                 <strong>未指定版本</strong>
                 <small>{tree.get(drillDataset)?.get(null)?.length ?? 0} 个模型 · 训练时未锁定版本</small>
                 <em>›</em>
-              </button>
+              </AntdButton>
             )}
           </div>
         </section>
       ) : (
         <section className="models-library-section models-version-pane">
-          <div className="models-library-toolbar">
+          <Flex justify="space-between" align="flex-start" gap={16} wrap="wrap" style={{ marginBottom: 14 }}>
             <div>
-              <h2>{datasetName(drillDataset)} · {drillVersion != null ? `v${drillVersion}` : "未指定版本"}</h2>
-              <p className="models-library-sub">{selectedModels.length} 个模型</p>
+              <Typography.Title level={5} style={{ margin: 0 }}>{datasetName(drillDataset)} · {drillVersion != null ? `v${drillVersion}` : "未指定版本"}</Typography.Title>
+              <Typography.Text type="secondary">{selectedModels.length} 个模型</Typography.Text>
             </div>
-            <div className="models-library-toolbar-actions">
-              <label className="models-library-search">
-                <IconSearch size={14} />
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="搜索模型名称 / 版本"
-                />
-              </label>
-              <button
-                type="button"
-                className={`models-filter-toggle${includeArchived ? " active" : ""}`}
-                onClick={() => setIncludeArchived((value) => !value)}
-              >
-                {includeArchived ? "含归档" : "仅启用"}
-              </button>
-            </div>
-          </div>
+            <Space>
+              <AntdInput.Search
+                size="small"
+                allowClear
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="搜索模型名称 / 版本"
+                style={{ width: 220 }}
+              />
+              <Segmented
+                size="small"
+                value={includeArchived ? "all" : "active"}
+                onChange={(value) => setIncludeArchived(value === "all")}
+                options={[{ value: "active", label: "仅启用" }, { value: "all", label: "含归档" }]}
+              />
+            </Space>
+          </Flex>
 
           {FORMAT_SECTIONS.map(({ format, title, hint }) => {
             const list = selectedModels.filter((model) => model.format === format);
             return (
               <section key={format} className="models-format-section">
                 <header>
-                  <h3>{title}</h3>
-                  <span className="muted">{list.length} 个</span>
+                  <Typography.Title level={5} style={{ margin: 0 }}>{title}</Typography.Title>
+                  <Typography.Text type="secondary">{list.length} 个</Typography.Text>
                 </header>
                 {list.length ? (
-                  <div className="model-table-wrap">
-                    <table className="model-table">
-                      <thead>
-                        <tr>
-                          {format === "pt" && <th className="model-table-check"></th>}
-                          <th>名称</th>
-                          <th>类型</th>
-                          <th>mAP50</th>
-                          <th>mAP50-95</th>
-                          <th>Precision</th>
-                          <th>Recall</th>
-                          <th>状态</th>
-                          <th>创建</th>
-                          <th className="model-table-actions">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {list.map((model) => {
-                          const selected = selectedIds.includes(model.id);
-                          const generating = model.status === "converting";
-                          return (
-                            <tr key={model.id} className={`${selected ? "selected" : ""} ${model.status}`}>
-                              {format === "pt" && (
-                                <td className="model-table-check">
-                                  <input type="checkbox" checked={selected} aria-label={`选择 ${model.name}`} onChange={() => setSelectedIds((ids) => ids.includes(model.id) ? ids.filter((item) => item !== model.id) : [...ids, model.id])} />
-                                </td>
-                              )}
-                              <td className="model-table-name">
-                                <button type="button" onClick={() => setDetailId(model.id)} title={model.name}>{model.name}</button>
-                                <small>{model.version}</small>
-                              </td>
-                              <td>{model.artifact_type.toUpperCase()}</td>
-                              <td className="model-table-metric">{formatMetric(model.map50)}</td>
-                              <td className="model-table-metric">{formatMetric(model.map50_95)}</td>
-                              <td className="model-table-metric">{formatMetric(model.precision)}</td>
-                              <td className="model-table-metric">{formatMetric(model.recall)}</td>
-                              <td><span className={`model-table-status ${model.status}`}>{modelStatusLabel(model.status)}</span></td>
-                              <td className="model-table-time" title={model.created_at}>{formatRelativeTime(model.created_at)}</td>
-                              <td className="model-table-actions">
-                                {generating ? (
-                                  <span className="muted">转换进行中…</span>
-                                ) : (
-                                  <>
-                                    {model.format === "pt" ? (
-                                      <>
-                                        <button type="button" className="model-action-btn model-action-btn--primary" disabled={busy} onClick={() => setTesting(model)}>测试</button>
-                                        <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => { setOnnxTarget(model); setOnnxDynamic(true); }}>转ONNX</button>
-                                      </>
-                                    ) : null}
-                                    {model.format === "onnx" ? (
-                                      <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openOmConvert(model)}>转OM</button>
-                                    ) : null}
-                                    <button type="button" className="model-action-btn model-action-btn--ghost" disabled={busy} onClick={() => openFtpSave(model)}>转存FTP</button>
-                                    <button type="button" className="model-action-btn model-action-btn--ghost" onClick={() => setDetailId(model.id)}>详情</button>
-                                    <button type="button" className="model-action-btn model-action-btn--danger" disabled={busy} onClick={() => remove(model)}>删除</button>
-                                  </>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  <Table<ModelVersion>
+                    rowKey="id"
+                    size="small"
+                    columns={modelColumns(format)}
+                    dataSource={list}
+                    pagination={false}
+                    rowClassName={(model) => model.status}
+                    rowSelection={format === "pt" ? {
+                      selectedRowKeys: selectedIds.filter((id) => list.some((model) => model.id === id)),
+                      onChange: (keys) => setSelectedIds((prev) => [
+                        ...prev.filter((id) => !list.some((model) => model.id === id)),
+                        ...(keys as string[]),
+                      ]),
+                      getCheckboxProps: (model) => ({ "aria-label": `选择 ${model.name}` }),
+                    } : undefined}
+                  />
                 ) : (
-                  <p className="muted models-format-empty">{hint}</p>
+                  <AntdEmpty image={AntdEmpty.PRESENTED_IMAGE_SIMPLE} description={<Typography.Text type="secondary">{hint}</Typography.Text>} />
                 )}
               </section>
             );
@@ -668,118 +656,118 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
       )}
 
       {onnxTarget && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setOnnxTarget(undefined)}>
-          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="onnx-export-title" onMouseDown={(event) => event.stopPropagation()}>
-            <form onSubmit={submitOnnxExport}>
-              <header>
-                <div>
-                  <span className="eyebrow">ONNX EXPORT</span>
-                  <h2 id="onnx-export-title">导出 ONNX：{onnxTarget.name}</h2>
-                  <p className="muted">FP32 ONNX，opset 18，自动化简；文件名与 PT 同名仅换后缀。</p>
-                </div>
-                <button type="button" className="icon-button" onClick={() => setOnnxTarget(undefined)} aria-label="关闭">×</button>
-              </header>
-              <label className="onnx-dynamic-row">
-                <input type="checkbox" checked={onnxDynamic} onChange={(event) => setOnnxDynamic(event.target.checked)} />
-                <span>动态尺寸（dynamic）</span>
-                <small>勾选后 batch 维度动态，推理时可变 batch 输入；不勾选则固定为 1×3×640×640。</small>
-              </label>
-              <footer>
-                <button type="button" className="button" onClick={() => setOnnxTarget(undefined)}>取消</button>
-                <button type="submit" className="button primary" disabled={busy}>开始导出</button>
-              </footer>
-            </form>
-          </section>
-        </div>
+        <Modal
+          title={`导出 ONNX：${onnxTarget.name}`}
+          open
+          onCancel={() => setOnnxTarget(undefined)}
+          width={520}
+          footer={[
+            <AntdButton key="cancel" autoInsertSpace={false} onClick={() => setOnnxTarget(undefined)}>取消</AntdButton>,
+            <AntdButton key="export" type="primary" disabled={busy} onClick={submitOnnxExport}>开始导出</AntdButton>,
+          ]}
+        >
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+            FP32 ONNX，opset 18，自动化简；文件名与 PT 同名仅换后缀。
+          </Typography.Paragraph>
+          <Space orientation="vertical" size={4}>
+            <Checkbox checked={onnxDynamic} onChange={(event) => setOnnxDynamic(event.target.checked)}>动态尺寸（dynamic）</Checkbox>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>勾选后 batch 维度动态，推理时可变 batch 输入；不勾选则固定为 1×3×640×640。</Typography.Text>
+          </Space>
+        </Modal>
       )}
 
       {ftpTarget && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setFtpTarget(undefined)}>
-          <section className="dataset-dialog ftp-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="ftp-save-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header className="data-exchange-header"><div><span className="eyebrow">SAVE TO FTP</span><h2 id="ftp-save-title">转存模型到 FTP</h2><p className="muted">浏览并选择目标目录，可修改保存文件名；同名文件将被覆盖。</p></div><button className="icon-button" onClick={() => setFtpTarget(undefined)} aria-label="关闭">×</button></header>
-            <div className="ftp-picker">
-              <div className="ftp-toolbar">
-                <button className="button" disabled={ftpLoading || ftpPath === "/"} onClick={() => void loadFtpDirs(parentFtpPath(ftpPath))}>返回上级</button>
-                <nav className="ftp-breadcrumb" aria-label="FTP 路径">
-                  <button disabled={ftpLoading} onClick={() => void loadFtpDirs("/")}>/</button>
-                  {ftpPath !== "/" && ftpPath.slice(1).split("/").map((crumb, index, parts) => {
-                    const target = `/${parts.slice(0, index + 1).join("/")}`;
-                    return <span key={target}>/ <button disabled={ftpLoading} onClick={() => void loadFtpDirs(target)}>{crumb}</button></span>;
-                  })}
-                </nav>
-                <button className="button" disabled={ftpLoading} onClick={() => void loadFtpDirs(ftpPath)}>刷新</button>
-              </div>
-              <div className="ftp-picker-list">
-                {ftpError ? <p className="annotation-form-error">{ftpError}</p> : null}
-                {ftpLoading ? (
-                  <p className="muted">正在读取目录…</p>
-                ) : ftpEntries.length ? (
-                  <table className="ftp-table">
-                    <thead><tr><th>子目录</th></tr></thead>
-                    <tbody>
-                      {ftpEntries.map((entry) => (
-                        <tr key={entry.path}>
-                          <td>
-                            <button className="ftp-name dir" onClick={() => void loadFtpDirs(entry.path)} title="打开目录">
-                              <span aria-hidden="true">📁</span><span>{entry.name}</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="muted">当前目录没有子目录，可直接保存到此处。</p>
-                )}
-              </div>
-              <label className="ftp-save-name"><span>保存文件名</span>
-                <input value={ftpFileName} onChange={(event) => setFtpFileName(event.target.value)} placeholder="例如：blade-detector_best.pt" />
-              </label>
-              <footer className="ftp-picker-actions">
-                <span className="muted">目标目录：{ftpPath}</span>
-                <div>
-                  <button type="button" className="button" disabled={ftpBusy} onClick={() => setFtpTarget(undefined)}>取消</button>
-                  <button type="button" className="button primary" disabled={ftpBusy || !ftpFileName.trim()} onClick={() => void submitFtpSave()}>{ftpBusy ? "转存中…" : "转存"}</button>
+        <Modal
+          className="ftp-picker-dialog"
+          title="转存模型到 FTP"
+          open
+          onCancel={() => setFtpTarget(undefined)}
+          width={640}
+          footer={null}
+        >
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+            浏览并选择目标目录，可修改保存文件名；同名文件将被覆盖。
+          </Typography.Paragraph>
+          <div className="ftp-picker">
+            <Space wrap style={{ marginBottom: 8 }}>
+              <AntdButton size="small" disabled={ftpLoading || ftpPath === "/"} onClick={() => void loadFtpDirs(parentFtpPath(ftpPath))}>返回上级</AntdButton>
+              <nav className="ftp-breadcrumb" aria-label="FTP 路径">
+                <button disabled={ftpLoading} onClick={() => void loadFtpDirs("/")}>/</button>
+                {ftpPath !== "/" && ftpPath.slice(1).split("/").map((crumb, index, parts) => {
+                  const target = `/${parts.slice(0, index + 1).join("/")}`;
+                  return <span key={target}>/ <button disabled={ftpLoading} onClick={() => void loadFtpDirs(target)}>{crumb}</button></span>;
+                })}
+              </nav>
+              <AntdButton size="small" disabled={ftpLoading} onClick={() => void loadFtpDirs(ftpPath)}>刷新</AntdButton>
+            </Space>
+            <div className="ftp-picker-list">
+              {ftpError ? <Typography.Text type="danger">{ftpError}</Typography.Text> : null}
+              {ftpLoading ? (
+                <Typography.Text type="secondary">正在读取目录…</Typography.Text>
+              ) : ftpEntries.length ? (
+                <div className="ftp-dir-list">
+                  {ftpEntries.map((entry) => (
+                    <AntdButton key={entry.path} type="link" size="small" style={{ padding: 0, height: 24 }} onClick={() => void loadFtpDirs(entry.path)} title="打开目录">
+                      <span aria-hidden="true">📁</span> {entry.name}
+                    </AntdButton>
+                  ))}
                 </div>
-              </footer>
+              ) : (
+                <Typography.Text type="secondary">当前目录没有子目录，可直接保存到此处。</Typography.Text>
+              )}
             </div>
-          </section>
-        </div>
+            <div className="ftp-save-name">
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>保存文件名</Typography.Text>
+              <AntdInput value={ftpFileName} onChange={(event) => setFtpFileName(event.target.value)} placeholder="例如：blade-detector_best.pt" />
+            </div>
+            <Flex justify="space-between" align="center" gap={16} style={{ paddingTop: 12, borderTop: "1px solid #f0f0f0" }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>目标目录：{ftpPath}</Typography.Text>
+              <Space>
+                <AntdButton autoInsertSpace={false} disabled={ftpBusy} onClick={() => setFtpTarget(undefined)}>取消</AntdButton>
+                <AntdButton type="primary" autoInsertSpace={false} disabled={ftpBusy || !ftpFileName.trim()} onClick={() => void submitFtpSave()}>{ftpBusy ? "转存中…" : "转存"}</AntdButton>
+              </Space>
+            </Flex>
+          </div>
+        </Modal>
       )}
 
       {omTarget && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setOmTarget(undefined)}>
-          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="om-convert-title" onMouseDown={(event) => event.stopPropagation()}>
-            <form onSubmit={submitOmConvert}>
-              <header>
-                <div>
-                  <span className="eyebrow">ATC CONVERT</span>
-                  <h2 id="om-convert-title">转换为华为 OM：{omTarget.name}</h2>
-                  <p className="muted">把该 ONNX 推到昇腾服务器的 agent 上执行 ATC 转换，完成后 .om 自动回传入库。</p>
-                </div>
-                <button type="button" className="icon-button" onClick={() => setOmTarget(undefined)} aria-label="关闭">×</button>
-              </header>
-              <label><span>转换节点</span>
-                <select value={omNodeId} onChange={(event) => setOmNodeId(event.target.value)} disabled={!nodes.length}>
-                  {!nodes.length && <option value="">暂无可用节点</option>}
-                  {nodes.map((node) => (
-                    <option key={node.id} value={node.id} disabled={!node.enabled}>{node.name}（{node.url}）{node.enabled ? "" : " · 已禁用"}</option>
-                  ))}
-                </select>
-              </label>
-              <label><span>SoC 版本（soc_version）</span>
-                <input value={omSocVersion} onChange={(event) => setOmSocVersion(event.target.value)} placeholder="Ascend310P3" />
-              </label>
-              <label><span>输入形状（input_shape）</span>
-                <input value={omInputShape} onChange={(event) => setOmInputShape(event.target.value)} placeholder="images:1,3,640,640" />
-              </label>
-              <footer>
-                <button type="button" className="button" onClick={() => setOmTarget(undefined)}>取消</button>
-                <button type="submit" className="button primary" disabled={busy || !omNodeId}>开始转换</button>
-              </footer>
-            </form>
-          </section>
-        </div>
+        <Modal
+          title={`转换为华为 OM：${omTarget.name}`}
+          open
+          onCancel={() => setOmTarget(undefined)}
+          width={560}
+          footer={[
+            <AntdButton key="cancel" autoInsertSpace={false} onClick={() => setOmTarget(undefined)}>取消</AntdButton>,
+            <AntdButton key="convert" type="primary" disabled={busy || !omNodeId} onClick={submitOmConvert}>开始转换</AntdButton>,
+          ]}
+        >
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 14 }}>
+            把该 ONNX 推到昇腾服务器的 agent 上执行 ATC 转换，完成后 .om 自动回传入库。
+          </Typography.Paragraph>
+          <Form layout="vertical">
+            <Form.Item label="转换节点">
+              <AntdSelect
+                value={omNodeId || undefined}
+                onChange={setOmNodeId}
+                disabled={!nodes.length}
+                placeholder={nodes.length ? "选择转换节点" : "暂无可用节点"}
+                options={nodes.map((node) => ({
+                  value: node.id,
+                  label: `${node.name}（${node.url}）${node.enabled ? "" : " · 已禁用"}`,
+                  disabled: !node.enabled,
+                }))}
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+            <Form.Item label="SoC 版本（soc_version）">
+              <AntdInput value={omSocVersion} onChange={(event) => setOmSocVersion(event.target.value)} placeholder="Ascend310P3" />
+            </Form.Item>
+            <Form.Item label="输入形状（input_shape）">
+              <AntdInput value={omInputShape} onChange={(event) => setOmInputShape(event.target.value)} placeholder="images:1,3,640,640" />
+            </Form.Item>
+          </Form>
+        </Modal>
       )}
 
       <ModelComparisonBar

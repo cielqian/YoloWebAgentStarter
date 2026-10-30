@@ -230,7 +230,16 @@ export function TrainingView({
     ? `${devices.find((item) => item.node_id === form.node_id)?.node_name ?? "节点"} · ${form.node_device ?? "auto"}`
     : "未选择节点";
 
-  const summaryBottomBar = `${form.model} · ${form.epochs} ep · batch ${form.batch_size} · ${form.img_size}px · ${deviceSummaryText} · 约 ${estimateMinutes(form.epochs, activeDataset?.image_count ?? 0, form.batch_size, Math.max(form.node_device?.split(",").filter(Boolean).length ?? 1, 1))} 分钟`;
+  // 参数留空时不显示对应摘要与时长预估(留空 = 使用后端默认值)
+  const estMinutes = estimateMinutes(form.epochs, activeDataset?.image_count ?? 0, form.batch_size, Math.max(form.node_device?.split(",").filter(Boolean).length ?? 1, 1));
+  const summaryBottomBar = [
+    form.model,
+    form.epochs != null ? `${form.epochs} ep` : null,
+    form.batch_size != null ? `batch ${form.batch_size}` : null,
+    form.img_size != null ? `${form.img_size}px` : null,
+    deviceSummaryText,
+    estMinutes != null ? `约 ${estMinutes} 分钟` : null,
+  ].filter(Boolean).join(" · ");
 
   const start = async (event: FormEvent) => {
     event.preventDefault();
@@ -260,14 +269,13 @@ export function TrainingView({
         name: form.name.trim() || `${activeDataset.name}_${Date.now()}`,
         model: form.model.trim() || defaultModelFor(activeDataset.task_type),
         task_type: activeDataset.task_type as TaskType,
-        epochs: form.epochs,
-        img_size: form.img_size,
-        batch_size: form.batch_size,
+        epochs: form.epochs ?? undefined,
+        img_size: form.img_size ?? undefined,
+        batch_size: form.batch_size ?? undefined,
         device: form.node_device ?? "auto",
         node_id: form.node_id ?? undefined,
-        workers: form.workers,
-        seed: form.seed,
-        val_ratio: form.val_ratio,
+        workers: form.workers ?? undefined,
+        seed: form.seed ?? undefined,
         optimizer: form.optimizer.trim() || undefined,
         lr0: Number.isFinite(lr0) ? lr0 : undefined,
         patience: Number.isFinite(patience) ? patience : undefined,
@@ -349,7 +357,7 @@ export function TrainingView({
     setError("");
     try {
       const restoreEpochState = task.status !== "completed" && !task.node_id;
-      const next = await api.resumeTrainingTask(task.id, restoreEpochState ? { resume_epoch: true } : { epochs: form.epochs, resume_epoch: false });
+      const next = await api.resumeTrainingTask(task.id, restoreEpochState ? { resume_epoch: true } : { epochs: form.epochs ?? undefined, resume_epoch: false });
       setTasks((items) => [next, ...items]);
       setDetailTaskId(next.id);
     } catch (reason) {

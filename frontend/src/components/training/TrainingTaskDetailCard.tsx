@@ -59,7 +59,7 @@ export function TrainingTaskDetailCard({ task, summary, logs, busy, onClose, onS
             <strong style={{ fontSize: 15 }}>{task.name}</strong>
             <AntdTag color={STATUS_COLOR[task.status] ?? "default"}>{statusLabel(task.status)}</AntdTag>
             <Typography.Text type="secondary">
-              {task.progress_epoch}/{task.progress_total_epochs || task.epochs} ep · {task.progress_percent}% · {formatDateTime(task.created_at)}
+              {task.progress_epoch}/{task.progress_total_epochs || task.epochs || "—"} ep · {task.progress_percent}% · {formatDateTime(task.created_at)}
             </Typography.Text>
           </Space>
           <Space size={8}>
@@ -97,7 +97,7 @@ export function TrainingTaskDetailCard({ task, summary, logs, busy, onClose, onS
           percent={task.progress_percent}
           size="small"
           style={{ marginBottom: 12 }}
-          format={() => `${task.progress_epoch}/${task.progress_total_epochs || task.epochs} ep`}
+          format={() => `${task.progress_epoch}/${task.progress_total_epochs || task.epochs || "—"} ep`}
         />
 
         {/* 耗时信息 */}

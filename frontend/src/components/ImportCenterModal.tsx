@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Button as AntdButton, Col, Flex, Form, Input as AntdInput, Modal, Row, Segmented, Select as AntdSelect, Space, Space as AntdSpace, Tabs, Typography } from "antd";
 
 import { api } from "../api/client";
 import { VideoImportContent } from "./VideoImportModal";
@@ -39,7 +40,6 @@ export function ImportCenterModal({
   const [ftpSelected, setFtpSelected] = useState("");
   const [ftpKind, setFtpKind] = useState<"zip" | "dir">("zip");
   const inputRef = useRef<HTMLInputElement>(null);
-  const activeSource = SOURCES.find((item) => item.id === source)!;
 
   const browseFtp = (path: string) => {
     setFtpLoading(true);
@@ -91,60 +91,105 @@ export function ImportCenterModal({
     applyDefaultName(entryName);
   };
 
-  return <div className="modal-backdrop data-exchange-backdrop" role="presentation" onMouseDown={onClose}>
-    <section className="dataset-dialog data-exchange-dialog import-center-dialog" role="dialog" aria-modal="true" aria-labelledby="import-center-title" onMouseDown={(event) => event.stopPropagation()}>
-      <header className="data-exchange-header"><div><span className="eyebrow">IMPORT CENTER</span><h2 id="import-center-title">导入数据</h2><p>选择数据来源。视频会先预检，确认后才在服务端后台抽帧创建数据集。</p></div><button className="icon-button" onClick={onClose} aria-label="关闭">×</button></header>
-      <div className="import-center-layout">
-        <aside className="import-center-sources" aria-label="导入来源">
-          <span className="exchange-label">导入来源</span>
-          {SOURCES.map((item) => <button key={item.id} type="button" className={source === item.id ? "import-source-option selected" : "import-source-option"} onClick={() => chooseSource(item.id)}><span className="import-source-icon" aria-hidden>{item.icon}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span></button>)}
-        </aside>
-        <section className="import-center-panel">
-          {source === "video" ? <VideoImportContent onClose={onClose} onCompleted={onVideoCompleted} /> : <>
-            <div className="import-center-step"><span>1</span><div><strong>{activeSource.title}</strong><p>{activeSource.detail}</p></div></div>
-            <div className="exchange-fields"><label>数据集名称<input value={name} placeholder="例如：road-signs" onChange={(event) => setName(event.target.value)} autoFocus /></label><label>产出模型名称（选填）<input value={modelName} placeholder="例如：blade-detector；训练产出的模型默认用此命名" onChange={(event) => setModelName(event.target.value)} /></label><label>任务类型<select value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="detect">目标检测（Bounding Box）</option><option value="segment">实例分割（Polygon / SAM）</option><option value="obb">旋转框（OBB）</option><option value="classify">图像分类</option>{source === "yolo" && <option value="pose">关键点检测（Pose）</option>}</select></label>{taskType === "pose" && source === "coco" && <p className="annotation-form-error">COCO 格式暂不支持 pose，请选择 YOLO 来源。</p>}</div>
-            <div className="import-origin-toggle" role="group" aria-label="文件来源">
-              <button type="button" className={origin === "local" ? "active" : ""} onClick={() => setOrigin("local")}>本机文件</button>
-              <button type="button" className={origin === "ftp" ? "active" : ""} onClick={() => setOrigin("ftp")}>FTP 选择</button>
-            </div>
-            {origin === "local" ? <>
-              <input ref={inputRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; setArchive(file); if (file) applyDefaultName(file.name); event.currentTarget.value = ""; }} />
-              <button type="button" className={dragging ? "exchange-dropzone dragging" : "exchange-dropzone"} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); setArchive(event.dataTransfer.files[0]); if (event.dataTransfer.files[0]) applyDefaultName(event.dataTransfer.files[0].name); }}><span className="exchange-dropzone-icon">⇧</span><strong>{archive?.name ?? `拖放或选择 ${source.toUpperCase()} ZIP 文件`}</strong><small>{archive ? `${Math.ceil(archive.size / 1024)} KB · 已准备导入` : source === "yolo" ? "ZIP 内应包含 data.yaml、images 和 labels" : "ZIP 内应包含 annotations.json/instances.json 与 images"}</small></button>
-            </> : (
-              <div className="import-ftp-picker">
-                <div className="import-ftp-toolbar">
-                  <button type="button" className="button" disabled={ftpLoading || ftpPath === "/"} onClick={() => browseFtp(parentOf(ftpPath))}>↑ 上级</button>
-                  <input value={ftpPath} aria-label="FTP 路径" onChange={(event) => setFtpPath(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") browseFtp(ftpPath); }} />
-                  <button type="button" className="button" disabled={ftpLoading} onClick={() => browseFtp(ftpPath)}>浏览</button>
-                  <div className="import-origin-toggle" role="group" aria-label="FTP 来源类型">
-                    <button type="button" className={ftpKind === "zip" ? "active" : ""} onClick={() => { setFtpKind("zip"); setFtpSelected(""); }}>ZIP 文件</button>
-                    <button type="button" className={ftpKind === "dir" ? "active" : ""} onClick={() => { setFtpKind("dir"); setFtpSelected(""); }}>YOLO 目录</button>
-                  </div>
-                  {ftpKind === "dir" && (
-                    <button type="button" className="button" disabled={ftpLoading || ftpPath === "/"} title="把当前浏览到的目录作为导入目标" onClick={() => pickFtpDir(ftpPath, ftpPath.replace(/\/+$/, "").split("/").pop() || "ftp-dataset")}>选当前目录</button>
-                  )}
-                </div>
-                <div className="import-ftp-list">
-                  {ftpLoading && <p className="muted">正在读取目录…</p>}
-                  {ftpError && <p className="annotation-form-error">{ftpError}（请先在「FTP 管理」页配置连接）</p>}
-                  {!ftpLoading && !ftpError && ftpEntries?.map((entry) => entry.is_dir
-                    ? (ftpKind === "dir"
-                      ? <div key={entry.name} className={`import-ftp-row dir selectable${ftpSelected === childOf(entry.name) ? " selected" : ""}`}>
-                          <button type="button" className="import-ftp-pick" aria-pressed={ftpSelected === childOf(entry.name)} aria-label={`选择目录 ${entry.name}`} title="选择此目录作为导入目标" onClick={() => pickFtpDir(childOf(entry.name), entry.name)}>{ftpSelected === childOf(entry.name) ? "✓" : "＋"}</button>
-                          <button type="button" className="import-ftp-browse" onClick={() => browseFtp(childOf(entry.name))}><span>📁</span><strong>{entry.name}</strong><small>目录 · 点击进入</small></button>
-                        </div>
-                      : <button key={entry.name} type="button" className="import-ftp-row dir" onClick={() => browseFtp(childOf(entry.name))}><span>📁</span><strong>{entry.name}</strong><small>目录</small></button>)
-                    : <button key={entry.name} type="button" disabled={ftpKind === "dir" || !entry.name.toLowerCase().endsWith(".zip")} className={`import-ftp-row file${ftpSelected === childOf(entry.name) ? " selected" : ""}`} onClick={() => { setFtpSelected(childOf(entry.name)); applyDefaultName(entry.name); }}><span>🗜</span><strong>{entry.name}</strong><small>{entry.size != null ? `${Math.ceil(entry.size / 1024)} KB` : ""}</small></button>)}
-                  {!ftpLoading && !ftpError && ftpEntries && ftpKind === "zip" && !ftpEntries.some((entry) => !entry.is_dir && entry.name.toLowerCase().endsWith(".zip")) && <p className="muted">当前目录没有 .zip 文件。</p>}
-                  {!ftpLoading && !ftpError && ftpEntries && ftpKind === "dir" && !ftpEntries.some((entry) => entry.is_dir) && <p className="muted">当前目录没有子目录；可点上方「选当前目录」选择当前路径。</p>}
-                </div>
-                {ftpSelected && <p className="import-ftp-selected">已选择:{ftpSelected}{ftpKind === "dir" ? "（YOLO 目录，将递归采集）" : ""}</p>}
+  return <Modal
+      className="import-center-modal"
+      title="导入数据"
+      open
+      onCancel={onClose}
+      width={940}
+      footer={source === "video" ? null : [
+        <AntdButton key="cancel" onClick={onClose}>取消</AntdButton>,
+        <AntdButton key="import" type="primary" disabled={busy || !canImport} onClick={importArchive}>开始导入</AntdButton>,
+      ]}
+    >
+    <Typography.Paragraph type="secondary" style={{ marginBottom: 12, fontSize: 12 }}>
+      选择数据来源。视频会先预检，确认后才在服务端后台抽帧创建数据集。
+    </Typography.Paragraph>
+    <Tabs
+      tabPlacement="start"
+      activeKey={source}
+      onChange={(key) => chooseSource(key as ImportSource)}
+      className="import-center-tabs"
+      aria-label="导入来源"
+      items={SOURCES.map((item) => ({
+        key: item.id,
+        label: (
+          <span className="import-source-tab">
+            <span className="import-source-icon" aria-hidden>{item.icon}</span>
+            <span><strong>{item.title}</strong><small>{item.detail}</small></span>
+          </span>
+        ),
+        children: item.id === "video" ? (
+          <div className="import-center-panel"><VideoImportContent onClose={onClose} onCompleted={onVideoCompleted} /></div>
+        ) : (
+          <div className="import-center-panel">
+            <div className="import-center-step"><span>1</span><div><strong>{item.title}</strong><p>{item.detail}</p></div></div>
+          <Form layout="vertical" className="import-center-form">
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="数据集名称" required>
+                  <AntdInput value={name} placeholder="例如：road-signs" onChange={(event) => setName(event.target.value)} autoFocus />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="产出模型名（选填）">
+                  <AntdInput value={modelName} placeholder="例如：blade-detector" onChange={(event) => setModelName(event.target.value)} />
+                </Form.Item>
+              </Col>
+              <Col span={24}>
+                <Form.Item label="任务类型">
+                  <AntdSelect value={taskType} onChange={(value) => setTaskType(value)} options={[
+                    { value: "detect", label: "目标检测（Bounding Box）" },
+                    { value: "segment", label: "实例分割（Polygon / SAM）" },
+                    { value: "obb", label: "旋转框（OBB）" },
+                    { value: "classify", label: "图像分类" },
+                    ...(source === "yolo" ? [{ value: "pose", label: "关键点检测（Pose）" }] : []),
+                  ]} />
+                </Form.Item>
+              </Col>
+            </Row>
+            {taskType === "pose" && source === "coco" && <Typography.Text type="danger" style={{ fontSize: 12 }}>COCO 格式暂不支持 pose，请选择 YOLO 来源。</Typography.Text>}
+          </Form>
+          <Segmented block value={origin} onChange={(value) => setOrigin(value as "local" | "ftp")} aria-label="文件来源" options={[{ value: "local", label: "本机文件" }, { value: "ftp", label: "FTP 选择" }]} />
+          {origin === "local" ? <>
+            <input ref={inputRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; setArchive(file); if (file) applyDefaultName(file.name); event.currentTarget.value = ""; }} />
+            <button type="button" className={dragging ? "exchange-dropzone dragging" : "exchange-dropzone"} onClick={() => inputRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); setArchive(event.dataTransfer.files[0]); if (event.dataTransfer.files[0]) applyDefaultName(event.dataTransfer.files[0].name); }}><span className="exchange-dropzone-icon">⇧</span><strong>{archive?.name ?? `拖放或选择 ${source.toUpperCase()} ZIP 文件`}</strong><small>{archive ? `${Math.ceil(archive.size / 1024)} KB · 已准备导入` : source === "yolo" ? "ZIP 内应包含 data.yaml、images 和 labels" : "ZIP 内应包含 annotations.json/instances.json 与 images"}</small></button>
+          </> : (
+            <div className="import-ftp-picker">
+              <Flex gap={8} align="center" wrap="wrap">
+                <AntdButton disabled={ftpLoading || ftpPath === "/"} onClick={() => browseFtp(parentOf(ftpPath))}>↑ 上级</AntdButton>
+                <AntdSpace.Compact>
+                  <AntdInput value={ftpPath} aria-label="FTP 路径" onChange={(event) => setFtpPath(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") browseFtp(ftpPath); }} style={{ width: 240 }} />
+                  <AntdButton disabled={ftpLoading} onClick={() => browseFtp(ftpPath)}>浏览</AntdButton>
+                </AntdSpace.Compact>
+                <Segmented value={ftpKind} onChange={(value) => { setFtpKind(value as "zip" | "dir"); setFtpSelected(""); }} aria-label="FTP 来源类型" options={[{ value: "zip", label: "ZIP 文件" }, { value: "dir", label: "YOLO 目录" }]} />
+                {ftpKind === "dir" && (
+                  <AntdButton disabled={ftpLoading || ftpPath === "/"} title="把当前浏览到的目录作为导入目标" onClick={() => pickFtpDir(ftpPath, ftpPath.replace(/\/+$/, "").split("/").pop() || "ftp-dataset")}>选当前目录</AntdButton>
+                )}
+              </Flex>
+              <div className="import-ftp-list">
+                {ftpLoading && <p className="muted">正在读取目录…</p>}
+                {ftpError && <p className="annotation-form-error">{ftpError}（请先在「FTP 管理」页配置连接）</p>}
+                {!ftpLoading && !ftpError && ftpEntries?.map((entry) => entry.is_dir
+                  ? (ftpKind === "dir"
+                    ? <div key={entry.name} className={`import-ftp-row dir selectable${ftpSelected === childOf(entry.name) ? " selected" : ""}`}>
+                        <button type="button" className="import-ftp-pick" aria-pressed={ftpSelected === childOf(entry.name)} aria-label={`选择目录 ${entry.name}`} title="选择此目录作为导入目标" onClick={() => pickFtpDir(childOf(entry.name), entry.name)}>{ftpSelected === childOf(entry.name) ? "✓" : "＋"}</button>
+                        <button type="button" className="import-ftp-browse" onClick={() => browseFtp(childOf(entry.name))}><span>📁</span><strong>{entry.name}</strong><small>目录 · 点击进入</small></button>
+                      </div>
+                    : <button key={entry.name} type="button" className="import-ftp-row dir" onClick={() => browseFtp(childOf(entry.name))}><span>📁</span><strong>{entry.name}</strong><small>目录</small></button>)
+                  : <button key={entry.name} type="button" disabled={ftpKind === "dir" || !entry.name.toLowerCase().endsWith(".zip")} className={`import-ftp-row file${ftpSelected === childOf(entry.name) ? " selected" : ""}`} onClick={() => { setFtpSelected(childOf(entry.name)); applyDefaultName(entry.name); }}><span>🗜</span><strong>{entry.name}</strong><small>{entry.size != null ? `${Math.ceil(entry.size / 1024)} KB` : ""}</small></button>)}
+                {!ftpLoading && !ftpError && ftpEntries && ftpKind === "zip" && !ftpEntries.some((entry) => !entry.is_dir && entry.name.toLowerCase().endsWith(".zip")) && <p className="muted">当前目录没有 .zip 文件。</p>}
+                {!ftpLoading && !ftpError && ftpEntries && ftpKind === "dir" && !ftpEntries.some((entry) => entry.is_dir) && <p className="muted">当前目录没有子目录；可点上方「选当前目录」选择当前路径。</p>}
               </div>
-            )}
-            <footer className="data-exchange-footer"><span>{origin === "ftp" ? (ftpKind === "dir" ? "后端会递归采集所选 YOLO 目录（data.yaml、images、labels）并打包导入。" : "后端会从 FTP 下载所选 ZIP 并导入服务端受管目录。") : "文件仅导入到服务端受管数据目录。"}</span><div><button className="button" onClick={onClose}>取消</button><button className="button primary" disabled={busy || !canImport} onClick={importArchive}>开始导入</button></div></footer>
-          </>}
-        </section>
-      </div>
-    </section>
-  </div>;
+              {ftpSelected && <p className="import-ftp-selected">已选择:{ftpSelected}{ftpKind === "dir" ? "（YOLO 目录，将递归采集）" : ""}</p>}
+            </div>
+          )}
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 12 }}>
+              {origin === "ftp" ? (ftpKind === "dir" ? "后端会递归采集所选 YOLO 目录（data.yaml、images、labels）并打包导入。" : "后端会从 FTP 下载所选 ZIP 并导入服务端受管目录。") : "文件仅导入到服务端受管数据目录。"}
+            </Typography.Paragraph>
+          </div>
+        ),
+      }))}
+    />
+  </Modal>;
 }

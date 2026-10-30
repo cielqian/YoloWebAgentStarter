@@ -1,3 +1,4 @@
+import { Button as AntdButton, Space, Typography } from "antd";
 import type { ModelVersion } from "../../types";
 
 interface Props {
@@ -34,27 +35,18 @@ export function ModelComparisonBar({
           ))}
         </div>
         <div>
-          <strong style={{ display: "block", fontSize: 14 }}>已选择 {selectedIds.length} 个模型</strong>
-          <span style={{ fontSize: 12, color: "#9ca3af" }}>可对比指标，或批量删除</span>
+          <Typography.Text strong style={{ display: "block", fontSize: 14 }}>已选择 {selectedIds.length} 个模型</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>可对比指标，或批量删除</Typography.Text>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" className="dismiss-btn" disabled={compareBusy || busy} onClick={onCompareWithBest}>
-          与最佳对比
-        </button>
-        <button
-          type="button"
-          className="compare-btn-premium"
-          disabled={compareBusy || busy || selectedIds.length !== 2}
-          onClick={onCompareSelected}
-        >
+      <Space wrap>
+        <AntdButton disabled={compareBusy || busy} onClick={onCompareWithBest}>与最佳对比</AntdButton>
+        <AntdButton type="primary" disabled={compareBusy || busy || selectedIds.length !== 2} onClick={onCompareSelected}>
           {compareBusy ? "对比中…" : "对比所选"}
-        </button>
-        <button type="button" className="dismiss-btn" style={{ color: "#fecaca" }} disabled={busy} onClick={onDeleteSelected}>
-          删除所选
-        </button>
-        <button type="button" className="dismiss-btn" onClick={onDismiss}>取消</button>
-      </div>
+        </AntdButton>
+        <AntdButton danger disabled={busy} onClick={onDeleteSelected}>删除所选</AntdButton>
+        <AntdButton autoInsertSpace={false} onClick={onDismiss}>取消</AntdButton>
+      </Space>
     </div>
   );
 }

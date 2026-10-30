@@ -42,7 +42,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const buttons = () => Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+// antd Modal 挂在 body 下的传送门里,查询走 document.body
+const buttons = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"));
 const findButton = (text: string) => buttons().find((button) => button.textContent === text);
 
 describe("DatasetVersionDialog", () => {
@@ -51,11 +52,11 @@ describe("DatasetVersionDialog", () => {
       root?.render(<DatasetVersionDialog dataset={dataset} onClose={vi.fn()} onChanged={vi.fn()} />);
     });
     expect(api.listDatasetVersions).toHaveBeenCalledWith("ds-1");
-    expect(container?.textContent).toContain("v2");
-    expect(container?.textContent).toContain("第二轮");
-    expect(container?.textContent).toContain("激活中");
-    expect(container?.textContent).toContain("有未归档改动");
-    expect(container?.textContent).toContain("（无备注）");
+    expect(document.body.textContent).toContain("v2");
+    expect(document.body.textContent).toContain("第二轮");
+    expect(document.body.textContent).toContain("激活中");
+    expect(document.body.textContent).toContain("有未归档改动");
+    expect(document.body.textContent).toContain("（无备注）");
     expect(findButton("激活")).toBeTruthy();
   });
 
@@ -64,7 +65,7 @@ describe("DatasetVersionDialog", () => {
     await act(async () => {
       root?.render(<DatasetVersionDialog dataset={dataset} onClose={vi.fn()} onChanged={onChanged} />);
     });
-    const input = container?.querySelector<HTMLInputElement>("input[placeholder='例如：修复了 20 张漏标']");
+    const input = document.body.querySelector<HTMLInputElement>("input[placeholder='例如：修复了 20 张漏标']");
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     act(() => {
       setValue?.call(input, "修复漏标");
@@ -81,7 +82,7 @@ describe("DatasetVersionDialog", () => {
     await act(async () => {
       root?.render(<DatasetVersionDialog dataset={dataset} onClose={vi.fn()} onChanged={vi.fn()} />);
     });
-    const labelInput = container?.querySelector<HTMLInputElement>("input[placeholder='默认 v3']");
+    const labelInput = document.body.querySelector<HTMLInputElement>("input[placeholder='默认 v3']");
     expect(labelInput).toBeTruthy();
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     act(() => {
@@ -92,10 +93,10 @@ describe("DatasetVersionDialog", () => {
     expect(api.createDatasetVersion).toHaveBeenCalledWith("ds-1", "", "20261028_返修版");
 
     // 点击版本徽标进入行内重命名,保存调用 PATCH
-    const badge = container?.querySelector<HTMLElement>(".dataset-version-badge");
+    const badge = document.body.querySelector<HTMLElement>(".dataset-version-badge");
     expect(badge?.textContent).toBe("v2");
     await act(async () => { badge?.click(); });
-    const renameInput = container?.querySelector<HTMLInputElement>("input[aria-label='新版本号']");
+    const renameInput = document.body.querySelector<HTMLInputElement>("input[aria-label='新版本号']");
     act(() => {
       setValue?.call(renameInput, "正式版");
       renameInput?.dispatchEvent(new Event("input", { bubbles: true }));
@@ -114,7 +115,7 @@ describe("DatasetVersionDialog", () => {
 
     expect(api.activateDatasetVersion).toHaveBeenCalledWith("ds-1", "v-1");
     expect(onChanged).toHaveBeenCalled();
-    expect(container?.textContent).toContain("已激活 v1：恢复 2 张图片，1 张因文件缺失被跳过");
+    expect(document.body.textContent).toContain("已激活 v1：恢复 2 张图片，1 张因文件缺失被跳过");
   });
 
   it("asks to archive unarchived changes before switching versions", async () => {
@@ -125,14 +126,14 @@ describe("DatasetVersionDialog", () => {
     await act(async () => { findButton("激活")?.click(); });
 
     expect(api.activateDatasetVersion).not.toHaveBeenCalled();
-    expect(container?.textContent).toContain("有未归档改动");
-    expect(container?.textContent).toContain("切换到 v1");
+    expect(document.body.textContent).toContain("有未归档改动");
+    expect(document.body.textContent).toContain("切换到 v1");
     await act(async () => { findButton("归档并切换")?.click(); });
 
     expect(api.createDatasetVersion).toHaveBeenCalledWith("ds-1", "切换前自动归档");
     expect(api.activateDatasetVersion).toHaveBeenCalledWith("ds-1", "v-1");
     expect(onChanged).toHaveBeenCalled();
-    expect(container?.textContent).toContain("已归档为 v2 并激活 v1");
+    expect(document.body.textContent).toContain("已归档为 v2 并激活 v1");
   });
 
   it("can discard unarchived changes when switching versions", async () => {

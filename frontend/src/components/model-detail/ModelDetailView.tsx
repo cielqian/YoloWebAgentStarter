@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Button as AntdButton, Form, Input as AntdInput, Space, Table, Tag as AntdTag, Tabs, Typography, type TableProps } from "antd";
 import { api } from "../../api/client";
 import type {
   Dataset,
@@ -14,8 +15,6 @@ import {
   modelTaskLabel,
   newerFirst,
 } from "../../models/helpers";
-
-type DetailTab = "overview" | "evaluation" | "versions" | "metadata";
 
 interface Props {
   /** 跨数据集模型库按 dataset_id 反查；数据集已被删除时可能为空。 */
@@ -49,7 +48,7 @@ export function ModelDetailView({
   onEvaluate,
   onSaved,
 }: Props) {
-  const [tab, setTab] = useState<DetailTab>("overview");
+  const [tab, setTab] = useState<string>("overview");
   const [name, setName] = useState(model.name);
   const [version, setVersion] = useState(model.version);
   const [notes, setNotes] = useState(model.notes);
@@ -77,41 +76,55 @@ export function ModelDetailView({
     { id: "file", label: fileName(model.model_path), highlight: true },
   ].filter(Boolean) as Array<{ id: string; label: string; highlight?: boolean }>;
 
+  const versionColumns: TableProps<ModelVersion>["columns"] = [
+    {
+      title: "名称",
+      key: "name",
+      render: (_, item) => (
+        <AntdButton type="link" size="small" style={{ padding: 0, height: "auto" }} onClick={() => onSelectModel(item)}>{item.name}</AntdButton>
+      ),
+    },
+    { title: "格式", key: "format", render: (_, item) => `${item.format.toUpperCase()} · ${item.artifact_type}` },
+    { title: "mAP50", key: "map50", align: "right", render: (_, item) => formatMetric(item.map50) },
+    { title: "状态", key: "status", width: 90, render: (_, item) => (item.status === "active" ? "启用" : "归档") },
+    { title: "创建", key: "created", render: (_, item) => item.created_at.slice(0, 16).replace("T", " ") },
+  ];
+
   return (
     <div className="mdd-shell">
       <div className="mdd-topbar">
-        <button className="button" onClick={onBack}>← 返回模型库</button>
+        <AntdButton onClick={onBack}>← 返回模型库</AntdButton>
         <div className="mdd-topbar-meta">
-          <span className="models-chip">{dataset?.name ?? "未关联数据集"}</span>
-          <span className="models-chip models-chip--accent">{modelTaskLabel(model)}</span>
+          <Space size={8}>
+            <AntdTag>{dataset?.name ?? "未关联数据集"}</AntdTag>
+            <AntdTag color="blue">{modelTaskLabel(model)}</AntdTag>
+          </Space>
         </div>
       </div>
 
       <header className="mdd-header">
         <div className="mdd-header-main">
-          <span className="eyebrow">MODEL DETAIL / {model.task_type.toUpperCase()}</span>
-          <h1>{model.name}</h1>
-          <p className="muted">{model.format.toUpperCase()} · {model.artifact_type} · {model.source === "training_task" ? "受管训练产物" : "导出产物"}</p>
+          <Typography.Text type="secondary" className="models-eyebrow">MODEL DETAIL / {model.task_type.toUpperCase()}</Typography.Text>
+          <Typography.Title level={3} style={{ margin: 0 }}>{model.name}</Typography.Title>
+          <Typography.Text type="secondary">{model.format.toUpperCase()} · {model.artifact_type} · {model.source === "training_task" ? "受管训练产物" : "导出产物"}</Typography.Text>
           <div className="mdd-header-tags">
-            <span className={`badge-premium ${model.status === "active" ? "badge-active" : "badge-archived"}`}>
-              {model.status === "active" ? "启用" : "已归档"}
-            </span>
-            <span className="models-chip">v{model.version}</span>
-            {model.base_model && <span className="models-chip">{model.base_model}</span>}
+            <AntdTag color={model.status === "active" ? "success" : "default"}>{model.status === "active" ? "启用" : "已归档"}</AntdTag>
+            <AntdTag>v{model.version}</AntdTag>
+            {model.base_model && <AntdTag>{model.base_model}</AntdTag>}
           </div>
         </div>
         <div className="mdd-header-actions">
-          <a className="button" href={api.downloadModelUrl(model.id)}>下载 {model.format.toUpperCase()}</a>
+          <AntdButton href={api.downloadModelUrl(model.id)}>下载 {model.format.toUpperCase()}</AntdButton>
           {model.format === "pt" && (
             <>
-              <button className="button primary" disabled={busy} onClick={() => onTest(model)}>快速测试</button>
-              <button className="button" disabled={busy} onClick={onExportOnnx}>导出 ONNX</button>
+              <AntdButton type="primary" disabled={busy} onClick={() => onTest(model)}>快速测试</AntdButton>
+              <AntdButton disabled={busy} onClick={onExportOnnx}>导出 ONNX</AntdButton>
             </>
           )}
-          <button className="button" disabled={busy} onClick={onToggleArchive}>
+          <AntdButton disabled={busy} onClick={onToggleArchive}>
             {model.status === "active" ? "归档" : "恢复"}
-          </button>
-          <button className="button danger" disabled={busy} onClick={onDelete}>删除</button>
+          </AntdButton>
+          <AntdButton danger autoInsertSpace={false} disabled={busy} onClick={onDelete}>删除</AntdButton>
         </div>
       </header>
 
@@ -140,155 +153,126 @@ export function ModelDetailView({
 
       <div className="mdd-layout">
         <div className="mdd-main">
-          <div className="mdd-tabs" role="tablist">
-            {([
-              ["overview", "概览"],
-              ["evaluation", "评估"],
-              ["versions", "版本历史"],
-              ["metadata", "元数据"],
-            ] as const).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                className={`mdd-tab${tab === id ? " active" : ""}`}
-                aria-selected={tab === id}
-                onClick={() => setTab(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {tab === "overview" && (
-            <div className="mdd-overview" style={{ display: "grid", gap: 16 }}>
-              <section className="mdd-panel">
-                <header className="mdd-panel-head"><h3>模型血缘</h3></header>
-                <div className="mdd-panel-body">
-                  <div className="mdd-lineage">
-                    {lineage.map((node, index) => (
-                      <div key={node.id} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        {index > 0 && <span className="mdd-lineage-arrow">›</span>}
-                        <span className={`mdd-lineage-node${node.highlight ? " highlight" : ""}`}>{node.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              <div className="mdd-metrics-row">
-                <article className="mdd-panel">
-                  <div className="mdd-panel-body">
-                    <p className="mdd-metric-section-label">Precision / Recall</p>
-                    <div className="mdd-pr-grid">
-                      <div>
-                        <strong>{formatMetric(model.precision)}</strong>
-                        <div className="mdd-metric-bar">
-                          <span className="blue" style={{ width: metricBarWidth(model.precision) }} />
-                        </div>
-                        <span>Precision</span>
-                      </div>
-                      <div>
-                        <strong>{formatMetric(model.recall)}</strong>
-                        <div className="mdd-metric-bar">
-                          <span className="green" style={{ width: metricBarWidth(model.recall) }} />
-                        </div>
-                        <span>Recall</span>
+          <Tabs
+            activeKey={tab}
+            onChange={setTab}
+            items={[
+              { key: "overview", label: "概览", children: (
+                <div className="mdd-overview" style={{ display: "grid", gap: 16 }}>
+                  <section className="mdd-panel">
+                    <header className="mdd-panel-head"><Typography.Title level={5} style={{ margin: 0 }}>模型血缘</Typography.Title></header>
+                    <div className="mdd-panel-body">
+                      <div className="mdd-lineage">
+                        {lineage.map((node, index) => (
+                          <div key={node.id} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            {index > 0 && <span className="mdd-lineage-arrow">›</span>}
+                            <span className={`mdd-lineage-node${node.highlight ? " highlight" : ""}`}>{node.label}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
+                  </section>
+
+                  <div className="mdd-metrics-row">
+                    <article className="mdd-panel">
+                      <div className="mdd-panel-body">
+                        <p className="mdd-metric-section-label">Precision / Recall</p>
+                        <div className="mdd-pr-grid">
+                          <div>
+                            <strong>{formatMetric(model.precision)}</strong>
+                            <div className="mdd-metric-bar">
+                              <span className="blue" style={{ width: metricBarWidth(model.precision) }} />
+                            </div>
+                            <span>Precision</span>
+                          </div>
+                          <div>
+                            <strong>{formatMetric(model.recall)}</strong>
+                            <div className="mdd-metric-bar">
+                              <span className="green" style={{ width: metricBarWidth(model.recall) }} />
+                            </div>
+                            <span>Recall</span>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                    <article className="mdd-panel">
+                      <div className="mdd-panel-body">
+                        <p className="mdd-metric-section-label">Detection quality</p>
+                        <div className="mdd-map-block">
+                          <strong className="mdd-map-value">{formatMetric(model.map50)}</strong>
+                          <p className="mdd-muted">mAP50-95 · {formatMetric(model.map50_95)}</p>
+                        </div>
+                      </div>
+                    </article>
                   </div>
-                </article>
-                <article className="mdd-panel">
-                  <div className="mdd-panel-body">
-                    <p className="mdd-metric-section-label">Detection quality</p>
-                    <div className="mdd-map-block">
-                      <strong className="mdd-map-value">{formatMetric(model.map50)}</strong>
-                      <p className="mdd-muted">mAP50-95 · {formatMetric(model.map50_95)}</p>
+
+                  <section className="mdd-panel">
+                    <header className="mdd-panel-head"><Typography.Title level={5} style={{ margin: 0 }}>下一步</Typography.Title></header>
+                    <div className="mdd-panel-body">
+                      <div className="mdd-next-actions">
+                        {model.format === "pt" && (
+                          <>
+                            <AntdButton type="primary" disabled={busy} onClick={() => onTest(model)}>运行快速测试</AntdButton>
+                            <AntdButton disabled={busy} onClick={() => setTab("evaluation")}>创建 split 评估</AntdButton>
+                            <AntdButton disabled={busy} onClick={onExportOnnx}>导出 ONNX FP32</AntdButton>
+                          </>
+                        )}
+                        {model.format === "onnx" && (
+                          <AntdButton type="primary" href={api.downloadModelUrl(model.id)}>下载 ONNX</AntdButton>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </article>
-              </div>
-
-              <section className="mdd-panel">
-                <header className="mdd-panel-head"><h3>下一步</h3></header>
-                <div className="mdd-panel-body">
-                  <div className="mdd-next-actions">
-                    {model.format === "pt" && (
-                      <>
-                        <button className="button primary" disabled={busy} onClick={() => onTest(model)}>运行快速测试</button>
-                        <button className="button" disabled={busy} onClick={() => setTab("evaluation")}>创建 split 评估</button>
-                        <button className="button" disabled={busy} onClick={onExportOnnx}>导出 ONNX FP32</button>
-                      </>
-                    )}
-                    {model.format === "onnx" && (
-                      <a className="button primary" href={api.downloadModelUrl(model.id)}>下载 ONNX</a>
-                    )}
-                  </div>
+                  </section>
                 </div>
-              </section>
-            </div>
-          )}
-
-          {tab === "evaluation" && (
-            model.format === "pt"
-              ? <ModelEvaluationPanel model={model} evaluations={evaluations} busy={busy} onEvaluate={onEvaluate} />
-              : <section className="mdd-panel"><div className="mdd-panel-body"><p className="mdd-muted">ONNX 产物请回到源 PT 模型创建评估任务。</p></div></section>
-          )}
-
-          {tab === "versions" && (
-            <section className="mdd-panel">
-              <header className="mdd-panel-head"><h3>同数据集版本</h3></header>
-              <div className="mdd-panel-body" style={{ padding: 0 }}>
-                <table className="mdd-version-table">
-                  <thead>
-                    <tr>
-                      <th>名称</th>
-                      <th>格式</th>
-                      <th>mAP50</th>
-                      <th>状态</th>
-                      <th>创建</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {siblings.map((item) => (
-                      <tr key={item.id} className={item.id === model.id ? "active" : undefined}>
-                        <td>
-                          <button type="button" className="linkish" onClick={() => onSelectModel(item)}>
-                            {item.name}
-                          </button>
-                        </td>
-                        <td>{item.format.toUpperCase()} · {item.artifact_type}</td>
-                        <td>{formatMetric(item.map50)}</td>
-                        <td>{item.status === "active" ? "启用" : "归档"}</td>
-                        <td>{item.created_at.slice(0, 16).replace("T", " ")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-
-          {tab === "metadata" && (
-            <section className="mdd-panel">
-              <header className="mdd-panel-head"><h3>编辑元数据</h3></header>
-              <div className="mdd-panel-body">
-                <div className="mdd-form">
-                  <label>名称<input value={name} onChange={(event) => setName(event.target.value)} /></label>
-                  <label>版本<input value={version} onChange={(event) => setVersion(event.target.value)} /></label>
-                  <label>备注<textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
-                  <button className="button primary" disabled={busy || !name.trim() || !version.trim()} onClick={() => void save()}>
-                    保存元数据
-                  </button>
-                </div>
-              </div>
-            </section>
-          )}
+              ) },
+              { key: "evaluation", label: "评估", children: (
+                model.format === "pt"
+                  ? <ModelEvaluationPanel model={model} evaluations={evaluations} busy={busy} onEvaluate={onEvaluate} />
+                  : <section className="mdd-panel"><div className="mdd-panel-body"><p className="mdd-muted">ONNX 产物请回到源 PT 模型创建评估任务。</p></div></section>
+              ) },
+              { key: "versions", label: "版本历史", children: (
+                <section className="mdd-panel">
+                  <header className="mdd-panel-head"><Typography.Title level={5} style={{ margin: 0 }}>同数据集版本</Typography.Title></header>
+                  <div className="mdd-panel-body" style={{ padding: 0 }}>
+                    <Table<ModelVersion>
+                      rowKey="id"
+                      size="small"
+                      columns={versionColumns}
+                      dataSource={siblings}
+                      pagination={false}
+                      rowClassName={(item) => (item.id === model.id ? "active" : "")}
+                    />
+                  </div>
+                </section>
+              ) },
+              { key: "metadata", label: "元数据", children: (
+                <section className="mdd-panel">
+                  <header className="mdd-panel-head"><Typography.Title level={5} style={{ margin: 0 }}>编辑元数据</Typography.Title></header>
+                  <div className="mdd-panel-body">
+                    <Form layout="vertical" className="mdd-form">
+                      <Form.Item label="名称" style={{ marginBottom: 12 }}>
+                        <AntdInput value={name} onChange={(event) => setName(event.target.value)} />
+                      </Form.Item>
+                      <Form.Item label="版本" style={{ marginBottom: 12 }}>
+                        <AntdInput value={version} onChange={(event) => setVersion(event.target.value)} />
+                      </Form.Item>
+                      <Form.Item label="备注" style={{ marginBottom: 12 }}>
+                        <AntdInput.TextArea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+                      </Form.Item>
+                      <AntdButton type="primary" disabled={busy || !name.trim() || !version.trim()} onClick={() => void save()}>
+                        保存元数据
+                      </AntdButton>
+                    </Form>
+                  </div>
+                </section>
+              ) },
+            ]}
+          />
         </div>
 
         <aside className="mdd-sidebar">
           <div className="mdd-sidebar-card">
-            <h3>就绪检查</h3>
+            <Typography.Title level={5} style={{ margin: 0 }}>就绪检查</Typography.Title>
             <ul className="mdd-ready-list">
               <li><span>权重文件</span><span className="ok">已登记</span></li>
               <li><span>训练来源</span><span className={model.training_task_id ? "ok" : "pending"}>{model.training_task_id ? "已关联" : "无"}</span></li>
@@ -297,11 +281,11 @@ export function ModelDetailView({
             </ul>
           </div>
           <div className="mdd-sidebar-card">
-            <h3>文件路径</h3>
+            <Typography.Title level={5} style={{ margin: 0 }}>文件路径</Typography.Title>
             <p className="mdd-path">{model.model_path}</p>
           </div>
           <div className="mdd-sidebar-card">
-            <h3>备注预览</h3>
+            <Typography.Title level={5} style={{ margin: 0 }}>备注预览</Typography.Title>
             <p className="mdd-muted">{model.notes.trim() || "暂无备注"}</p>
           </div>
         </aside>

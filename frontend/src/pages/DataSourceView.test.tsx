@@ -129,7 +129,8 @@ describe("DataSourceView batch tags and upload tags", () => {
     await openDetail();
 
     await clickButton("上传图片");
-    const chip = Array.from(container?.querySelectorAll<HTMLButtonElement>(".source-tag-chip > button") ?? []).find((item) => item.textContent === "夜间");
+    // antd Modal 内容在 body 传送门里
+    const chip = Array.from(document.body.querySelectorAll<HTMLButtonElement>(".source-tag-chip > button") ?? []).find((item) => item.textContent === "夜间");
     await act(async () => { chip?.click(); });
 
     const fileInput = container?.querySelector<HTMLInputElement>('input[type="file"]');

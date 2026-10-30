@@ -1,8 +1,22 @@
 // @vitest-environment jsdom
 
+// antd 组件在 jsdom 里需要的浏览器 API mock
+beforeAll(() => {
+  if (!window.matchMedia) {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: (query: string) => ({ matches: false, media: query, onchange: null, addListener: () => undefined, removeListener: () => undefined, addEventListener: () => undefined, removeEventListener: () => undefined, dispatchEvent: () => false }),
+    });
+  }
+  if (!window.ResizeObserver) {
+    class ResizeObserverMock { observe() {} unobserve() {} disconnect() {} }
+    (window as unknown as { ResizeObserver: object }).ResizeObserver = ResizeObserverMock;
+  }
+});
+
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ModelsView } from "./ModelsView";
 import type { Dataset, ModelVersion } from "../types";
 
@@ -175,10 +189,10 @@ describe("ModelsView save to FTP", () => {
       await act(async () => {});
 
       expect(api.listFtp).toHaveBeenCalledWith("/");
-      const nameInput = container?.querySelector<HTMLInputElement>(".ftp-save-name input");
+      const nameInput = document.body.querySelector<HTMLInputElement>(".ftp-save-name input");
       expect(nameInput?.value).toBe("blade.pt");
 
-      const submit = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "转存");
+      const submit = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "转存");
       await act(async () => { submit?.click(); });
       await act(async () => {});
 
@@ -186,7 +200,7 @@ describe("ModelsView save to FTP", () => {
       expect(api.uploadFtp).toHaveBeenCalledWith("/", [expect.any(File)]);
       const sent = (api.uploadFtp as ReturnType<typeof vi.fn>).mock.calls[0][1][0] as File;
       expect(sent.name).toBe("blade.pt");
-      expect(container?.querySelector(".ftp-picker-dialog")).toBeNull();
+      expect(document.body.querySelector(".ftp-picker-dialog")).toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -217,6 +231,6 @@ describe("ModelsView FTP default name from lineage", () => {
     expect(saveButton).toBeDefined();
     await act(async () => { saveButton?.click(); });
     await act(async () => {});
-    expect(container?.querySelector<HTMLInputElement>(".ftp-save-name input")?.value).toBe("blade.om");
+    expect(document.body.querySelector<HTMLInputElement>(".ftp-save-name input")?.value).toBe("blade.om");
   });
 });

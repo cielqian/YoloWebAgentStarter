@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Alert, Button as AntdButton, Empty as AntdEmpty, Flex, Input as AntdInput, Modal, Space, Space as AntdSpace, Spin, Tag as AntdTag, Typography } from "antd";
 import { api } from "../api/client";
 import type { Dataset, DatasetVersion } from "../types";
 
@@ -106,114 +107,114 @@ export function DatasetVersionDialog({ dataset, onClose, onChanged }: { dataset:
     });
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <section className="dataset-version-dialog" role="dialog" aria-modal="true" aria-label="数据集版本管理" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="data-exchange-header">
-          <div>
-            <span className="eyebrow">DATASET VERSIONS</span>
-            <h2>版本管理 · {dataset.name}</h2>
-            <p>新建版本会把当前图片、类别与标注归档为快照；激活中的版本显示当前工作区数据，激活历史版本可把工作区回滚到该快照。</p>
-          </div>
-          <button className="icon-button" onClick={onClose} aria-label="关闭">×</button>
-        </header>
-        <div className="dataset-version-create">
-          <label>
-            版本号
-            <input
-              value={label}
-              placeholder={`默认 v${nextNumber}`}
-              onChange={(event) => setLabel(event.target.value)}
-              disabled={busy}
-              aria-label="版本号"
-            />
-          </label>
-          <label>
-            版本备注
-            <input value={note} placeholder="例如：修复了 20 张漏标" onChange={(event) => setNote(event.target.value)} disabled={busy} />
-          </label>
-          <button className="button primary" disabled={busy} onClick={() => void create()}>新建版本（快照当前数据）</button>
-        </div>
-        {error && <p className="validation invalid"><span>{error}</span></p>}
-        {notice && <p className="dataset-version-notice">{notice}</p>}
-        {switchTarget && (
-          <div className="dataset-version-switch" role="alert">
-            <p>
-              当前激活的 {activeVersion ? versionName(activeVersion) : ""} 有未归档改动，切换到 {versionName(switchTarget)}{" "}
-              将丢失这些改动。可先归档当前工作区（会生成一个新版本），再执行切换。
-            </p>
-            <div className="dataset-version-switch-actions">
-              <button className="button primary" disabled={busy} onClick={() => { setSwitchTarget(undefined); void archiveAndActivate(switchTarget); }}>
+    <Modal className="dataset-version-modal" title={`版本管理 · ${dataset.name}`} open onCancel={onClose} footer={null} width={680}>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 14, fontSize: 12 }}>
+        新建版本会把当前图片、类别与标注归档为快照；激活中的版本显示当前工作区数据，激活历史版本可把工作区回滚到该快照。
+      </Typography.Paragraph>
+      <Flex gap={8} align="center" wrap="wrap">
+        <AntdSpace.Compact block style={{ flex: "1 1 220px" }}>
+          <AntdSpace.Addon>版本号</AntdSpace.Addon>
+          <AntdInput
+            value={label}
+            placeholder={`默认 v${nextNumber}`}
+            onChange={(event) => setLabel(event.target.value)}
+            disabled={busy}
+            aria-label="版本号"
+          />
+        </AntdSpace.Compact>
+        <AntdSpace.Compact block style={{ flex: "1 1 260px" }}>
+          <AntdSpace.Addon>版本备注</AntdSpace.Addon>
+          <AntdInput value={note} placeholder="例如：修复了 20 张漏标" onChange={(event) => setNote(event.target.value)} disabled={busy} />
+        </AntdSpace.Compact>
+        <AntdButton type="primary" disabled={busy} onClick={() => void create()}>新建版本（快照当前数据）</AntdButton>
+      </Flex>
+      {error && <Alert type="error" showIcon title={error} style={{ marginTop: 12 }} />}
+      {notice && <Alert type="success" showIcon title={notice} style={{ marginTop: 12 }} />}
+      {switchTarget && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 12 }}
+          title={`当前激活的 ${activeVersion ? versionName(activeVersion) : ""} 有未归档改动，切换到 ${versionName(switchTarget)} 将丢失这些改动。可先归档当前工作区（会生成一个新版本），再执行切换。`}
+          action={
+            <Space wrap>
+              <AntdButton size="small" type="primary" disabled={busy} onClick={() => { setSwitchTarget(undefined); void archiveAndActivate(switchTarget); }}>
                 归档并切换
-              </button>
-              <button className="button danger" disabled={busy} onClick={() => { setSwitchTarget(undefined); void activate(switchTarget); }}>
+              </AntdButton>
+              <AntdButton size="small" danger disabled={busy} onClick={() => { setSwitchTarget(undefined); void activate(switchTarget); }}>
                 放弃改动并切换
-              </button>
-              <button className="button" disabled={busy} onClick={() => setSwitchTarget(undefined)}>
+              </AntdButton>
+              <AntdButton size="small" disabled={busy} onClick={() => setSwitchTarget(undefined)}>
                 取消
-              </button>
-            </div>
-          </div>
-        )}
-        <div className="dataset-version-list">
-          {versions === null ? (
-            <p className="muted">加载中…</p>
-          ) : !versions.length ? (
-            <p className="muted">还没有版本。标注到合适的节点后，新建一个版本作为回滚点。</p>
-          ) : (
-            versions.map((version) => (
-              <div key={version.id} className={`dataset-version-row${version.is_active ? " active" : ""}`}>
-                {renaming?.id === version.id ? (
-                  <div className="dataset-version-rename">
-                    <input
-                      value={renaming.label}
-                      autoFocus
-                      aria-label="新版本号"
-                      disabled={busy}
-                      onChange={(event) => setRenaming({ id: version.id, label: event.target.value })}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && renaming.label.trim()) void rename(version);
-                        if (event.key === "Escape") setRenaming(null);
-                      }}
-                    />
-                    <button className="button primary" disabled={busy || !renaming.label.trim()} onClick={() => void rename(version)}>保存</button>
-                    <button className="button" disabled={busy} onClick={() => setRenaming(null)}>取消</button>
-                  </div>
-                ) : (
-                  <span
-                    className="dataset-version-badge"
-                    title="点击修改版本号"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setRenaming({ id: version.id, label: versionName(version) })}
-                    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setRenaming({ id: version.id, label: versionName(version) }); }}
-                  >
-                    {versionName(version)}
-                  </span>
-                )}
-                <div className="dataset-version-meta">
-                  <strong>
-                    {version.note || "（无备注）"}
-                    {version.is_active ? <span className="status ready">激活中</span> : null}
-                    {version.is_active && version.has_pending_changes ? <span className="dataset-version-pending">有未归档改动</span> : null}
-                  </strong>
-                  <small>
-                    {version.image_count} 张图片 · {version.annotation_count} 条标注 · {version.class_count} 个类别 · {formatTime(version.created_at)}
-                  </small>
+              </AntdButton>
+            </Space>
+          }
+        />
+      )}
+      <div className="dataset-version-list">
+        {versions === null ? (
+          <Space align="center" style={{ justifyContent: "center", width: "100%", padding: "18px 0" }}>
+            <Spin size="small" />
+            <Typography.Text type="secondary">加载中…</Typography.Text>
+          </Space>
+        ) : !versions.length ? (
+          <AntdEmpty image={AntdEmpty.PRESENTED_IMAGE_SIMPLE} description="还没有版本。标注到合适的节点后，新建一个版本作为回滚点。" />
+        ) : (
+          versions.map((version) => (
+            <div key={version.id} className={`dataset-version-row${version.is_active ? " active" : ""}`}>
+              {renaming?.id === version.id ? (
+                <div className="dataset-version-rename">
+                  <AntdInput
+                    size="small"
+                    value={renaming.label}
+                    autoFocus
+                    aria-label="新版本号"
+                    disabled={busy}
+                    style={{ width: 140 }}
+                    onChange={(event) => setRenaming({ id: version.id, label: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && renaming.label.trim()) void rename(version);
+                      if (event.key === "Escape") setRenaming(null);
+                    }}
+                  />
+                  <AntdButton size="small" type="primary" autoInsertSpace={false} disabled={busy || !renaming.label.trim()} onClick={() => void rename(version)}>保存</AntdButton>
+                  <AntdButton size="small" autoInsertSpace={false} disabled={busy} onClick={() => setRenaming(null)}>取消</AntdButton>
                 </div>
-                <div className="dataset-version-actions">
-                  {!version.is_active && <button className="button" disabled={busy} onClick={() => beginSwitch(version)}>激活</button>}
-                  {!version.is_active &&
-                    (confirmDeleteId === version.id ? (
-                      <button className="button danger" disabled={busy} onClick={() => void remove(version)}>确认删除</button>
-                    ) : (
-                      <button className="button" disabled={busy} onClick={() => setConfirmDeleteId(version.id)}>删除</button>
-                    ))}
-                </div>
+              ) : (
+                <span
+                  className="dataset-version-badge"
+                  title="点击修改版本号"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setRenaming({ id: version.id, label: versionName(version) })}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setRenaming({ id: version.id, label: versionName(version) }); }}
+                >
+                  {versionName(version)}
+                </span>
+              )}
+              <div className="dataset-version-meta">
+                <strong>
+                  {version.note || "（无备注）"}
+                  {version.is_active && <AntdTag color="success" style={{ marginInlineStart: 8 }}>激活中</AntdTag>}
+                  {version.is_active && version.has_pending_changes && <AntdTag color="warning">有未归档改动</AntdTag>}
+                </strong>
+                <Typography.Text type="secondary" className="dataset-version-meta-sub">
+                  {version.image_count} 张图片 · {version.annotation_count} 条标注 · {version.class_count} 个类别 · {formatTime(version.created_at)}
+                </Typography.Text>
               </div>
-            ))
-          )}
-        </div>
-      </section>
-    </div>
+              <div className="dataset-version-actions">
+                {!version.is_active && <AntdButton size="small" autoInsertSpace={false} disabled={busy} onClick={() => beginSwitch(version)}>激活</AntdButton>}
+                {!version.is_active &&
+                  (confirmDeleteId === version.id ? (
+                    <AntdButton size="small" danger type="primary" disabled={busy} onClick={() => void remove(version)}>确认删除</AntdButton>
+                  ) : (
+                    <AntdButton size="small" danger autoInsertSpace={false} disabled={busy} onClick={() => setConfirmDeleteId(version.id)}>删除</AntdButton>
+                  ))}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </Modal>
   );
 }

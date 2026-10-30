@@ -85,45 +85,7 @@
   align-items: center;
 }
 
-.models-library-search {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--border-subtle, #e2e8f0);
-  border-radius: 10px;
-  background: #fff;
-}
 
-.models-library-search input {
-  border: 0;
-  outline: none;
-  background: transparent;
-  min-width: 160px;
-  font: inherit;
-  font-size: 13px;
-}
-
-.models-filter-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--border-subtle, #e2e8f0);
-  border-radius: 999px;
-  background: #fff;
-  color: var(--text-muted, #66748a);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.models-filter-toggle.active {
-  border-color: #c9d6fb;
-  background: #f3f6ff;
-  color: var(--primary, #3157d5);
-}
 
 /* Hero */
 .hero-section {
@@ -495,58 +457,6 @@
   border-top: 1px solid var(--border-subtle, #e2e8f0);
 }
 
-.model-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border-subtle, #e2e8f0);
-  background: #fff;
-  color: var(--text-dark, #172033);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.model-action-btn:hover:not(:disabled):not(.model-action-btn--primary):not(.model-action-btn--danger) {
-  border-color: #b7c5f3;
-  color: #3157d5;
-  background: #f4f6ff;
-}
-
-.model-action-btn--primary {
-  border-color: var(--primary, #3157d5);
-  background: var(--primary, #3157d5);
-  color: #fff;
-}
-
-.model-action-btn--primary:hover:not(:disabled) {
-  border-color: #2448be;
-  background: #2448be;
-}
-
-.model-action-btn--ghost:hover {
-  border-color: #c9d6fb;
-  background: #f5f7ff;
-}
-
-.model-action-btn--danger {
-  color: #b83a3a;
-  border-color: #efc0c0;
-  background: #fff7f7;
-}
-
-.model-action-btn--danger:hover:not(:disabled) {
-  border-color: #e49a9a;
-  background: #fff0f0;
-}
-
-.model-action-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .model-card-util-actions {
   display: flex;
@@ -661,19 +571,6 @@
 .models-comparison-deltas strong.positive { color: #166534; }
 .models-comparison-deltas strong.negative { color: #b91c1c; }
 
-.models-library-empty {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding: 48px 20px;
-  border: 1px dashed var(--border-strong, #cbd5e1);
-  border-radius: 14px;
-  background: #fbfcfe;
-  text-align: center;
-}
-
-.models-library-empty strong { font-size: 15px; color: var(--text-dark, #172033); }
-.models-library-empty p { margin: 0; max-width: 40ch; color: var(--text-muted, #66748a); font-size: 13px; line-height: 1.5; }
 
 /* Detail shell */
 .mdd-shell {
@@ -760,34 +657,6 @@
   gap: 16px;
 }
 
-.mdd-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid var(--border-subtle, #e2e8f0);
-  border-radius: 12px;
-  background: var(--bg-muted, #f1f5f9);
-}
-
-.mdd-tab {
-  min-height: 36px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-muted, #66748a);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.mdd-tab.active {
-  background: #fff;
-  color: var(--primary, #3157d5);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.05));
-}
 
 .mdd-panel {
   border: 1px solid var(--border-subtle, #e2e8f0);
@@ -956,57 +825,7 @@
   gap: 12px;
 }
 
-.mdd-form label {
-  display: grid;
-  gap: 6px;
-  color: var(--text-muted, #66748a);
-  font-size: 12px;
-  font-weight: 700;
-}
 
-.mdd-form input,
-.mdd-form textarea {
-  min-height: 38px;
-  padding: 8px 12px;
-  border: 1px solid var(--border-subtle, #e2e8f0);
-  border-radius: 8px;
-  font: inherit;
-}
-
-.mdd-form textarea { min-height: 96px; resize: vertical; }
-
-.mdd-version-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.mdd-version-table th,
-.mdd-version-table td {
-  padding: 10px 8px;
-  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
-  text-align: left;
-}
-
-.mdd-version-table th {
-  color: var(--text-muted, #66748a);
-  font-size: 11px;
-  font-weight: 750;
-}
-
-.mdd-version-table tr.active td {
-  background: #f5f7ff;
-}
-
-.mdd-version-table button.linkish {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--primary, #3157d5);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
 
 @media (max-width: 1100px) {
   .best-model-card,
@@ -1275,7 +1094,7 @@
   margin: 4px 0 0;
 }
 
-.models-library-empty .button {
+._dead_empty .button {
   margin-top: 4px;
 }
 
@@ -1736,3 +1555,57 @@
   font-weight: 500;
   color: #8a94a6;
 }
+
+
+/* ---- 模型页 antd 化后的组件适配 ---- */
+
+/* 下钻行由 antd Button(type=text) 承载:去掉 antd 居中/定高,恢复卡片行布局 */
+.models-drill-row.ant-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  justify-content: flex-start;
+  padding: 12px 16px;
+  white-space: normal;
+  text-align: left;
+}
+.models-drill-row.ant-btn:hover { background: #f7f9ff; border-color: #c9d6fb; }
+.models-drill-row.ant-btn strong { font-size: 13px; color: #172033; }
+.models-drill-row.ant-btn small { flex: 1; min-width: 0; }
+.models-drill-row.ant-btn em { font-style: normal; color: #a0a8b8; }
+
+/* 面包屑换 antd Breadcrumb:nav 上的旧样式继续生效,只收紧列表项 */
+.models-crumb.ant-breadcrumb { margin-bottom: 12px; font-size: 13px; }
+.models-crumb.ant-breadcrumb ol { align-items: center; }
+
+/* 标题层级统一为 Typography:面板标题选择器扩展到 ant 标签 */
+.mdd-panel-head .ant-typography, .mdd-sidebar-card .ant-typography { margin: 0; }
+.mdd-panel-head .ant-typography { font-size: 13px; }
+.mdd-sidebar-card .ant-typography { font-size: 13px; }
+
+/* 详情页操作区:antd 按钮换行排布 */
+.mdd-header-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* 摘要条换 antd Statistic */
+.models-stats-strip .ant-statistic { margin: 0; }
+.models-stats-strip .ant-statistic-content { font-size: 20px; font-weight: 700; color: #172033; }
+.models-stats-strip .ant-statistic-title { margin-bottom: 2px; }
+
+/* 格式分区的 antd Table 密度 */
+.models-format-section .ant-table-wrapper { margin-top: 6px; }
+.models-format-section .ant-table-thead > tr > th { font-size: 11px; white-space: nowrap; }
+.models-format-section .ant-table-tbody > tr > td { font-size: 12px; }
+
+/* 快速测试弹窗换 antd Modal:控件列改 Space 布局,滑杆占满 */
+.model-test-controls .ant-slider { margin: 6px 0 2px; }
+.model-test-controls .import-file-picker { width: 100%; }
+
+/* FTP 转存弹窗在 antd Modal 内的收尾 */
+.ftp-picker-dialog .ftp-picker { display: grid; gap: 10px; }
+.ftp-picker-dialog .ftp-save-name { display: grid; gap: 6px; }
+
+/* FTP 转存弹窗目录列表 */
+.ftp-dir-list { display: grid; gap: 2px; }

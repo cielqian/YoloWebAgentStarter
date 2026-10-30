@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
   Button as AntdButton,
   Empty as AntdEmpty,
+  Dropdown,
   Flex,
   Input as AntdInput,
+  InputNumber as AntdInputNumber,
   Modal,
   Popconfirm,
   Radio,
@@ -12,12 +14,13 @@ import {
   Progress,
   Select as AntdSelect,
   Space,
+  Space as AntdSpace,
   Table,
   Tag as AntdTag,
   Typography,
   type TableProps,
 } from "antd";
-import { DownloadOutlined, PlusOutlined } from "@ant-design/icons";
+import { DownloadOutlined, MoreOutlined, PlusOutlined } from "@ant-design/icons";
 import { AnnotationCanvas, type AnnotationDraft } from "./annotation/AnnotationCanvas";
 import { api, apiUrl, type UploadProgress } from "./api/client";
 import { StarterShell, type StarterSection } from "./components/StarterShell";
@@ -46,6 +49,15 @@ import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityRep
 type View = "workspace" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources" | "plugin-manager" | "plugin";
 type CardReportKind = "validation" | "quality" | "duplicates";
 const ANNOTATION_IMAGE_PAGE_SIZE = 20;
+
+/** 标注断点续作:按数据集记录最后标注到的图片 id,重新进入时自动定位。 */
+const ANNOTATION_CURSOR_PREFIX = "ywa.annotation.cursor.";
+const readAnnotationCursor = (datasetId: string): string | null => {
+  try { return localStorage.getItem(ANNOTATION_CURSOR_PREFIX + datasetId); } catch { return null; }
+};
+const writeAnnotationCursor = (datasetId: string, imageId: string) => {
+  try { localStorage.setItem(ANNOTATION_CURSOR_PREFIX + datasetId, imageId); } catch { /* 隐私模式等场景 localStorage 不可用,静默降级 */ }
+};
 
 function isHistoricalActive(dataset: Dataset): boolean {
   return dataset.active_version_number != null && dataset.latest_version_number != null && dataset.active_version_number !== dataset.latest_version_number;
@@ -80,6 +92,15 @@ export default function App() {
   const [activePluginId, setActivePluginId] = useState<string>();
   const { requestLeave, dialog: leaveDialog } = useLeaveConfirm(view === "annotation" && annotationDirty);
 
+  // 标注断点续作:后台补齐 promise 与几份最新值引用,供补齐完成后的延迟定位使用。
+  const fillImagesRef = useRef<Promise<void> | null>(null);
+  const imagesRef = useRef<ImageItem[]>([]);
+  useEffect(() => { imagesRef.current = images; }, [images]);
+  const selectedImageRef = useRef<ImageItem | undefined>();
+  useEffect(() => { selectedImageRef.current = selectedImage; }, [selectedImage]);
+  const annotationDirtyRef = useRef(false);
+  useEffect(() => { annotationDirtyRef.current = annotationDirty; }, [annotationDirty]);
+
   const rejectReadOnly = (dataset: Dataset) => {
     if (!isHistoricalActive(dataset)) return false;
     setError(`数据集“${dataset.name}”当前激活的是历史版本 ${dataset.active_version_label || `v${dataset.active_version_number}`}（最新 ${dataset.latest_version_label || `v${dataset.latest_version_number}`}），只读不可编辑。请新建版本或激活最新版本。`);
@@ -107,7 +128,7 @@ export default function App() {
     // A class id belongs to one dataset. Reusing the previous dataset's
     // active id leaves the annotation canvas without a valid label.
     setActiveClassId(nextClasses[0]?.id || "");
-    if (firstPage.total > firstPage.items.length) void fillRemainingImages(dataset.id, firstPage);
+    if (firstPage.total > firstPage.items.length) fillImagesRef.current = fillRemainingImages(dataset.id, firstPage);
     return firstPage;
   };
 
@@ -259,6 +280,7 @@ export default function App() {
   const openImage = async (image: ImageItem, options?: { ignoreDirty?: boolean }) => {
     if (!selected) return;
     const proceed = () => void run(async () => {
+      writeAnnotationCursor(selected.id, image.id);
       setSelectedImage(image);
       setAnnotations(await api.getAnnotations(selected.id, image.id));
       setView("annotation");
@@ -294,7 +316,10 @@ export default function App() {
       // 立即给出反馈,再等首屏数据(类别+第一页图片+目标图标注);此前整表拉两遍才切视图,大库明显卡顿。
       setNotice(`正在打开「${dataset.name}」的标注…`);
       const firstPage = await loadDataset(dataset);
-      const image = firstPage.items.find((item) => item.status === "unannotated") ?? firstPage.items[0];
+      // 断点续作:上次标注到哪张就回到哪张;游标失效(图片已删)再退回首张未标注。
+      const savedId = readAnnotationCursor(dataset.id);
+      const savedImage = savedId ? firstPage.items.find((item) => item.id === savedId) : undefined;
+      const image = savedImage ?? firstPage.items.find((item) => item.status === "unannotated") ?? firstPage.items[0];
       if (!image) {
         setNotice("该数据集还没有图片可标注。");
         return;
@@ -303,6 +328,15 @@ export default function App() {
       setAnnotations(await api.getAnnotations(dataset.id, image.id));
       setView("annotation");
       setNotice("");
+      // 上次的图片不在首屏(大库)时,等后台补齐列表再自动翻过去;期间用户已动手标注就不打扰。
+      const pending = savedId && !savedImage ? fillImagesRef.current : null;
+      if (pending) void pending.then(() => {
+        if (selectedDatasetRef.current !== dataset.id) return;
+        const target = imagesRef.current.find((item) => item.id === savedId);
+        if (!target || target.id === selectedImageRef.current?.id) return;
+        if (annotationDirtyRef.current) return;
+        void openImage(target);
+      });
     });
   };
 
@@ -908,6 +942,29 @@ export function DatasetHome(props: {
           <Popconfirm title={`删除数据集"${ds.name}"？`} description="所有图片、标注、训练记录和关联文件将永久删除，不可恢复。" okText="删除" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => props.onDelete(ds)}>
             <AntdButton type="link" size="small" danger disabled={props.busy}>删除</AntdButton>
           </Popconfirm>
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              items: [
+                { key: "basic", label: "基础信息", disabled: props.busy || ds.import_state === "importing" },
+                { key: "auto", label: "自动标注", disabled: props.busy || ds.import_state === "importing" || !ds.image_count || historical },
+                { key: "export", label: "导出", disabled: props.busy || ds.import_state === "importing" || !ds.image_count },
+                { key: "versions", label: "版本管理", disabled: props.busy || ds.import_state === "importing" },
+                ...(ds.import_state === "importing" || ds.import_state === "merging"
+                  ? [{ type: "divider" as const }, { key: "stop", label: `停止${ds.import_state === "importing" ? "导入" : "合并"}`, danger: true, disabled: props.busy }]
+                  : []),
+              ],
+              onClick: ({ key }) => {
+                if (key === "basic") openBasicInfo(ds);
+                else if (key === "auto") setAutoAnnotationTarget(ds);
+                else if (key === "export") openExport(ds);
+                else if (key === "versions") setVersionTarget(ds);
+                else if (key === "stop") props.onCancelImport(ds);
+              },
+            }}
+          >
+            <AntdButton type="link" size="small" icon={<MoreOutlined />}>更多</AntdButton>
+          </Dropdown>
         </Space>
       );
     } },
@@ -937,19 +994,6 @@ export function DatasetHome(props: {
           pageSize: 10,
         }}
         size="middle"
-        expandable={{
-          expandedRowRender: (dataset) => (
-            <Space size={4} wrap>
-              <AntdButton size="small" disabled={props.busy || dataset.import_state === "importing"} onClick={() => openBasicInfo(dataset)}>基础信息</AntdButton>
-              <AntdButton size="small" disabled={props.busy || dataset.import_state === "importing" || !dataset.image_count || isHistoricalActive(dataset)} onClick={() => setAutoAnnotationTarget(dataset)}>自动标注</AntdButton>
-              <AntdButton size="small" disabled={props.busy || dataset.import_state === "importing" || !dataset.image_count} onClick={() => openExport(dataset)}>导出</AntdButton>
-              <AntdButton size="small" disabled={props.busy || dataset.import_state === "importing"} onClick={() => setVersionTarget(dataset)}>版本管理</AntdButton>
-              {(dataset.import_state === "importing" || dataset.import_state === "merging") && (
-                <AntdButton size="small" danger disabled={props.busy} onClick={() => props.onCancelImport(dataset)}>停止{dataset.import_state === "importing" ? "导入" : "合并"}</AntdButton>
-              )}
-            </Space>
-          ),
-        }}
       />
     </section>
     {autoAnnotationTarget && <AutoAnnotationModal dataset={autoAnnotationTarget} onClose={() => setAutoAnnotationTarget(undefined)} onChanged={() => props.onAutoAnnotationComplete?.()} />}
@@ -970,22 +1014,31 @@ export function DatasetHome(props: {
         style={{ marginBottom: 16 }}
       />
       {createMode === "blank" ? (
-        <Flex vertical gap={12}>
-          <AntdInput addonBefore="名称" value={name} placeholder="my-dataset" onChange={(e) => setName(e.target.value)} autoFocus />
-          <AntdInput addonBefore="模型名" value={createModelName} placeholder="选填" onChange={(e) => setCreateModelName(e.target.value)} />
+        <Flex vertical gap={16}>
+          <AntdSpace.Compact block>
+            <AntdSpace.Addon>名称</AntdSpace.Addon>
+            <AntdInput value={name} placeholder="my-dataset" onChange={(e) => setName(e.target.value)} autoFocus />
+          </AntdSpace.Compact>
+          <AntdSpace.Compact block>
+            <AntdSpace.Addon>模型名</AntdSpace.Addon>
+            <AntdInput value={createModelName} placeholder="选填" onChange={(e) => setCreateModelName(e.target.value)} />
+          </AntdSpace.Compact>
           <AntdSelect value={taskType} onChange={(v) => setTaskType(v)} options={[
             { value: "detect", label: "目标检测" }, { value: "segment", label: "实例分割" },
             { value: "obb", label: "旋转框" }, { value: "classify", label: "图像分类" }, { value: "pose", label: "关键点检测" },
           ]} style={{ width: "100%" }} />
           {taskType === "pose" && (
             <Flex gap={12}>
-              <AntdInput type="number" addonBefore="关键点数" min={1} max={133} value={kptCount} onChange={(e) => setKptCount(e.target.value)} style={{ flex: 1 }} />
+              <AntdSpace.Compact block>
+                <AntdSpace.Addon>关键点数</AntdSpace.Addon>
+                <AntdInputNumber min={1} max={133} value={kptCount ? Number(kptCount) : undefined} onChange={(v) => setKptCount(v == null ? "" : String(v))} style={{ width: "100%" }} />
+              </AntdSpace.Compact>
               <AntdSelect value={kptDim} onChange={setKptDim} options={[{ value: "3", label: "x,y,可见性" }, { value: "2", label: "x,y" }]} style={{ width: 140 }} />
             </Flex>
           )}
         </Flex>
       ) : (
-        <Flex vertical gap={12}>
+        <Flex vertical gap={16}>
           <AntdSelect value={cloneSourceId || undefined} placeholder="选择源数据集" disabled={!props.datasets.length || cloneLoading}
             onChange={(v) => { setCloneSourceId(v); setCloneVersionId(""); }}
             options={props.datasets.map((item) => ({ value: item.id, label: item.name }))}
@@ -996,7 +1049,10 @@ export function DatasetHome(props: {
               options={cloneVersions?.map((v) => ({ value: v.id, label: `${v.version_label || `v${v.version_number}`} · ${v.image_count} 张` }))}
               style={{ width: "100%" }} />
           )}
-          <AntdInput addonBefore="新名称" value={name} placeholder="my-dataset-v1" onChange={(e) => setName(e.target.value)} />
+          <AntdSpace.Compact block>
+            <AntdSpace.Addon>新名称</AntdSpace.Addon>
+            <AntdInput value={name} placeholder="my-dataset-v1" onChange={(e) => setName(e.target.value)} />
+          </AntdSpace.Compact>
         </Flex>
       )}
       <Flex justify="flex-end" gap={8} style={{ marginTop: 16 }}>
@@ -1005,6 +1061,7 @@ export function DatasetHome(props: {
       </Flex>
     </Modal>
     <Modal
+      className="dataset-upload-modal"
       title={`添加图片到"${uploadTarget?.name ?? ""}"`}
       open={Boolean(uploadTarget)}
       onCancel={closeUpload}
@@ -1012,34 +1069,40 @@ export function DatasetHome(props: {
       footer={null}
       destroyOnHidden
     >
-
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Segmented value={uploadMode} onChange={(mode) => { setUploadMode(mode as "local" | "zip" | "source"); if (mode === "source") void openSourceMode(); }}
           options={[{ value: "local", label: "本地上传" }, { value: "zip", label: "YOLO 压缩包" }, { value: "source", label: "数据源同步" }]}
-          block style={{ marginBottom: 16 }} />
+          block />
         {uploadMode === "local" ? <>
-          <div className="upload-options"><label>导入到 split<select value={uploadSplit} onChange={(event) => setUploadSplit(event.target.value as SplitName)}><option value="train">train · 训练集</option><option value="val">val · 验证集</option><option value="test">test · 测试集</option></select></label></div>
+          <AntdSpace.Compact block>
+            <AntdSpace.Addon>导入到 split</AntdSpace.Addon>
+            <AntdSelect value={uploadSplit} onChange={(value) => setUploadSplit(value)} style={{ width: "100%" }}
+              options={[{ value: "train", label: "train · 训练集" }, { value: "val", label: "val · 验证集" }, { value: "test", label: "test · 测试集" }]} />
+          </AntdSpace.Compact>
           <input ref={uploadFileRef} type="file" accept="image/*" multiple hidden onChange={(event) => { chooseImages(event.target.files ?? undefined); event.currentTarget.value = ""; }} />
           <button className={draggingImages ? "exchange-dropzone dragging" : "exchange-dropzone"} onClick={() => uploadFileRef.current?.click()} onDragEnter={(event) => { event.preventDefault(); setDraggingImages(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDraggingImages(false)} onDrop={(event) => { event.preventDefault(); setDraggingImages(false); chooseImages(event.dataTransfer.files); }}><span className="exchange-dropzone-icon">⇧</span><strong>{uploadFiles.length ? `已选择 ${uploadFiles.length} 张图片` : "拖放或选择图片"}</strong><small>{uploadFiles.length ? uploadFiles.slice(0, 3).map((file) => file.name).join("、") + (uploadFiles.length > 3 ? ` 等 ${uploadFiles.length} 张` : "") : "支持 JPG、PNG、WEBP 等常见图片格式，可多选"}</small></button>
-          <footer className="data-exchange-footer"><span>原图会复制到受管数据目录，现有标注不会受影响。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !uploadFiles.length} onClick={startUpload}>添加 {uploadFiles.length || ""} 张图片</button></div></footer>
+          <Flex justify="space-between" align="center" gap={16} style={{ paddingTop: 12, borderTop: "1px solid #f0f0f0" }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>原图会复制到受管数据目录，现有标注不会受影响。</Typography.Text>
+            <Space>
+              <AntdButton onClick={closeUpload}>取消</AntdButton>
+              <AntdButton type="primary" disabled={props.busy || !uploadFiles.length} onClick={startUpload}>添加 {uploadFiles.length || ""} 张图片</AntdButton>
+            </Space>
+          </Flex>
         </> : uploadMode === "zip" ? <>
-          <div className="import-origin-toggle" role="group" aria-label="合并来源" style={{ margin: "0 28px" }}>
-            <button type="button" className={zipOrigin === "local" ? "active" : ""} onClick={() => { setZipOrigin("local"); setZipFtpSelected(""); }}>本地上传</button>
-            <button type="button" className={zipOrigin === "ftp" ? "active" : ""} onClick={() => { setZipOrigin("ftp"); if (zipFtpEntries === undefined && !zipFtpLoading && !zipFtpError) void browseZipFtp(zipFtpPath); }}>FTP 选择</button>
-          </div>
+          <Segmented block value={zipOrigin} onChange={(origin) => { setZipOrigin(origin as "local" | "ftp"); if (origin === "local") setZipFtpSelected(""); else if (zipFtpEntries === undefined && !zipFtpLoading && !zipFtpError) void browseZipFtp(zipFtpPath); }}
+            options={[{ value: "local", label: "本地上传" }, { value: "ftp", label: "FTP 选择" }]} />
           {zipOrigin === "local" ? <>
             <input ref={zipInputRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => { setZipFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
             <button type="button" className="exchange-dropzone" onClick={() => zipInputRef.current?.click()}><span className="exchange-dropzone-icon">⇧</span><strong>{zipFile?.name ?? "选择标准 YOLO 数据集 ZIP"}</strong><small>{zipFile ? `${Math.ceil(zipFile.size / 1024 / 1024)} MB · 已准备合并` : "ZIP 内应包含 images 与 labels（可带 data.yaml）；类别按名称合并，同名图片跳过"}</small></button>
           </> : (
             <div className="import-ftp-picker">
-              <div className="import-ftp-toolbar">
-                <button type="button" className="button" disabled={zipFtpLoading || zipFtpPath === "/"} onClick={() => void browseZipFtp(zipFtpParent(zipFtpPath))}>↑ 上级</button>
-                <input value={zipFtpPath} aria-label="FTP 路径" onChange={(event) => setZipFtpPath(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void browseZipFtp(zipFtpPath); }} />
-                <button type="button" className="button" disabled={zipFtpLoading} onClick={() => void browseZipFtp(zipFtpPath)}>浏览</button>
-                <div className="import-origin-toggle" role="group" aria-label="FTP 来源类型">
-                  <button type="button" className={zipFtpKind === "zip" ? "active" : ""} onClick={() => { setZipFtpKind("zip"); setZipFtpSelected(""); }}>ZIP 文件</button>
-                  <button type="button" className={zipFtpKind === "dir" ? "active" : ""} onClick={() => { setZipFtpKind("dir"); setZipFtpSelected(""); }}>YOLO 目录</button>
-                </div>
-              </div>
+              <Space.Compact block>
+                <AntdButton disabled={zipFtpLoading || zipFtpPath === "/"} onClick={() => void browseZipFtp(zipFtpParent(zipFtpPath))}>↑ 上级</AntdButton>
+                <AntdInput value={zipFtpPath} aria-label="FTP 路径" onChange={(event) => setZipFtpPath(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void browseZipFtp(zipFtpPath); }} />
+                <AntdButton disabled={zipFtpLoading} onClick={() => void browseZipFtp(zipFtpPath)}>浏览</AntdButton>
+              </Space.Compact>
+              <Segmented value={zipFtpKind} onChange={(kind) => { setZipFtpKind(kind as "zip" | "dir"); setZipFtpSelected(""); }}
+                options={[{ value: "zip", label: "ZIP 文件" }, { value: "dir", label: "YOLO 目录" }]} />
               <div className="import-ftp-list">
                 {zipFtpLoading && <p className="muted">正在读取目录…</p>}
                 {zipFtpError && <p className="annotation-form-error">{zipFtpError}（请先在「FTP 管理」页配置连接）</p>}
@@ -1051,10 +1114,21 @@ export function DatasetHome(props: {
               </div>
             </div>
           )}
-          <footer className="data-exchange-footer"><span>图片与标注会追加到当前数据集；压缩包/目录内 train/val/test 决定 split。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || (zipOrigin === "local" ? !zipFile : !zipFtpSelected)} onClick={startZipMerge}>开始合并</button></div></footer>
+          <Flex justify="space-between" align="center" gap={16} style={{ paddingTop: 12, borderTop: "1px solid #f0f0f0" }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>图片与标注会追加到当前数据集；压缩包/目录内 train/val/test 决定 split。</Typography.Text>
+            <Space>
+              <AntdButton onClick={closeUpload}>取消</AntdButton>
+              <AntdButton type="primary" disabled={props.busy || (zipOrigin === "local" ? !zipFile : !zipFtpSelected)} onClick={startZipMerge}>开始合并</AntdButton>
+            </Space>
+          </Flex>
         </> : <>
-          <div className="exchange-fields"><label>选择数据源<select value={sourceId} disabled={!sourceDatasets.length} onChange={(event) => setSourceId(event.target.value)}>{sourceDatasets.map((item) => <option key={item.id} value={item.id}>{item.name}（{item.image_count} 张）</option>)}</select></label></div>
-          {!sourceDatasets.length && <p className="muted">{sourceLoading ? "正在加载数据源…" : "还没有数据源，可先在“数据源”页创建并导入图片。"}</p>}
+          <AntdSpace.Compact block>
+            <AntdSpace.Addon>选择数据源</AntdSpace.Addon>
+            <AntdSelect value={sourceId || undefined} disabled={!sourceDatasets.length} onChange={setSourceId} style={{ width: "100%" }}
+              placeholder={sourceDatasets.length ? "请选择" : "暂无数据源"}
+              options={sourceDatasets.map((item) => ({ value: item.id, label: `${item.name}（${item.image_count} 张）` }))} />
+          </AntdSpace.Compact>
+          {!sourceDatasets.length && <Typography.Text type="secondary">{sourceLoading ? "正在加载数据源…" : "还没有数据源，可先在“数据源”页创建并导入图片。"}</Typography.Text>}
           {sourceDatasets.length > 0 && <>
             {sourceTags.length > 0 && <div className="source-tag-bar upload-tag-bar" role="group" aria-label="按标签筛选">
               <button className={`source-tag-chip${sourceTagIds.length ? "" : " active"}`} onClick={() => { setSourceTagIds([]); setSourceTagValues({}); }}>全部</button>
@@ -1091,12 +1165,22 @@ export function DatasetHome(props: {
                 </span>
               )}
             </div>}
-            <div className="upload-options"><label>导入到 split<select value={uploadSplit} onChange={(event) => setUploadSplit(event.target.value as SplitName)}><option value="train">train · 训练集</option><option value="val">val · 验证集</option><option value="test">test · 测试集</option></select></label></div>
-            <p className="muted upload-source-count">{sourceLoading ? "正在统计匹配图片…" : sourceTotal !== undefined ? `将同步 ${sourceTotal} 张图片${sourceTagIds.length ? (sourceTagMatch === "any" ? "（含任一所选标签）" : "（含所选全部标签）") : "（数据源全部图片）"}，文件会复制进数据集。` : ""}</p>
+            <AntdSpace.Compact block>
+              <AntdSpace.Addon>导入到 split</AntdSpace.Addon>
+              <AntdSelect value={uploadSplit} onChange={(value) => setUploadSplit(value)} style={{ width: "100%" }}
+                options={[{ value: "train", label: "train · 训练集" }, { value: "val", label: "val · 验证集" }, { value: "test", label: "test · 测试集" }]} />
+            </AntdSpace.Compact>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{sourceLoading ? "正在统计匹配图片…" : sourceTotal !== undefined ? `将同步 ${sourceTotal} 张图片${sourceTagIds.length ? (sourceTagMatch === "any" ? "（含任一所选标签）" : "（含所选全部标签）") : "（数据源全部图片）"}，文件会复制进数据集。` : ""}</Typography.Text>
           </>}
-          <footer className="data-exchange-footer"><span>同步不影响数据源中的原图。</span><div><button className="button" onClick={closeUpload}>取消</button><button className="button primary" disabled={props.busy || !sourceId || !sourceTotal} onClick={startSourceSync}>同步 {sourceTotal ?? ""} 张图片</button></div></footer>
+          <Flex justify="space-between" align="center" gap={16} style={{ paddingTop: 12, borderTop: "1px solid #f0f0f0" }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>同步不影响数据源中的原图。</Typography.Text>
+            <Space>
+              <AntdButton onClick={closeUpload}>取消</AntdButton>
+              <AntdButton type="primary" disabled={props.busy || !sourceId || !sourceTotal} onClick={startSourceSync}>同步 {sourceTotal ?? ""} 张图片</AntdButton>
+            </Space>
+          </Flex>
         </>}
-      
+      </Space>
     </Modal>
     <Modal
       title={`导出"${exportTarget?.name ?? ""}"`}
@@ -1125,10 +1209,16 @@ export function DatasetHome(props: {
       footer={null}
       destroyOnHidden
     >
-      {dialogError && <Alert type="error" message={dialogError} style={{ marginBottom: 12 }} />}
-      <Flex vertical gap={12}>
-        <AntdInput addonBefore="数据集名称" value={renameName} onChange={(e) => setRenameName(e.target.value)} autoFocus />
-        <AntdInput addonBefore="产出模型名" value={renameModelName} placeholder="选填，如 blade-detector" onChange={(e) => setRenameModelName(e.target.value)} />
+      {dialogError && <Alert type="error" title={dialogError} style={{ marginBottom: 12 }} />}
+      <Flex vertical gap={16}>
+        <AntdSpace.Compact block>
+          <AntdSpace.Addon>数据集名称</AntdSpace.Addon>
+          <AntdInput value={renameName} onChange={(e) => setRenameName(e.target.value)} autoFocus />
+        </AntdSpace.Compact>
+        <AntdSpace.Compact block>
+          <AntdSpace.Addon>产出模型名</AntdSpace.Addon>
+          <AntdInput value={renameModelName} placeholder="选填，如 blade-detector" onChange={(e) => setRenameModelName(e.target.value)} />
+        </AntdSpace.Compact>
       </Flex>
       <Flex justify="flex-end" gap={8} style={{ marginTop: 16 }}>
         <AntdButton onClick={() => setRenameTarget(undefined)}>取消</AntdButton>
@@ -1144,7 +1234,7 @@ export function DatasetHome(props: {
       cancelText="取消"
       onOk={() => { props.onDelete(deleteTarget!); setDeleteTarget(undefined); }}
     >
-      <Alert type="warning" showIcon message={`这会永久删除该数据集的 ${deleteTarget?.image_count ?? 0} 张图片、类别和标注，且无法撤销。`} />
+      <Alert type="warning" showIcon title={`这会永久删除该数据集的 ${deleteTarget?.image_count ?? 0} 张图片、类别和标注，且无法撤销。`} />
     </Modal>
     {versionTarget && <DatasetVersionDialog dataset={versionTarget} onClose={() => setVersionTarget(undefined)} onChanged={() => props.onVersionsChange?.()} />}
   </main>;
@@ -1343,8 +1433,7 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
     applyDrafts((items) => items.filter((item, index) => draftId(item, index) !== id));
     setSelectedAnnotationId(null);
   };
-  const addClass = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const addClass = async () => {
     const name = newClassName.trim();
     if (!name || !props.onCreateClass) return;
     setClassError("");
@@ -1365,10 +1454,12 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
   }, [annotated, selectedAnnotationId]);
 
   useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return; if ((event.key === "Delete" || event.key === "Backspace") && selectedAnnotationId) { event.preventDefault(); deleteAnnotation(selectedAnnotationId); return; } if (event.key === "Escape") { if (selectedAnnotationId) { setSelectedAnnotationId(null); return; } if (props.focusMode) props.onToggleFocusMode?.(); return; } if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z" && !event.shiftKey) { event.preventDefault(); undoDrafts(); return; } const lower = event.key.toLowerCase(); const adNav = props.focusMode && !event.ctrlKey && !event.metaKey; if ((event.key === "ArrowLeft" || (adNav && lower === "a")) && props.hasPrevious && !props.busy) props.onPrevious?.(); if ((event.key === "ArrowRight" || (adNav && lower === "d")) && props.hasNext && !props.busy) props.onNext?.(drafts); if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") { event.preventDefault(); props.onSave(drafts); } }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, [drafts, props, selectedAnnotationId]);
-  return <main className="annotation-layout"><div className="annotation-head"><button className="button" onClick={props.onBack}>← 返回数据集</button><div><span className="eyebrow">{props.dataset.name} / {props.dataset.task_type}</span><h1>{props.image.file_name}<span className={`annotation-save-state${isDirty ? " dirty" : ""}`} role="status">{isDirty ? "未保存修改" : "已保存"}</span></h1>{props.readOnly && <p className="annotation-readonly-banner">只读模式：当前激活的是历史版本 {props.dataset.active_version_label || `v${props.dataset.active_version_number}`}（最新 {props.dataset.latest_version_label || `v${props.dataset.latest_version_number}`}），仅可查看；请新建版本或激活最新版本后再编辑。</p>}</div><div className="annotation-navigation" aria-label="图片导航">{props.onPrevious && <button className="button" disabled={props.busy || !props.hasPrevious} title="上一张（←）" onClick={props.onPrevious}>← 上一张</button>}{props.onNext && <button className="button" disabled={props.busy || !props.hasNext} title="下一张（→）" onClick={() => props.onNext?.(drafts)}>下一张 →</button>}</div><div className="annotation-actions"><select aria-label="当前类别" value={activeClassId} disabled={!props.classes.length} onChange={(event) => props.onClassChange(event.target.value)}>{!props.classes.length && <option value="">请先新增类别</option>}{props.classes.map((item) => <option key={item.id} value={item.id}>{item.class_index}: {item.name}</option>)}</select><button className="button primary" disabled={props.busy || !activeClassId || props.readOnly} onClick={() => props.onSave(drafts)}>保存标注</button>{props.onToggleFocusMode && <button className="button" title="Esc" onClick={props.onToggleFocusMode}>{props.focusMode ? "退出专注" : "专注模式"}</button>}</div></div><div className="annotation-body">
-    {props.images && props.images.length > 0 && <aside className="annotation-image-sidebar panel"><div className="annotation-list-heading"><span className="eyebrow">TASK IMAGES</span><strong>{imageCount} 张图片</strong></div><div className="annotation-image-split-tabs" role="tablist" aria-label="按 split 筛选图片">{IMAGE_SPLIT_FILTERS.map((filter) => <button key={filter.value || "all"} type="button" role="tab" aria-selected={imageSplitFilter === filter.value} className={imageSplitFilter === filter.value ? "active" : ""} onClick={() => setImageSplitFilter(filter.value)}>{filter.label}</button>)}</div><div className="annotation-image-split-tabs" role="tablist" aria-label="按标注状态筛选图片">{IMAGE_STATUS_FILTERS.map((filter) => <button key={filter.value || "status-all"} type="button" role="tab" aria-selected={imageStatusFilter === filter.value} className={imageStatusFilter === filter.value ? "active" : ""} onClick={() => setImageStatusFilter(filter.value)}>{filter.label}</button>)}</div><div className="annotation-image-list">{filteredImages.slice(imagePage * ANNOTATION_IMAGE_PAGE_SIZE, (imagePage + 1) * ANNOTATION_IMAGE_PAGE_SIZE).map((item, index) => { const absoluteIndex = imagePage * ANNOTATION_IMAGE_PAGE_SIZE + index; return <button key={item.id} className={item.id === props.image.id ? "annotation-image-item active" : "annotation-image-item"} aria-label={`选择图片 ${item.file_name}`} onClick={() => props.onImageSelect?.(item)}><img src={api.imageThumbnailUrl(item.id)} alt="" loading="lazy" decoding="async" /><span className="annotation-image-copy"><strong>{String(absoluteIndex + 1).padStart(2, "0")} · {item.file_name}</strong><small className={item.status === "annotated" ? "annotated" : "unannotated"}>{item.split} · {item.status === "annotated" ? "已标注" : "未标注"}</small></span></button>; })}{!filteredImages.length && <p className="annotation-empty-state">当前筛选下没有图片。</p>}</div>{imagePageCount > 1 && <div className="annotation-image-pagination"><button className="button" disabled={imagePage === 0} onClick={() => setImagePage((page) => Math.max(0, page - 1))}>上一页</button><span>第 {imagePage + 1} / {imagePageCount} 页</span><button className="button" disabled={imagePage >= imagePageCount - 1} onClick={() => setImagePage((page) => Math.min(imagePageCount - 1, page + 1))}>下一页</button></div>}</aside>}
-    <div className="annotation-canvas-column">{props.dataset.task_type === "classify" ? <section className="canvas-card classification-card"><span className="eyebrow">IMAGE CLASSIFICATION</span><h2>选择这张图片的唯一类别</h2><p className="hint">分类数据集每张图片只能保存一个类别，训练时会按 train/类别名/图片 导出。</p>{props.classes.length ? <div className="class-strip">{props.classes.map((item) => <button key={item.id} className={drafts[0]?.class_id === item.id ? "class-chip active" : "class-chip"} onClick={() => chooseClass(item.id)}><i style={{ background: item.color }} />{item.class_index}: {item.name}</button>)}</div> : <p className="annotation-empty-state">还没有类别，请在右侧“类别”面板中新增一个类别。</p>}</section> : <AnnotationCanvas image={props.image} annotations={annotated} activeClassId={activeClassId} activeClassColor={props.classes.find((item) => item.id === activeClassId)?.color} selectedAnnotationId={selectedAnnotationId} onSelectAnnotation={setSelectedAnnotationId} taskType={props.dataset.task_type} onChange={applyDrafts} onSamBox={props.dataset.task_type === "segment" && activeClassId ? requestSam : undefined} onSamPoints={props.dataset.task_type === "segment" && activeClassId ? requestSamPoints : undefined} samBusy={props.samBusy ?? false} samCapabilities={props.samCapabilities} poseConfig={props.dataset.pose_config ?? null} hiddenAnnotationIds={hiddenDraftIds} readOnly={props.readOnly} />}</div>
-    <aside className="annotation-sidebar panel"><section className="annotation-class-manager"><div className="annotation-sidebar-heading"><div><span className="eyebrow">LABEL CLASSES</span><h2>{props.classes.length} 个类别</h2></div><div className="annotation-sidebar-heading-actions">{props.onImportClasses && <button type="button" className="button" disabled={props.busy || props.readOnly} onClick={() => setShowLibraryPicker(true)}>类别库</button>}<button type="button" className="button" disabled={props.busy || !props.onCreateClass || props.readOnly} onClick={() => setShowClassForm((value) => !value)}>{showClassForm ? "收起" : "+ 新增类别"}</button></div></div>{showClassForm && <form className="annotation-class-form" onSubmit={(event) => void addClass(event)}><label><span>类别名称</span><input autoFocus value={newClassName} placeholder="例如：person" onChange={(event) => setNewClassName(event.target.value)} /></label><div className="annotation-class-form-row"><label><span>颜色</span><div className="class-color-palette" role="radiogroup" aria-label="类别颜色">{CLASS_COLORS.map((color) => <button type="button" key={color} role="radio" aria-checked={newClassColor === color} className={`class-color-swatch${newClassColor === color ? " selected" : ""}`} style={{ background: color }} onClick={() => setNewClassColor(color)} aria-label={color} />)}</div></label><button className="button primary" type="submit" disabled={props.busy || !newClassName.trim()}>添加</button></div>{classError && <small className="annotation-form-error">{classError}</small>}</form>}<div className="annotation-class-list">{props.classes.map((item) => <div className="annotation-class-row" key={item.id}><button type="button" className={`annotation-class-item${item.id === activeClassId ? " active" : ""}`} onClick={() => props.onClassChange(item.id)}><i style={{ background: item.color }} /><span><strong>{item.class_index}. {item.name}</strong><small>{item.id === activeClassId ? "当前绘制类别" : "点击切换"}{props.dataset.task_type === "segment" ? ` · ${item.sam3_prompt || "未设置 SAM3 提示词"}` : ""}</small></span></button>{props.onUpdateClass && <button type="button" className="annotation-class-edit" aria-label={`编辑类别 ${item.name}`} title="编辑名称与颜色" disabled={props.busy || props.readOnly} onClick={() => { setEditClassTarget(item); setEditClassName(item.name); setEditClassColor(item.color); setEditError(""); }}><PencilIcon /></button>}{props.onDeleteClass && <button type="button" className="annotation-class-delete" aria-label={`删除类别 ${item.name}`} title={classInUse(item.id) ? "该类别正被标注使用，删除标注后才能删除类别" : "删除此类别"} disabled={props.busy || classInUse(item.id) || props.readOnly} onClick={() => setDeleteClassTarget(item)}><TrashIcon /></button>}</div>)}{!props.classes.length && <p className="muted">先新增一个类别，标注对象就不会再显示为“未选择类别”。</p>}</div>{props.dataset.task_type === "segment" && selectedClass && <div className="class-prompt-editor"><span className="class-prompt-label">SAM3 提示词 · {selectedClass.name}</span><div className="class-prompt-controls"><input aria-label={`类别 ${selectedClass.name} 的 SAM3 英文提示词`} value={promptValue} placeholder="英文概念，例如 screen" onChange={(event) => setPromptDraft(event.target.value)} /><button type="button" className="button" disabled={promptBusy} onClick={() => void translatePrompt()}>翻译</button><button type="button" className="button primary" disabled={promptBusy || !props.onUpdateClass || props.readOnly} onClick={() => void savePrompt()}>保存</button></div>{promptError ? <small className="annotation-form-error">{promptError}</small> : <small className="muted">远程 SAM3 仅支持英文概念提示，点选/框选前请维护好当前类别。</small>}</div>}</section><section className="annotation-shape-list"><div className="annotation-sidebar-heading"><div><span className="eyebrow">SAVED SHAPES</span><h2>{drafts.length} 个标注</h2></div><div className="annotation-sidebar-heading-actions"><button type="button" className="annotation-visibility-button" aria-label="全部隐藏" title="在画布上隐藏全部标注" disabled={!drafts.length || allDraftsHidden} onClick={hideAllDrafts}><EyeOffIcon /></button><button type="button" className="annotation-visibility-button" aria-label="全部显示" title="在画布上显示全部标注" disabled={!hiddenDraftIds.size} onClick={showAllDrafts}><EyeIcon /></button></div></div>{drafts.map((draft, index) => { const id = draftId(draft, index); const hidden = hiddenDraftIds.has(id); return <div className={`shape-row${id === selectedAnnotationId ? " active" : ""}${hidden ? " hidden" : ""}`} key={id} role="button" tabIndex={0} onClick={() => setSelectedAnnotationId(id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedAnnotationId(id); } }}><span className="shape-index">{index + 1}</span><div><select className="shape-class-select" aria-label={`标注 ${index + 1} 类别`} value={draft.class_id} disabled={!props.classes.length} onClick={(event) => event.stopPropagation()} onChange={(event) => changeDraftClass(index, event.target.value)}>{!props.classes.length && <option value="">未选择类别</option>}{props.classes.map((item) => <option key={item.id} value={item.id}>{item.class_index}: {item.name}</option>)}</select><small>{annotationLabel(draft.type)}</small></div><button type="button" className="annotation-visibility-button" aria-label={hidden ? `显示标注 ${index + 1}` : `隐藏标注 ${index + 1}`} aria-pressed={hidden} title={hidden ? "在画布上显示此标注" : "在画布上隐藏此标注"} onClick={(event) => { event.stopPropagation(); toggleDraftVisibility(id); }} onKeyDown={(event) => event.stopPropagation()}>{hidden ? <EyeOffIcon /> : <EyeIcon />}</button><button type="button" className="annotation-delete-button" aria-label={`删除标注 ${index + 1}`} title="删除此标注" onClick={(event) => { event.stopPropagation(); deleteAnnotation(id); }} onKeyDown={(event) => event.stopPropagation()}><TrashIcon /></button></div>; })}{!drafts.length && <p className="muted">{props.dataset.task_type === "classify" ? "请选择一个类别。" : "在图片上拖拽或点击创建标注。"}</p>}</section></aside></div>{showLibraryPicker && props.onImportClasses && <ClassLibraryPicker existingClasses={props.classes} isSegment={props.dataset.task_type === "segment"} busy={props.busy} onImport={props.onImportClasses} onClose={() => setShowLibraryPicker(false)} />}      <Modal
+  return <main className="annotation-layout"><div className="annotation-head"><AntdButton onClick={props.onBack}>← 返回数据集</AntdButton><div className="annotation-head-copy"><Typography.Text type="secondary">{props.dataset.name} / {props.dataset.task_type}</Typography.Text><Typography.Title level={4} className="annotation-title">{props.image.file_name}<AntdTag color={isDirty ? "warning" : "success"} style={{ marginInlineStart: 8 }}>{isDirty ? "未保存修改" : "已保存"}</AntdTag></Typography.Title>{props.readOnly && <Alert type="warning" showIcon title={`只读模式：当前激活的是历史版本 ${props.dataset.active_version_label || `v${props.dataset.active_version_number}`}（最新 ${props.dataset.latest_version_label || `v${props.dataset.latest_version_number}`}），仅可查看；请新建版本或激活最新版本后再编辑。`} />}</div><Space.Compact aria-label="图片导航"><AntdButton disabled={props.busy || !props.hasPrevious} title="上一张（←）" onClick={props.onPrevious}>← 上一张</AntdButton><AntdButton disabled={props.busy || !props.hasNext} title="下一张（→）" onClick={() => props.onNext?.(drafts)}>下一张 →</AntdButton></Space.Compact><Space><AntdSelect aria-label="当前类别" value={activeClassId || undefined} placeholder={props.classes.length ? "选择类别" : "请先新增类别"} disabled={!props.classes.length} onChange={props.onClassChange} style={{ minWidth: 168 }}
+            options={props.classes.map((item) => ({ value: item.id, label: `${item.class_index}: ${item.name}` }))} /><AntdButton type="primary" disabled={props.busy || !activeClassId || props.readOnly} onClick={() => props.onSave(drafts)}>保存标注</AntdButton>{props.onToggleFocusMode && <AntdButton title="Esc" onClick={props.onToggleFocusMode}>{props.focusMode ? "退出专注" : "专注模式"}</AntdButton>}</Space></div><div className="annotation-body">
+    {props.images && props.images.length > 0 && <aside className="annotation-image-sidebar panel"><div className="annotation-list-heading"><Typography.Text type="secondary">TASK IMAGES</Typography.Text><Typography.Text strong>{imageCount} 张图片</Typography.Text></div><Segmented className="annotation-image-split-tabs" block size="small" aria-label="按 split 筛选图片" value={imageSplitFilter} onChange={(value) => setImageSplitFilter(value as SplitName | "")} options={IMAGE_SPLIT_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><Segmented className="annotation-image-split-tabs" block size="small" aria-label="按标注状态筛选图片" value={imageStatusFilter} onChange={(value) => setImageStatusFilter(value as "" | "annotated" | "unannotated")} options={IMAGE_STATUS_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><div className="annotation-image-list">{filteredImages.slice(imagePage * ANNOTATION_IMAGE_PAGE_SIZE, (imagePage + 1) * ANNOTATION_IMAGE_PAGE_SIZE).map((item, index) => { const absoluteIndex = imagePage * ANNOTATION_IMAGE_PAGE_SIZE + index; return <AntdButton key={item.id} type="text" block className={item.id === props.image.id ? "annotation-image-item active" : "annotation-image-item"} aria-label={`选择图片 ${item.file_name}`} onClick={() => props.onImageSelect?.(item)}><img src={api.imageThumbnailUrl(item.id)} alt="" loading="lazy" decoding="async" /><span className="annotation-image-copy"><strong>{String(absoluteIndex + 1).padStart(2, "0")} · {item.file_name}</strong><small className={item.status === "annotated" ? "annotated" : "unannotated"}>{item.split} · {item.status === "annotated" ? "已标注" : "未标注"}</small></span></AntdButton>; })}{!filteredImages.length && <AntdEmpty image={AntdEmpty.PRESENTED_IMAGE_SIMPLE} description="当前筛选下没有图片" />}</div>{imagePageCount > 1 && <div className="annotation-image-pagination"><AntdButton size="small" disabled={imagePage === 0} onClick={() => setImagePage((page) => Math.max(0, page - 1))}>上一页</AntdButton><Typography.Text type="secondary">第 {imagePage + 1} / {imagePageCount} 页</Typography.Text><AntdButton size="small" disabled={imagePage >= imagePageCount - 1} onClick={() => setImagePage((page) => Math.min(imagePageCount - 1, page + 1))}>下一页</AntdButton></div>}</aside>}
+    <div className="annotation-canvas-column">{props.dataset.task_type === "classify" ? <section className="canvas-card classification-card"><Typography.Text type="secondary">IMAGE CLASSIFICATION</Typography.Text><Typography.Title level={5} className="annotation-title">选择这张图片的唯一类别</Typography.Title><Typography.Text type="secondary">分类数据集每张图片只能保存一个类别，训练时会按 train/类别名/图片 导出。</Typography.Text>{props.classes.length ? <div className="class-strip">{props.classes.map((item) => <AntdButton key={item.id} className={drafts[0]?.class_id === item.id ? "class-chip active" : "class-chip"} onClick={() => chooseClass(item.id)}><i style={{ background: item.color }} />{item.class_index}: {item.name}</AntdButton>)}</div> : <AntdEmpty image={AntdEmpty.PRESENTED_IMAGE_SIMPLE} description="还没有类别，请在右侧“类别”面板中新增一个类别" />}</section> : <AnnotationCanvas image={props.image} annotations={annotated} activeClassId={activeClassId} activeClassColor={props.classes.find((item) => item.id === activeClassId)?.color} selectedAnnotationId={selectedAnnotationId} onSelectAnnotation={setSelectedAnnotationId} taskType={props.dataset.task_type} onChange={applyDrafts} onSamBox={props.dataset.task_type === "segment" && activeClassId ? requestSam : undefined} onSamPoints={props.dataset.task_type === "segment" && activeClassId ? requestSamPoints : undefined} samBusy={props.samBusy ?? false} samCapabilities={props.samCapabilities} poseConfig={props.dataset.pose_config ?? null} hiddenAnnotationIds={hiddenDraftIds} readOnly={props.readOnly} />}</div>
+    <aside className="annotation-sidebar panel"><section className="annotation-class-manager"><div className="annotation-sidebar-heading"><div><Typography.Text type="secondary">LABEL CLASSES</Typography.Text><Typography.Text strong className="annotation-sidebar-heading-count">{props.classes.length} 个类别</Typography.Text></div><Space size={4}>{props.onImportClasses && <AntdButton size="small" disabled={props.busy || props.readOnly} onClick={() => setShowLibraryPicker(true)}>类别库</AntdButton>}<AntdButton size="small" type={showClassForm ? "default" : "primary"} disabled={props.busy || !props.onCreateClass || props.readOnly} onClick={() => setShowClassForm((value) => !value)}>{showClassForm ? "收起" : "+ 新增类别"}</AntdButton></Space></div>{showClassForm && <form className="annotation-class-form" onSubmit={(event) => { event.preventDefault(); void addClass(); }}><Flex vertical gap={8}><AntdSpace.Compact block><AntdSpace.Addon>类别名称</AntdSpace.Addon><AntdInput autoFocus value={newClassName} placeholder="例如：person" onChange={(event) => setNewClassName(event.target.value)} /></AntdSpace.Compact><div className="annotation-class-form-row"><Space align="center" size={8}><Typography.Text type="secondary" style={{ fontSize: 12 }}>颜色</Typography.Text><div className="class-color-palette" role="radiogroup" aria-label="类别颜色">{CLASS_COLORS.map((color) => <AntdButton key={color} size="small" role="radio" aria-checked={newClassColor === color} className={`class-color-swatch${newClassColor === color ? " selected" : ""}`} style={{ background: color }} onClick={() => setNewClassColor(color)} aria-label={color} title={color} />)}</div></Space><AntdButton type="primary" htmlType="submit" disabled={props.busy || !newClassName.trim()}>添加</AntdButton></div></Flex>{classError && <Typography.Text type="danger">{classError}</Typography.Text>}</form>}<div className="annotation-class-list">{props.classes.map((item) => <div className="annotation-class-row" key={item.id}><AntdButton type="text" block className={`annotation-class-item${item.id === activeClassId ? " active" : ""}`} onClick={() => props.onClassChange(item.id)}><i style={{ background: item.color }} /><span className="annotation-class-copy"><strong>{item.class_index}. {item.name}</strong>{props.dataset.task_type === "segment" && <small>{item.sam3_prompt || "未设置 SAM3 提示词"}</small>}</span></AntdButton>{props.onUpdateClass && <AntdButton type="text" size="small" className="annotation-class-edit" aria-label={`编辑类别 ${item.name}`} title="编辑名称与颜色" disabled={props.busy || props.readOnly} onClick={() => { setEditClassTarget(item); setEditClassName(item.name); setEditClassColor(item.color); setEditError(""); }}><PencilIcon /></AntdButton>}{props.onDeleteClass && <AntdButton type="text" size="small" danger className="annotation-class-delete" aria-label={`删除类别 ${item.name}`} title={classInUse(item.id) ? "该类别正被标注使用，删除标注后才能删除类别" : "删除此类别"} disabled={props.busy || classInUse(item.id) || props.readOnly} onClick={() => setDeleteClassTarget(item)}><TrashIcon /></AntdButton>}</div>)}{!props.classes.length && <Typography.Text type="secondary" className="muted">先新增一个类别，标注对象就不会再显示为“未选择类别”。</Typography.Text>}</div>{props.dataset.task_type === "segment" && selectedClass && <div className="class-prompt-editor"><Typography.Text type="secondary">SAM3 提示词 · {selectedClass.name}</Typography.Text><div className="class-prompt-controls"><AntdInput aria-label={`类别 ${selectedClass.name} 的 SAM3 英文提示词`} value={promptValue} placeholder="英文概念，例如 screen" onChange={(event) => setPromptDraft(event.target.value)} /><AntdButton size="small" disabled={promptBusy} onClick={() => void translatePrompt()}>翻译</AntdButton><AntdButton size="small" type="primary" disabled={promptBusy || !props.onUpdateClass || props.readOnly} onClick={() => void savePrompt()}>保存</AntdButton></div>{promptError ? <Typography.Text type="danger">{promptError}</Typography.Text> : <Typography.Text type="secondary">远程 SAM3 仅支持英文概念提示，点选/框选前请维护好当前类别。</Typography.Text>}</div>}</section><section className="annotation-shape-list"><div className="annotation-sidebar-heading"><div><Typography.Text type="secondary">SAVED SHAPES</Typography.Text><Typography.Text strong className="annotation-sidebar-heading-count">{drafts.length} 个标注</Typography.Text></div><Space size={4}><AntdButton type="text" size="small" className="annotation-visibility-button" aria-label="全部隐藏" title="在画布上隐藏全部标注" disabled={!drafts.length || allDraftsHidden} onClick={hideAllDrafts}><EyeOffIcon /></AntdButton><AntdButton type="text" size="small" className="annotation-visibility-button" aria-label="全部显示" title="在画布上显示全部标注" disabled={!hiddenDraftIds.size} onClick={showAllDrafts}><EyeIcon /></AntdButton></Space></div>{drafts.map((draft, index) => { const id = draftId(draft, index); const hidden = hiddenDraftIds.has(id); return <div className={`shape-row${id === selectedAnnotationId ? " active" : ""}${hidden ? " hidden" : ""}`} key={id} role="button" tabIndex={0} onClick={() => setSelectedAnnotationId(id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedAnnotationId(id); } }}><span className="shape-index">{index + 1}</span><div className="shape-row-main"><AntdSelect size="small" className="shape-class-select" aria-label={`标注 ${index + 1} 类别`} value={draft.class_id || undefined} placeholder="未选择类别" popupMatchSelectWidth={false} disabled={!props.classes.length} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onChange={(value) => changeDraftClass(index, value)} options={props.classes.map((item) => ({ value: item.id, label: `${item.class_index}: ${item.name}` }))} /><Typography.Text type="secondary">{annotationLabel(draft.type)}</Typography.Text></div><AntdButton type="text" size="small" className="annotation-visibility-button" aria-label={hidden ? `显示标注 ${index + 1}` : `隐藏标注 ${index + 1}`} aria-pressed={hidden} title={hidden ? "在画布上显示此标注" : "在画布上隐藏此标注"} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); toggleDraftVisibility(id); }}>{hidden ? <EyeOffIcon /> : <EyeIcon />}</AntdButton><AntdButton type="text" size="small" danger className="annotation-delete-button" aria-label={`删除标注 ${index + 1}`} title="删除此标注" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); deleteAnnotation(id); }}><TrashIcon /></AntdButton></div>; })}{!drafts.length && <Typography.Text type="secondary" className="muted">{props.dataset.task_type === "classify" ? "请选择一个类别。" : "在图片上拖拽或点击创建标注。"}</Typography.Text>}</section></aside></div>{showLibraryPicker && props.onImportClasses && <ClassLibraryPicker existingClasses={props.classes} isSegment={props.dataset.task_type === "segment"} busy={props.busy} onImport={props.onImportClasses} onClose={() => setShowLibraryPicker(false)} />}
+      <Modal
         title={`编辑类别 ${editClassTarget?.name ?? ""}`}
         open={Boolean(editClassTarget)}
         onCancel={() => setEditClassTarget(null)}
@@ -1378,13 +1469,17 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
         onOk={() => void saveEditClass()}
         destroyOnHidden
       >
-        <AntdInput addonBefore="名称" value={editClassName} onChange={(e) => setEditClassName(e.target.value)} autoFocus style={{ marginBottom: 12 }} />
-        <Space size={4} wrap>
-          {CLASS_COLORS.map((color) => (
-            <button key={color} type="button" onClick={() => setEditClassColor(color)}
-              style={{ width: 24, height: 24, borderRadius: 6, background: color, cursor: "pointer", border: editClassColor === color ? "3px solid #3157d5" : "1px solid #d5dcea" }} aria-label={color} />
-          ))}
-        </Space>
+        <Flex vertical gap={12}>
+          <AntdSpace.Compact block>
+            <AntdSpace.Addon>名称</AntdSpace.Addon>
+            <AntdInput value={editClassName} onChange={(e) => setEditClassName(e.target.value)} autoFocus />
+          </AntdSpace.Compact>
+          <div className="class-color-palette" role="radiogroup" aria-label="类别颜色">
+            {CLASS_COLORS.map((color) => (
+              <AntdButton key={color} size="small" role="radio" aria-checked={editClassColor === color} className={`class-color-swatch${editClassColor === color ? " selected" : ""}`} style={{ background: color }} onClick={() => setEditClassColor(color)} aria-label={color} title={color} />
+            ))}
+          </div>
+        </Flex>
         {editError && <Alert type="error" title={editError} style={{ marginTop: 12 }} />}
       </Modal>
       <Modal
@@ -1398,7 +1493,7 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
       >
         <Alert type="warning" showIcon title="只有未被任何标注使用的类别才能删除；若其他图片仍在使用该类别，删除会被拒绝并提示。" />
       </Modal>
-      </main>;
+    </main>;
 }
 
 function errorMessage(reason: unknown): string { return reason instanceof Error ? reason.message : "操作失败，请检查后端服务。"; }

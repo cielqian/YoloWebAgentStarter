@@ -873,38 +873,46 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
         </Flex>
       </Modal>
 
-      {uploadOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setUploadOpen(false)}>
-          <section className="dataset-dialog" role="dialog" aria-modal="true" aria-labelledby="source-upload-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header className="data-exchange-header"><div><span className="eyebrow">UPLOAD</span><h2 id="source-upload-title">上传图片</h2><p>可先勾选标签，上传成功后自动附加到本次导入的所有图片。</p></div><button className="icon-button" onClick={() => setUploadOpen(false)} aria-label="关闭">×</button></header>
-            <form className="ftp-dialog-form" onSubmit={(event) => { event.preventDefault(); void submitUpload(); }}>
-              <div className="source-batch-tags" role="group" aria-label="上传时附加的标签">
-                {tags.length ? tags.map((tag) => {
-                  const enabled = uploadTagIds.includes(tag.id);
-                  return (
-                    <span key={tag.id} className={`source-tag-chip enum${enabled ? " active" : ""}`} style={{ borderColor: tag.color }}>
-                      <button type="button" onClick={() => setUploadTagIds((ids) => (ids.includes(tag.id) ? ids.filter((id) => id !== tag.id) : [...ids, tag.id]))}>{tag.name}</button>
-                      {enabled && tag.values && (
-                        <select aria-label={`${tag.name} 取值`} value={uploadTagValues[tag.id] ?? tag.values[0]} onChange={(event) => setUploadTagValues((prev) => ({ ...prev, [tag.id]: event.target.value }))}>
-                          {tag.values.map((value) => <option key={value} value={value}>{value}</option>)}
-                        </select>
-                      )}
-                    </span>
-                  );
-                }) : <span className="muted">还没有标签，可先在上方“新建标签”，或直接上传后再打标签。</span>}
-              </div>
-              <div className="source-upload-row">
-                <button type="button" className="button" onClick={() => fileInputRef.current?.click()}>选择图片</button>
-                <span className="muted">{pendingFiles.length ? `已选择 ${pendingFiles.length} 个文件` : "尚未选择文件"}</span>
-              </div>
-              <footer>
-                <button type="button" className="button" onClick={() => setUploadOpen(false)}>取消</button>
-                <button className="button primary" type="submit" disabled={busy || !pendingFiles.length}>开始上传</button>
-              </footer>
-            </form>
-          </section>
-        </div>
-      )}
+      <Modal className="source-upload-modal" title="上传图片" open={uploadOpen} onCancel={() => setUploadOpen(false)} footer={null} width={520} destroyOnHidden>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 14, fontSize: 12 }}>
+          可先勾选标签，上传成功后自动附加到本次导入的所有图片。
+        </Typography.Paragraph>
+        <form onSubmit={(event) => { event.preventDefault(); void submitUpload(); }}>
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+            <div className="source-batch-tags" role="group" aria-label="上传时附加的标签">
+              {tags.length ? tags.map((tag) => {
+                const enabled = uploadTagIds.includes(tag.id);
+                return (
+                  <span key={tag.id} className={`source-tag-chip enum${enabled ? " active" : ""}`} style={{ borderColor: tag.color }}>
+                    <button type="button" onClick={() => setUploadTagIds((ids) => (ids.includes(tag.id) ? ids.filter((id) => id !== tag.id) : [...ids, tag.id]))}>{tag.name}</button>
+                    {enabled && tag.values && (
+                      <AntdSelect
+                        size="small"
+                        variant="borderless"
+                        aria-label={`${tag.name} 取值`}
+                        value={uploadTagValues[tag.id] ?? tag.values[0]}
+                        onChange={(value) => setUploadTagValues((prev) => ({ ...prev, [tag.id]: value }))}
+                        options={tag.values.map((value) => ({ value, label: value }))}
+                        style={{ width: 104 }}
+                      />
+                    )}
+                  </span>
+                );
+              }) : <Typography.Text type="secondary">还没有标签，可先在上方“新建标签”，或直接上传后再打标签。</Typography.Text>}
+            </div>
+            <Flex justify="space-between" align="center" gap={16} style={{ paddingTop: 12, borderTop: "1px solid #f0f0f0" }}>
+              <Space>
+                <AntdButton onClick={() => fileInputRef.current?.click()}>选择图片</AntdButton>
+                <Typography.Text type="secondary">{pendingFiles.length ? `已选择 ${pendingFiles.length} 个文件` : "尚未选择文件"}</Typography.Text>
+              </Space>
+              <Space>
+                <AntdButton onClick={() => setUploadOpen(false)}>取消</AntdButton>
+                <AntdButton type="primary" htmlType="submit" disabled={busy || !pendingFiles.length}>开始上传</AntdButton>
+              </Space>
+            </Flex>
+          </Space>
+        </form>
+      </Modal>
 
       {preview && viewMode === "grid" && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setPreview(undefined)}>

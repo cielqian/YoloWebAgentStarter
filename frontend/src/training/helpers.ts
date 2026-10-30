@@ -23,12 +23,11 @@ export interface TrainingFormState {
   mixup: string;
   fliplr: string;
   model: string;
-  epochs: number;
-  batch_size: number;
-  img_size: number;
-  workers: number;
-  seed: number;
-  val_ratio: number;
+  epochs: number | null;
+  batch_size: number | null;
+  img_size: number | null;
+  workers: number | null;
+  seed: number | null;
   patience: string;
   optimizer: string;
   lr0: string;
@@ -56,24 +55,24 @@ export function modelChoicesFor(taskType: TaskType): Array<{ value: string; labe
   }));
 }
 
+// 新建训练任务时参数一律留空(置 null/""),提交时省略,由后端/Ultralytics 用默认值;
+// 只有点击训练预设或复用历史任务时才回填具体数值。
 export function defaultForm(taskType: TaskType): TrainingFormState {
-  const preset = PRESETS.balanced;
   return {
     name: "local-training",
     dataset_version_number: null,
     include_unannotated: true,
-    hsv_h: "0.015",
-    degrees: "10",
-    mixup: "0.1",
-    fliplr: "0",
+    hsv_h: "",
+    degrees: "",
+    mixup: "",
+    fliplr: "",
     model: defaultModelFor(taskType),
-    epochs: preset.epochs,
-    batch_size: preset.batch_size,
-    img_size: preset.img_size,
-    workers: 2,
-    seed: 42,
-    val_ratio: 0.2,
-    patience: String(preset.patience),
+    epochs: null,
+    batch_size: null,
+    img_size: null,
+    workers: null,
+    seed: null,
+    patience: "",
     optimizer: "",
     lr0: "",
     device_type: "auto",
@@ -144,13 +143,15 @@ export function formatGpuMemory(device: TrainingDevice): string {
   return `${Math.round(device.memory_free_mb / 1024)} / ${total} GB 可用`;
 }
 
-export function estimateMinutes(epochs: number, imageCount: number, batchSize: number, gpuCount: number): number {
+export function estimateMinutes(epochs: number | null, imageCount: number, batchSize: number | null, gpuCount: number): number | null {
+  if (epochs == null || batchSize == null) return null;
   const steps = Math.max(1, Math.ceil(Math.max(imageCount, 1) / Math.max(batchSize, 1)) * epochs);
   const perStepSec = gpuCount > 1 ? 0.35 : 0.55;
   return Math.max(1, Math.round((steps * perStepSec) / 60));
 }
 
-export function estimateOptimizerSteps(epochs: number, imageCount: number, batchSize: number): number {
+export function estimateOptimizerSteps(epochs: number | null, imageCount: number, batchSize: number | null): number | null {
+  if (epochs == null || batchSize == null) return null;
   return Math.max(1, Math.ceil(Math.max(imageCount, 1) / Math.max(batchSize, 1)) * epochs);
 }
 
@@ -179,7 +180,6 @@ export function applyTaskToForm(task: TrainingTask, name: string): TrainingFormS
     img_size: task.img_size,
     workers: task.workers,
     seed: task.seed,
-    val_ratio: task.val_ratio,
     patience: task.patience != null ? String(task.patience) : "",
     optimizer: task.optimizer ?? "",
     lr0: task.lr0 != null ? String(task.lr0) : "",

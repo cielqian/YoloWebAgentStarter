@@ -51,7 +51,7 @@ const finishedTask: TrainingTask = {
   id: "train-finished", dataset_id: "ds-detect", profile_id: null, name: "smoke-run",
   status: "completed", task_type: "detect", model_name: "yolov8n.pt", model_path: "yolov8n.pt",
   epochs: 2, img_size: 640, batch_size: 4, device: "cpu", node_id: null, workers: 2,
-  val_ratio: 0.2, seed: 42, optimizer: null, lr0: null, patience: null, command_preview: null,
+  seed: 42, optimizer: null, lr0: null, patience: null, command_preview: null,
   export_path: null, data_yaml_path: null, run_dir: null, logs_path: null, summary_path: null,
   best_model_path: null, last_model_path: null, progress_epoch: 2, progress_total_epochs: 2,
   progress_percent: 100, metrics_json: { map50: 0.81 }, error_message: null, stop_requested: false,

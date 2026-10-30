@@ -141,7 +141,7 @@ export function TrainingComputeRail({
           ))}
           {selectedRemoteDevices.length > 1 && (
             <p className="training-dataset-batch-tip">
-              {selectedRemoteDevices.length} 卡 DDP · 每卡 batch {form.batch_size} · 全局约 {form.batch_size * selectedRemoteDevices.length}
+              {selectedRemoteDevices.length} 卡 DDP{form.batch_size != null ? ` · 每卡 batch ${form.batch_size} · 全局约 ${form.batch_size * selectedRemoteDevices.length}` : ""}
             </p>
           )}
         </div>
@@ -157,7 +157,7 @@ export function TrainingComputeRail({
           </div>
           <div>
             <dt>配置</dt>
-            <dd>{form.epochs} ep · batch {form.batch_size} · {form.img_size}px</dd>
+            <dd>{[form.epochs != null ? `${form.epochs} ep` : null, form.batch_size != null ? `batch ${form.batch_size}` : null, form.img_size != null ? `${form.img_size}px` : null].filter(Boolean).join(" · ") || "留空 · 使用默认"}</dd>
           </div>
           <div>
             <dt>设备</dt>
@@ -165,12 +165,12 @@ export function TrainingComputeRail({
           </div>
           <div>
             <dt>预估步数</dt>
-            <dd>约 {steps.toLocaleString()} iter</dd>
+            <dd>{steps != null ? `约 ${steps.toLocaleString()} iter` : "填写后预估"}</dd>
           </div>
           <div>
             <dt>预估时长</dt>
             <dd className="training-dataset-est-row">
-              <IconClock size={14} /> 约 {estMinutes} 分钟
+              {estMinutes != null ? <><IconClock size={14} /> 约 {estMinutes} 分钟</> : "填写后预估"}
             </dd>
           </div>
         </dl>

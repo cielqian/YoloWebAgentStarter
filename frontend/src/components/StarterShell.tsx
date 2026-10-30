@@ -68,31 +68,36 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
   return (
     <div className={focusMode ? "starter-shell focus-mode" : "starter-shell"}>
       <Layout className="starter-antd-layout">
-        <Sider width={220} className="starter-antd-sider" breakpoint="lg" collapsedWidth={0}>
-          <div className="starter-antd-logo">
-            <span className="starter-antd-logo-badge">YWA</span>
-            <span className="starter-antd-logo-text">YOLO 训练平台</span>
-          </div>
-          <div className="starter-antd-menu-scroll">
-            <Menu
-              mode="inline"
-              selectedKeys={[active]}
-              items={menuItems}
-              onClick={({ key }) => onNavigate(key as StarterSection)}
-              className="starter-antd-menu"
-            />
-          </div>
-        </Sider>
+        {/* 专注模式（标注页）直接不渲染侧栏与顶栏，画布占满整个视口 */}
+        {!focusMode && (
+          <Sider width={220} className="starter-antd-sider" breakpoint="lg" collapsedWidth={0}>
+            <div className="starter-antd-logo">
+              <span className="starter-antd-logo-badge">YWA</span>
+              <span className="starter-antd-logo-text">YOLO 训练平台</span>
+            </div>
+            <div className="starter-antd-menu-scroll">
+              <Menu
+                mode="inline"
+                selectedKeys={[active]}
+                items={menuItems}
+                onClick={({ key }) => onNavigate(key as StarterSection)}
+                className="starter-antd-menu"
+              />
+            </div>
+          </Sider>
+        )}
         <Layout>
-          <Header className="starter-antd-header">
-            <Flex align="baseline" gap={12} style={{ flex: 1, minWidth: 0 }}>
-              <span className="starter-antd-header-title">{currentInfo(active, labels).title}</span>
-              <span className="starter-antd-header-desc">{currentInfo(active, labels).description}</span>
-            </Flex>
-            <Flex align="center" gap={8}>
-              {headerExtra}
-            </Flex>
-          </Header>
+          {!focusMode && (
+            <Header className="starter-antd-header">
+              <Flex align="baseline" gap={12} style={{ flex: 1, minWidth: 0 }}>
+                <span className="starter-antd-header-title">{currentInfo(active, labels).title}</span>
+                <span className="starter-antd-header-desc">{currentInfo(active, labels).description}</span>
+              </Flex>
+              <Flex align="center" gap={8}>
+                {headerExtra}
+              </Flex>
+            </Header>
+          )}
           <Content className="starter-antd-content">{children}</Content>
         </Layout>
       </Layout>

@@ -88,7 +88,7 @@ describe("AnnotationView persistence", () => {
     });
 
     expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(3);
-    const valTab = container?.querySelector<HTMLButtonElement>(".annotation-image-split-tabs button:nth-child(3)");
+    const valTab = Array.from(container?.querySelectorAll<HTMLElement>(".annotation-image-split-tabs .ant-segmented-item") ?? []).find((item) => item.textContent === "val");
     act(() => valTab?.click());
 
     expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(1);
@@ -189,8 +189,9 @@ describe("AnnotationView persistence", () => {
       root?.render(<AnnotationView dataset={{ ...dataset, image_count: 2 }} image={image} images={[image, secondImage]} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onPrevious={onPrevious} onNext={onNext} hasPrevious hasNext onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
     });
 
-    const previous = container?.querySelector<HTMLButtonElement>(".annotation-navigation button:first-child");
-    const next = container?.querySelector<HTMLButtonElement>(".annotation-navigation button:last-child");
+    const buttons = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+    const previous = buttons.find((item) => item.textContent?.includes("上一张"));
+    const next = buttons.find((item) => item.textContent?.includes("下一张"));
     expect(previous?.textContent).toContain("上一张");
     expect(next?.textContent).toContain("下一张");
     act(() => next?.click());
@@ -331,12 +332,12 @@ describe("AnnotationView persistence", () => {
       root?.render(<AnnotationView dataset={{ ...dataset, class_count: 2 }} image={image} classes={[...classes, personClass]} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={onSave} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
     });
 
-    const classSelect = container?.querySelector<HTMLSelectElement>(".shape-class-select");
+    const classSelect = container?.querySelector<HTMLElement>(".shape-class-select");
     expect(classSelect).toBeTruthy();
-    act(() => {
-      if (classSelect) classSelect.value = personClass.id;
-      classSelect?.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    act(() => classSelect?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    const personOption = Array.from(document.querySelectorAll<HTMLElement>(".ant-select-item-option")).find((item) => item.getAttribute("title") === `${personClass.class_index}: ${personClass.name}`);
+    expect(personOption).toBeTruthy();
+    act(() => personOption?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     const save = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) => button.textContent === "保存标注");
     act(() => save?.click());
 
