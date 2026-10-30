@@ -18,13 +18,13 @@ class TrainingTaskCreate(BaseModel):
     model: str = Field(default="yolo11n.pt", min_length=1, max_length=255)
     task_type: TaskType | None = None
     node_id: str | None = Field(default=None, max_length=64)
-    epochs: int = Field(default=50, ge=1, le=10000)
-    img_size: int = Field(default=640, ge=32, le=4096)
-    batch_size: int = Field(default=16, ge=1, le=4096)
+    # 留空的参数不进入训练命令,由 Ultralytics 运行时默认值接管。
+    epochs: int | None = Field(default=None, ge=1, le=10000)
+    img_size: int | None = Field(default=None, ge=32, le=4096)
+    batch_size: int | None = Field(default=None, ge=1, le=4096)
     device: str = Field(default="auto", min_length=1, max_length=64)
-    workers: int = Field(default=2, ge=0, le=128)
-    val_ratio: float = Field(default=0.2, ge=0.0, le=0.9)
-    seed: int = Field(default=42, ge=0)
+    workers: int | None = Field(default=None, ge=0, le=128)
+    seed: int | None = Field(default=None, ge=0)
     optimizer: str | None = Field(default=None, max_length=64)
     lr0: float | None = Field(default=None, gt=0)
     patience: int | None = Field(default=None, ge=0)
@@ -57,13 +57,12 @@ class TrainingTaskResponse(BaseModel):
     task_type: TaskType
     model_name: str
     model_path: str
-    epochs: int
-    img_size: int
-    batch_size: int
+    epochs: int | None = None
+    img_size: int | None = None
+    batch_size: int | None = None
     device: str
-    workers: int
-    val_ratio: float
-    seed: int
+    workers: int | None = None
+    seed: int | None = None
     optimizer: str | None
     lr0: float | None
     patience: int | None

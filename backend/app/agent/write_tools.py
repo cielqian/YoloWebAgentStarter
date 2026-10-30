@@ -63,7 +63,6 @@ def normalize_write_payload(tool_name: str, payload: dict[str, Any] | None) -> d
             "batch_size": parsed.batch_size,
             "device": parsed.device,
             "node_id": parsed.node_id or None,
-            "val_ratio": parsed.val_ratio,
             "seed": parsed.seed,
         }
         return data
@@ -245,7 +244,6 @@ def build_write_handlers(
                     "device": {"type": "string", "minLength": 1, "maxLength": 64},
                     "node_id": {"type": "string", "maxLength": 64},
                     "workers": {"type": "integer", "minimum": 0, "maximum": 128},
-                    "val_ratio": {"type": "number", "minimum": 0, "maximum": 0.9},
                     "seed": {"type": "integer", "minimum": 0},
                     "optimizer": {"type": "string", "maxLength": 64},
                     "lr0": {"type": "number", "exclusiveMinimum": 0},

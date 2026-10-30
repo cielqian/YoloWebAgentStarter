@@ -70,12 +70,12 @@ def build_training_command(
     model: str,
     data_yaml: str,
     run_dir: str,
-    epochs: int,
-    img_size: int,
-    batch_size: int,
+    epochs: int | None = None,
+    img_size: int | None = None,
+    batch_size: int | None = None,
     device: str,
-    workers: int,
-    seed: int,
+    workers: int | None = None,
+    seed: int | None = None,
     optimizer: str | None = None,
     lr0: float | None = None,
     patience: int | None = None,
@@ -92,15 +92,14 @@ def build_training_command(
         "train",
         f"model={resolve_model_reference(model)}",
         f"data={Path(data_yaml).resolve()}",
-        f"epochs={epochs}",
-        f"imgsz={img_size}",
-        f"batch={batch_size}",
         f"project={run_path.parent}",
         f"name={run_path.name}",
         "exist_ok=True",
-        f"workers={workers}",
-        f"seed={seed}",
     ]
+    # 留空的参数不写入命令,交给 Ultralytics 默认值。
+    for key, value in (("epochs", epochs), ("imgsz", img_size), ("batch", batch_size), ("workers", workers), ("seed", seed)):
+        if value is not None:
+            args.append(f"{key}={value}")
     if device != "auto":
         args.append(f"device={device}")
     if optimizer:

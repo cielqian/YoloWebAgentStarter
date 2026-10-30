@@ -36,7 +36,6 @@ def task(tmp_path: Path) -> TrainingTask:
         batch_size=4,
         device="0",
         workers=2,
-        val_ratio=0.2,
         seed=42,
         run_dir=str(tmp_path / "run"),
     )

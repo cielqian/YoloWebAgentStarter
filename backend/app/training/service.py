@@ -221,7 +221,6 @@ class TrainingService:
                 device=payload.device,
                 node_id=node["id"] if node is not None else None,
                 workers=payload.workers,
-                val_ratio=payload.val_ratio,
                 seed=payload.seed,
                 optimizer=payload.optimizer,
                 lr0=payload.lr0,
@@ -242,7 +241,7 @@ class TrainingService:
                 run_dir=str(run_dir),
                 logs_path=str(task_root / "train.log"),
                 summary_path=str(task_root / "training_summary.json"),
-                progress_total_epochs=payload.epochs,
+                progress_total_epochs=payload.epochs or 0,
             )
             session.add(task)
             session.commit()
@@ -310,15 +309,17 @@ class TrainingService:
             "train",
             f"model={model_arg}",
             "data=dataset/data.yaml",
-            f"epochs={payload.epochs}",
-            f"imgsz={payload.img_size}",
-            f"batch={payload.batch_size}",
             "project=.",
             "name=run",
             "exist_ok=True",
-            f"workers={payload.workers}",
-            f"seed={payload.seed}",
         ]
+        # 留空的参数不下发给训练节点。
+        for key, value in (
+            ("epochs", payload.epochs), ("imgsz", payload.img_size), ("batch", payload.batch_size),
+            ("workers", payload.workers), ("seed", payload.seed),
+        ):
+            if value is not None:
+                args.append(f"{key}={value}")
         if payload.device != "auto":
             args.append(f"device={payload.device}")
         if payload.optimizer:
@@ -358,15 +359,17 @@ class TrainingService:
             "train",
             f"model={model_arg}",
             "data=dataset/data.yaml",
-            f"epochs={payload.epochs}",
-            f"imgsz={payload.img_size}",
-            f"batch={payload.batch_size}",
             "project=.",
             "name=run",
             "exist_ok=True",
-            f"workers={payload.workers}",
-            f"seed={payload.seed}",
         ]
+        # 留空的参数不下发给训练节点。
+        for key, value in (
+            ("epochs", payload.epochs), ("imgsz", payload.img_size), ("batch", payload.batch_size),
+            ("workers", payload.workers), ("seed", payload.seed),
+        ):
+            if value is not None:
+                args.append(f"{key}={value}")
         if payload.device != "auto":
             args.append(f"device={payload.device}")
         if payload.optimizer:
@@ -395,7 +398,6 @@ class TrainingService:
             device=payload.device,
             node_id=node["id"],
             workers=payload.workers,
-            val_ratio=payload.val_ratio,
             seed=payload.seed,
             optimizer=payload.optimizer,
             lr0=payload.lr0,
@@ -410,7 +412,7 @@ class TrainingService:
             run_dir=str(task_root / "run"),
             logs_path=str(task_root / "train.log"),
             summary_path=str(task_root / "training_summary.json"),
-            progress_total_epochs=payload.epochs,
+            progress_total_epochs=payload.epochs or 0,
             progress_percent=0.0,
         )
         session.add(task)
@@ -439,19 +441,19 @@ class TrainingService:
         weights_path: Path | None,
     ) -> TrainingTaskResponse:
         model_arg = Path(task.model_path).name if Path(task.model_path).is_absolute() else task.model_name
+        # 留空的参数不进入下发 spec,由节点侧默认值接管。
         spec = {
             "task_id": task.id,
             "task_type": task.task_type,
             "model": model_arg,
-            "epochs": task.epochs,
-            "img_size": task.img_size,
-            "batch_size": task.batch_size,
             "device": task.device,
-            "workers": task.workers,
-            "seed": task.seed,
             "optimizer": task.optimizer,
             "lr0": task.lr0,
             "patience": task.patience,
+            **{key: getattr(task, field) for field, key in (
+                ("epochs", "epochs"), ("img_size", "img_size"), ("batch_size", "batch_size"),
+                ("workers", "workers"), ("seed", "seed"),
+            ) if getattr(task, field) is not None},
         }
         try:
             if dataset_zip is None:
@@ -469,7 +471,7 @@ class TrainingService:
 
         task.status = "running"
         task.started_at = utc_now()
-        task.progress_total_epochs = task.epochs
+        task.progress_total_epochs = task.epochs or 0
         session.commit()
         session.refresh(task)
         notify_training_status("running", task)
