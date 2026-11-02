@@ -75,19 +75,28 @@ export function SourceStatsBoard() {
     {
       title: "数量",
       key: "count",
-      width: 240,
+      width: 80,
       align: "right",
       render: (_, row) => (
-        <Space size={8}>
-          <Typography.Text style={{ fontVariantNumeric: "tabular-nums", fontWeight: 650, minWidth: 44, textAlign: "right" }}>{row.count}</Typography.Text>
-          <Progress
-            percent={totalImages ? Math.round((row.count / totalImages) * 100) : 0}
-            size="small"
-            showInfo={false}
-            style={{ width: 120, margin: 0 }}
-          />
-        </Space>
+        <Typography.Text style={{ fontVariantNumeric: "tabular-nums", fontWeight: 650 }}>{row.count}</Typography.Text>
       ),
+    },
+    {
+      title: "占比",
+      key: "ratio",
+      width: 100,
+      align: "right",
+      render: (_, row) => {
+        const ratio = totalImages ? (row.count / totalImages) * 100 : 0;
+        return (
+          <Space size={8}>
+            <Typography.Text style={{ fontVariantNumeric: "tabular-nums", minWidth: 44, textAlign: "right" }}>
+              {totalImages ? `${Math.round(ratio)}%` : "—"}
+            </Typography.Text>
+            <Progress percent={Math.round(ratio)} size="small" showInfo={false} style={{ width: 40, margin: 0 }} />
+          </Space>
+        );
+      },
     },
     { title: "说明", key: "meta", width: 220, ellipsis: true, render: (_, row) => row.meta || <Typography.Text type="secondary">—</Typography.Text> },
   ];

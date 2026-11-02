@@ -267,5 +267,7 @@ describe("数据源统计看板", () => {
     expect(text).toContain("光线");
     expect(text).toContain("晴");
     expect(text).toContain("白天");
+    // 占比列:可见光 3/4 = 75%
+    expect(text).toContain("75%");
   });
 });
