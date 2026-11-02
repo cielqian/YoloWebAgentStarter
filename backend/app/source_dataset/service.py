@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.ids import new_id
-from app.core.models import SourceDataset, SourceImage, SourceImageTag, SourceTag
+from app.core.models import MaterialType, SourceDataset, SourceImage, SourceImageTag, SourceTag
 from app.core.storage import Storage
 from app.ftp.service import FtpService
 from app.source_dataset.schemas import (
@@ -410,3 +410,74 @@ def delete_tag(session: Session, source_dataset_id: str, tag_id: str) -> None:
     session.delete(tag)
     _refresh_counts(session, source_dataset_id)
     session.commit()
+
+
+def source_stats(session: Session) -> "SourceStatsOut":
+    """统计看板:跨数据源聚合素材类型与标签的素材数量。
+
+    - 素材类型:统计库中每个类型被多少个数据源使用、图片总量;未使用的类型计 0,保证完整展示。
+    - 标签:同名标签跨数据源合并;枚举标签额外给出每个取值的图片数。
+    """
+    from app.source_dataset.schemas import (
+        SourceStatsMaterialTypeOut,
+        SourceStatsOut,
+        SourceStatsTagOut,
+        SourceStatsValueOut,
+    )
+
+    datasets = list(session.scalars(select(SourceDataset)))
+    library = list(session.scalars(select(MaterialType).order_by(MaterialType.name)))
+    tags = list(session.scalars(select(SourceTag)))
+
+    link_counts: dict[str, int] = dict(
+        session.execute(select(SourceImageTag.tag_id, func.count()).group_by(SourceImageTag.tag_id)).all()
+    )
+    value_counts: dict[tuple[str, str], int] = {
+        (tag_id, value): count
+        for tag_id, value, count in session.execute(
+            select(SourceImageTag.tag_id, SourceImageTag.value, func.count())
+            .where(SourceImageTag.value.is_not(None))
+            .group_by(SourceImageTag.tag_id, SourceImageTag.value)
+        ).all()
+    }
+
+    material_types = {
+        item.name: {"description": item.description, "dataset_count": 0, "image_count": 0}
+        for item in library
+    }
+    for dataset in datasets:
+        for name in dataset.material_types or []:
+            entry = material_types.get(name)
+            if entry is None:
+                continue
+            entry["dataset_count"] += 1
+            entry["image_count"] += dataset.image_count
+
+    tag_agg: dict[str, dict] = {}
+    for tag in tags:
+        entry = tag_agg.setdefault(tag.name, {"color": tag.color, "image_count": 0, "values": {}})
+        entry["image_count"] += link_counts.get(tag.id, 0)
+        for (tag_id, value), count in value_counts.items():
+            if tag_id == tag.id:
+                entry["values"][value] = entry["values"].get(value, 0) + count
+
+    return SourceStatsOut(
+        total_datasets=len(datasets),
+        total_images=sum(dataset.image_count for dataset in datasets),
+        material_types=[
+            SourceStatsMaterialTypeOut(name=name, **entry)  # type: ignore[arg-type]
+            for name, entry in sorted(material_types.items(), key=lambda pair: -pair[1]["image_count"])
+        ],
+        tags=[
+            SourceStatsTagOut(
+                name=name,
+                color=entry["color"],
+                image_count=entry["image_count"],
+                values=[
+                    SourceStatsValueOut(value=value, image_count=count)
+                    for value, count in sorted(entry["values"].items(), key=lambda pair: -pair[1])
+                ],
+            )
+            for name, entry in sorted(tag_agg.items(), key=lambda pair: -pair[1]["image_count"])
+        ],
+    )

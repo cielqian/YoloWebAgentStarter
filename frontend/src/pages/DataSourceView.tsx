@@ -22,6 +22,7 @@ import {
   type TableProps,
 } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { SourceStatsBoard } from "../components/SourceStatsBoard";
 import { api, apiUrl, type FtpSyncProgressEvent } from "../api/client";
 import type { FtpEntry, MaterialType, SourceDataset, SourceImage, SourceImagePage, SourceTag } from "../types";
 
@@ -83,6 +84,7 @@ export function DataSourceView() {
   const [notice, setNotice] = useState("");
   const [activeId, setActiveId] = useState<string>();
   const [createOpen, setCreateOpen] = useState(false);
+  const [boardOpen, setBoardOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
   const [createMaterials, setCreateMaterials] = useState<string[]>([]);
@@ -195,7 +197,16 @@ export function DataSourceView() {
         <>
           {error ? <Alert type="error" showIcon closable title={error} style={{ marginBottom: 12 }} /> : null}
           {notice ? <Alert type="success" showIcon closable title={notice} style={{ marginBottom: 12 }} /> : null}
-          {loading ? (
+          <Flex justify="space-between" align="center" style={{ marginBottom: 12 }}>
+            <Segmented
+              value={boardOpen ? "board" : "list"}
+              onChange={(value) => setBoardOpen(value === "board")}
+              options={[{ value: "list", label: "素材集列表" }, { value: "board", label: "统计看板" }]}
+            />
+            {boardOpen ? <Typography.Text type="secondary">每个素材类型与全部标签的素材数量汇总</Typography.Text> : null}
+          </Flex>
+          {boardOpen ? <SourceStatsBoard /> : null}
+          {!boardOpen && (loading ? (
             <Typography.Paragraph type="secondary">正在加载数据集…</Typography.Paragraph>
           ) : datasets.length ? (
             <Table<SourceDataset>
@@ -227,7 +238,7 @@ export function DataSourceView() {
             <Empty description="还没有数据集。新建一个数据集后，可以上传图片或从 FTP 目录同步，再为图片打标签管理。">
               <AntdButton type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建数据集</AntdButton>
             </Empty>
-          )}
+          ))}
         </>
       )}
 

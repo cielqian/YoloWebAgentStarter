@@ -679,6 +679,32 @@ export interface SourceDataset {
   updated_at: string;
 }
 
+export interface SourceStatsValue {
+  value: string;
+  image_count: number;
+}
+
+export interface SourceStatsTag {
+  name: string;
+  color: string;
+  image_count: number;
+  values: SourceStatsValue[];
+}
+
+export interface SourceStatsMaterialType {
+  name: string;
+  description: string | null;
+  dataset_count: number;
+  image_count: number;
+}
+
+export interface SourceStats {
+  total_datasets: number;
+  total_images: number;
+  material_types: SourceStatsMaterialType[];
+  tags: SourceStatsTag[];
+}
+
 export interface MaterialType {
   id: string;
   name: string;

@@ -106,3 +106,29 @@ class SourceFtpSyncResult(BaseModel):
     synced: int
     skipped: int
     truncated: bool = False
+
+
+class SourceStatsValueOut(BaseModel):
+    value: str
+    image_count: int
+
+
+class SourceStatsTagOut(BaseModel):
+    name: str
+    color: str
+    image_count: int
+    values: list[SourceStatsValueOut] = Field(default_factory=list)
+
+
+class SourceStatsMaterialTypeOut(BaseModel):
+    name: str
+    description: str | None = None
+    dataset_count: int
+    image_count: int
+
+
+class SourceStatsOut(BaseModel):
+    total_datasets: int
+    total_images: int
+    material_types: list[SourceStatsMaterialTypeOut] = Field(default_factory=list)
+    tags: list[SourceStatsTagOut] = Field(default_factory=list)

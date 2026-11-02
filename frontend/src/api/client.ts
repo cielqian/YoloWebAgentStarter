@@ -33,7 +33,7 @@ import type {
   FtpConnectionTestResult,
   FtpEntry,
   FtpListResult,
-  SourceDataset,
+  SourceDataset, SourceStats,
   SourceImagePage,
   SourceTag,
   TagTemplate,
@@ -147,6 +147,7 @@ export const api = {
   ftpRename: (source: string, target: string) => request<{ ok: boolean }>("/api/ftp/rename", json({ source, target })),
   ftpDelete: (path: string) => request<{ ok: boolean }>("/api/ftp/delete", json({ path })),
   listSourceDatasets: () => request<SourceDataset[]>("/api/source-datasets"),
+  sourceStats: () => request<SourceStats>("/api/source-datasets/stats"),
   createSourceDataset: (name: string, description?: string, materialTypes?: string[]) =>
     request<SourceDataset>("/api/source-datasets", json({ name, description: description || null, material_types: materialTypes?.length ? materialTypes : null })),
   updateSourceDataset: (datasetId: string, payload: { name?: string; description?: string | null; material_types?: string[] | null }) =>

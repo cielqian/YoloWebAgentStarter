@@ -629,6 +629,13 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .canvas-toolbar .ant-input-number-input { font-size: 11px; }
 
 
+/* 数据源统计看板 */
+.source-stats-board { display: grid; gap: 0; }
+.source-stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.source-stats-summary .ant-statistic { padding: 10px 14px; border: 1px solid #eef1f6; border-radius: 8px; background: #fbfcff; }
+.source-stats-summary .ant-statistic-content { font-size: 20px; font-weight: 700; color: #172033; }
+.source-stats-board .source-tag-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+
 /* 素材集上传弹窗已改 antd Modal,收敛默认内边距 */
 .source-upload-modal .ant-modal-body { padding-top: 12px; }
 

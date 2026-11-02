@@ -452,3 +452,42 @@ def test_enum_tag_values_end_to_end(client):
     )
     assert bad.status_code == 422
     assert "tag_value_invalid" in bad.text
+
+
+def test_source_stats_board(client: TestClient) -> None:
+    """统计看板:跨数据源聚合素材类型与标签数量,未使用的类型也完整展示。"""
+    client.post("/api/material-types", json={"name": "可见光图片"})
+    client.post("/api/material-types", json={"name": "红外视频"})
+
+    ds1 = client.post("/api/source-datasets", json={"name": "A", "material_types": ["可见光图片"]}).json()
+    upload_image(client, ds1["id"], "a1.png")
+    upload_image(client, ds1["id"], "a2.png")
+    enum_tag = client.post(f"/api/source-datasets/{ds1['id']}/tags", json={"name": "光线", "values": ["强", "弱"]}).json()
+    plain_tag = client.post(f"/api/source-datasets/{ds1['id']}/tags", json={"name": "夜间"}).json()
+    items = client.get(f"/api/source-datasets/{ds1['id']}/images").json()["items"]
+    client.patch(
+        f"/api/source-datasets/{ds1['id']}/images/{items[0]['id']}",
+        json={"tag_ids": [enum_tag["id"], plain_tag["id"]], "tag_values": {enum_tag["id"]: "强"}},
+    )
+    client.patch(
+        f"/api/source-datasets/{ds1['id']}/images/{items[1]['id']}",
+        json={"tag_ids": [enum_tag["id"]], "tag_values": {enum_tag["id"]: "弱"}},
+    )
+
+    ds2 = client.post("/api/source-datasets", json={"name": "B"}).json()
+    upload_image(client, ds2["id"], "b1.png")
+
+    stats = client.get("/api/source-datasets/stats").json()
+    assert stats["total_datasets"] == 2
+    assert stats["total_images"] == 3
+
+    by_type = {item["name"]: item for item in stats["material_types"]}
+    assert by_type["可见光图片"]["image_count"] == 2
+    assert by_type["可见光图片"]["dataset_count"] == 1
+    assert by_type["红外视频"]["image_count"] == 0
+    assert by_type["红外视频"]["dataset_count"] == 0
+
+    by_tag = {item["name"]: item for item in stats["tags"]}
+    assert by_tag["光线"]["image_count"] == 2
+    assert {v["value"]: v["image_count"] for v in by_tag["光线"]["values"]} == {"强": 1, "弱": 1}
+    assert by_tag["夜间"]["image_count"] == 1

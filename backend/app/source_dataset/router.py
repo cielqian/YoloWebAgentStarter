@@ -19,6 +19,7 @@ from app.core.storage import Storage
 from app.source_dataset import service
 from app.source_dataset.schemas import (
     SourceBatchTagsRequest,
+    SourceStatsOut,
     SourceBatchTagsResult,
     SourceDatasetCreate,
     SourceDatasetOut,
@@ -67,6 +68,12 @@ async def _read_upload(file: UploadFile, max_bytes: int) -> bytes:
 @router.get("", response_model=list[SourceDatasetOut])
 def list_source_datasets(session: Session = Depends(get_session)) -> list[SourceDatasetOut]:
     return [_dataset_response(item) for item in service.list_source_datasets(session)]
+
+
+@router.get("/stats", response_model=SourceStatsOut)
+def get_source_stats(session: Session = Depends(get_session)) -> SourceStatsOut:
+    """统计看板:全部数据源的素材类型与标签素材数量聚合。"""
+    return service.source_stats(session)
 
 
 @router.post("", response_model=SourceDatasetOut, status_code=201)

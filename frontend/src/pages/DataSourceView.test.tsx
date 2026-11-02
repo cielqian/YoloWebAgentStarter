@@ -52,6 +52,17 @@ vi.mock("../api/client", () => {
   return {
     api: {
       listSourceDatasets: vi.fn().mockResolvedValue([dataset]),
+    sourceStats: vi.fn().mockResolvedValue({
+      total_datasets: 1,
+      total_images: 3,
+      material_types: [
+        { name: "可见光图片", description: null, dataset_count: 1, image_count: 3 },
+        { name: "红外视频", description: null, dataset_count: 0, image_count: 0 },
+      ],
+      tags: [
+        { name: "白天", color: "#3157d5", image_count: 3, values: [{ value: "晴", image_count: 2 }, { value: "阴", image_count: 1 }] },
+      ],
+    }),
       listMaterialTypes: vi.fn().mockResolvedValue([]),
       createSourceDataset: vi.fn(),
       updateSourceDataset: vi.fn(),
@@ -229,5 +240,27 @@ describe("DataSourceView FTP picker", () => {
 
     await clickButton(/导入.*3.*张/);
     expect(api.syncSourceFromFtp).toHaveBeenCalledWith("sd-1", { path: "/", recursive: false, filePaths: ["/a.png", "/b.jpg", "/cam1/d.png"], tagIds: [], tagValues: {} }, expect.any(Function));
+  });
+});
+
+
+describe("数据源统计看板", () => {
+  it("切换到看板后展示素材类型与标签数量汇总", async () => {
+    const { api } = await import("../api/client");
+    await act(async () => { root?.render(<DataSourceView />); });
+    await act(async () => {});
+    const boardTab = Array.from(document.body.querySelectorAll<HTMLElement>(".ant-segmented-item")).find((el) => el.textContent === "统计看板");
+    expect(boardTab).toBeTruthy();
+    await act(async () => { boardTab?.click(); });
+    await act(async () => {});
+
+    expect(api.sourceStats).toHaveBeenCalled();
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("素材类型分布");
+    expect(text).toContain("标签分布");
+    expect(text).toContain("可见光图片");
+    expect(text).toContain("红外视频");
+    expect(text).toContain("未使用");
+    expect(text).toContain("晴 · 2");
   });
 });
