@@ -879,7 +879,6 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .starter-antd-logo-text { color: #273248; font-size: 14px; font-weight: 750; }
 .starter-antd-menu-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .starter-antd-menu { border-inline-end: 0 !important; padding: 0 8px 12px; }
-.starter-antd-menu .ant-menu-item { border-radius: 8px; margin-inline: 4px; width: calc(100
 /* antd Layout 外壳 */
 .starter-antd-layout { min-height: 100vh; }
 .starter-antd-sider { position: sticky; top: 0; z-index: 10; height: 100vh; }
