@@ -1609,3 +1609,12 @@
 
 /* FTP 转存弹窗目录列表 */
 .ftp-dir-list { display: grid; gap: 2px; }
+
+/* ---- 评估面板 antd 化适配 ---- */
+.evaluation-task.ant-btn { display: flex; align-items: center; justify-content: space-between; gap: 7px; width: 100%; height: auto; min-height: 0; padding: 8px 10px; white-space: normal; text-align: left; }
+.evaluation-task.ant-btn strong { font-size: 12px; }
+.evaluation-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.evaluation-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.evaluation-metrics .ant-statistic { padding: 8px 10px; border: 1px solid #eef1f6; border-radius: 8px; background: #fbfcff; }
+.evaluation-logs.ant-collapse { margin-top: 10px; background: #fff; }
+.evaluation-logs.ant-collapse pre { margin: 0; }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Button as AntdButton, Empty as AntdEmpty, Segmented, Space, Tag as AntdTag, Typography } from "antd";
 import { api } from "../api/client";
 import type { ModelEvaluationRecord, ModelVersion, SplitName } from "../types";
 import { EvaluationDetailArtifacts, EvaluationDetailLogs, EvaluationDetailMetrics, EvaluationDetailSamples, EvaluationDetailSummary } from "./evaluation/EvaluationDetailPanels";
@@ -10,6 +11,13 @@ interface Props {
   busy: boolean;
   onEvaluate: (split: SplitName) => void;
 }
+
+const STATUS_TAG: Record<ModelEvaluationRecord["status"], { color: string; label: string }> = {
+  pending: { color: "default", label: "pending" },
+  running: { color: "processing", label: "running" },
+  completed: { color: "success", label: "completed" },
+  failed: { color: "error", label: "failed" },
+};
 
 export function ModelEvaluationPanel({ model, evaluations, busy, onEvaluate }: Props) {
   const [split, setSplit] = useState<SplitName>("val");
@@ -31,13 +39,29 @@ export function ModelEvaluationPanel({ model, evaluations, busy, onEvaluate }: P
   return (
     <section className="evaluation-panel">
       <div className="evaluation-heading">
-        <div><span className="eyebrow">LOCAL EVALUATION</span><h3>按已保存 split 评估</h3><p>后台运行上游同款 YOLO val，并保留指标、图表、日志和可审阅错误样本。</p></div>
-        <div className="evaluation-create"><select value={split} onChange={(event) => setSplit(event.target.value as SplitName)}><option value="val">val</option><option value="test">test</option><option value="train">train</option></select><button className="button" disabled={busy} onClick={() => onEvaluate(split)}>创建评估任务</button></div>
+        <div>
+          <Typography.Text type="secondary" className="models-eyebrow">LOCAL EVALUATION</Typography.Text>
+          <Typography.Title level={5} style={{ margin: 0 }}>按已保存 split 评估</Typography.Title>
+          <Typography.Text type="secondary">后台运行上游同款 YOLO val，并保留指标、图表、日志和可审阅错误样本。</Typography.Text>
+        </div>
+        <Space>
+          <Segmented size="small" value={split} onChange={(value) => setSplit(value as SplitName)} options={[{ value: "val", label: "val" }, { value: "test", label: "test" }, { value: "train", label: "train" }]} />
+          <AntdButton size="small" type="primary" disabled={busy} onClick={() => onEvaluate(split)}>创建评估任务</AntdButton>
+        </Space>
       </div>
-      {!evaluations.length ? <div className="evaluation-empty">暂无评估任务。</div> : <div className="evaluation-body">
-        <div className="evaluation-history">{evaluations.map((item) => <button key={item.id} className={selected?.id === item.id ? "evaluation-task selected" : "evaluation-task"} onClick={() => setSelectedId(item.id)}><strong>{item.split} · {item.created_at.slice(0, 16).replace("T", " ")}</strong><span className={`status ${item.status}`}>{item.status}</span></button>)}</div>
+      {!evaluations.length ? <AntdEmpty image={AntdEmpty.PRESENTED_IMAGE_SIMPLE} description="暂无评估任务。" style={{ margin: "18px 0" }} /> : <div className="evaluation-body">
+        <div className="evaluation-history">{evaluations.map((item) => (
+          <AntdButton key={item.id} type="text" block className={selected?.id === item.id ? "evaluation-task selected" : "evaluation-task"} onClick={() => setSelectedId(item.id)}>
+            <strong>{item.split} · {item.created_at.slice(0, 16).replace("T", " ")}</strong>
+            <AntdTag color={STATUS_TAG[item.status].color} style={{ margin: 0 }}>{STATUS_TAG[item.status].label}</AntdTag>
+          </AntdButton>
+        ))}</div>
         {selected && <div className="evaluation-detail">
-          <div className="evaluation-status"><strong>任务 {selected.status}</strong><span>conf {selected.confidence} · iou {selected.iou}</span>{selected.error_message && <small>{selected.error_message}</small>}</div>
+          <div className="evaluation-status">
+            <strong>任务 {selected.status}</strong>
+            <Typography.Text type="secondary">conf {selected.confidence} · iou {selected.iou}</Typography.Text>
+            {selected.error_message && <Typography.Text type="danger">{selected.error_message}</Typography.Text>}
+          </div>
           <EvaluationDetailMetrics metrics={metrics} />
           <EvaluationDetailSummary summary={summary} />
           <EvaluationDetailArtifacts taskId={selected.id} prCurvePath={artifacts.pr_curve} boxPrCurvePath={artifacts.box_pr_curve} maskPrCurvePath={artifacts.mask_pr_curve} confusionMatrixPath={artifacts.confusion_matrix} artifactUrl={(taskId, name) => api.modelEvaluationArtifactUrl(model.id, taskId, name)} />
