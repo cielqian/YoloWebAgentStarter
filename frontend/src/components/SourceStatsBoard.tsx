@@ -70,6 +70,8 @@ export function SourceStatsBoard() {
     {
       title: "素材类型 / 标签 / 二级取值",
       key: "name",
+      width: 320,
+      ellipsis: true,
       render: (_, row) => row.name,
     },
     {
@@ -98,7 +100,7 @@ export function SourceStatsBoard() {
         );
       },
     },
-    { title: "说明", key: "meta", width: 220, ellipsis: true, render: (_, row) => row.meta || <Typography.Text type="secondary">—</Typography.Text> },
+    { title: "说明", key: "meta", ellipsis: true, render: (_, row) => row.meta || <Typography.Text type="secondary">—</Typography.Text> },
   ];
 
   return (
