@@ -696,6 +696,7 @@ export interface SourceStatsMaterialType {
   description: string | null;
   dataset_count: number;
   image_count: number;
+  tags: SourceStatsTag[];
 }
 
 export interface SourceStats {

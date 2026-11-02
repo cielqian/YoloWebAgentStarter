@@ -125,6 +125,7 @@ class SourceStatsMaterialTypeOut(BaseModel):
     description: str | None = None
     dataset_count: int
     image_count: int
+    tags: list[SourceStatsTagOut] = Field(default_factory=list)
 
 
 class SourceStatsOut(BaseModel):

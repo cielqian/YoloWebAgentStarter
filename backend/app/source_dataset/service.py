@@ -441,17 +441,58 @@ def source_stats(session: Session) -> "SourceStatsOut":
         ).all()
     }
 
+    # 每个数据源的标签 -> 图片数/取值数(按 tag_id 聚合,便于套到任意素材类型上)
+    tags_by_dataset: dict[str, list[SourceTag]] = {}
+    for tag in tags:
+        tags_by_dataset.setdefault(tag.source_dataset_id, []).append(tag)
+
+    def _tag_breakdown(dataset_ids: list[str]) -> list:
+        """把若干数据源的标签计数按名称合并,并给出枚举取值分布。"""
+        merged: dict[str, dict] = {}
+        for dataset_id in dataset_ids:
+            for tag in tags_by_dataset.get(dataset_id, []):
+                entry = merged.setdefault(tag.name, {"color": tag.color, "image_count": 0, "values": {}})
+                entry["image_count"] += link_counts.get(tag.id, 0)
+                for (tag_id, value), count in value_counts.items():
+                    if tag_id == tag.id:
+                        entry["values"][value] = entry["values"].get(value, 0) + count
+        return [
+            {
+                "name": name,
+                "color": entry["color"],
+                "image_count": entry["image_count"],
+                "values": [
+                    {"value": value, "image_count": count}
+                    for value, count in sorted(entry["values"].items(), key=lambda pair: -pair[1])
+                ],
+            }
+            for name, entry in sorted(merged.items(), key=lambda pair: -pair[1]["image_count"])
+        ]
+
     material_types = {
-        item.name: {"description": item.description, "dataset_count": 0, "image_count": 0}
+        item.name: {"description": item.description, "dataset_count": 0, "image_count": 0, "dataset_ids": []}
         for item in library
     }
+    untyped_ids: list[str] = []
     for dataset in datasets:
-        for name in dataset.material_types or []:
+        names = dataset.material_types or []
+        if not names:
+            untyped_ids.append(dataset.id)
+        for name in names:
             entry = material_types.get(name)
             if entry is None:
                 continue
             entry["dataset_count"] += 1
             entry["image_count"] += dataset.image_count
+            entry["dataset_ids"].append(dataset.id)
+    if untyped_ids:
+        # 未设置类型的数据源单独成组,保证所有素材都能在看板上对上号
+        material_types["未设置类型"] = {
+            "description": None,
+            "dataset_count": len(untyped_ids),
+            "image_count": sum(dataset.image_count for dataset in datasets if dataset.id in set(untyped_ids)),
+            "dataset_ids": untyped_ids,
+        }
 
     tag_agg: dict[str, dict] = {}
     for tag in tags:
@@ -465,7 +506,13 @@ def source_stats(session: Session) -> "SourceStatsOut":
         total_datasets=len(datasets),
         total_images=sum(dataset.image_count for dataset in datasets),
         material_types=[
-            SourceStatsMaterialTypeOut(name=name, **entry)  # type: ignore[arg-type]
+            SourceStatsMaterialTypeOut(  # type: ignore[arg-type]
+                name=name,
+                description=entry["description"],
+                dataset_count=entry["dataset_count"],
+                image_count=entry["image_count"],
+                tags=[SourceStatsTagOut(**tag) for tag in _tag_breakdown(entry["dataset_ids"])],
+            )
             for name, entry in sorted(material_types.items(), key=lambda pair: -pair[1]["image_count"])
         ],
         tags=[

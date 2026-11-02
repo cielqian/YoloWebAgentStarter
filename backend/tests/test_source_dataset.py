@@ -487,6 +487,16 @@ def test_source_stats_board(client: TestClient) -> None:
     assert by_type["红外视频"]["image_count"] == 0
     assert by_type["红外视频"]["dataset_count"] == 0
 
+    # 层级分布:素材类型 -> 标签 -> 二级取值
+    visible_tags = {item["name"]: item for item in by_type["可见光图片"]["tags"]}
+    assert visible_tags["光线"]["image_count"] == 2
+    assert {v["value"]: v["image_count"] for v in visible_tags["光线"]["values"]} == {"强": 1, "弱": 1}
+    assert visible_tags["夜间"]["image_count"] == 1
+    assert by_type["红外视频"]["tags"] == []
+    # 未设置类型的数据源单独成组
+    assert by_type["未设置类型"]["image_count"] == 1
+    assert by_type["未设置类型"]["dataset_count"] == 1
+
     by_tag = {item["name"]: item for item in stats["tags"]}
     assert by_tag["光线"]["image_count"] == 2
     assert {v["value"]: v["image_count"] for v in by_tag["光线"]["values"]} == {"强": 1, "弱": 1}

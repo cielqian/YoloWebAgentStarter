@@ -53,14 +53,17 @@ vi.mock("../api/client", () => {
     api: {
       listSourceDatasets: vi.fn().mockResolvedValue([dataset]),
     sourceStats: vi.fn().mockResolvedValue({
-      total_datasets: 1,
-      total_images: 3,
+      total_datasets: 2,
+      total_images: 4,
       material_types: [
-        { name: "可见光图片", description: null, dataset_count: 1, image_count: 3 },
-        { name: "红外视频", description: null, dataset_count: 0, image_count: 0 },
+        { name: "可见光图片", description: null, dataset_count: 1, image_count: 3, tags: [
+          { name: "光线", color: "#3157d5", image_count: 3, values: [{ value: "晴", image_count: 2 }, { value: "阴", image_count: 1 }] },
+          { name: "白天", color: "#22c55e", image_count: 2, values: [] },
+        ] },
+        { name: "红外视频", description: null, dataset_count: 0, image_count: 0, tags: [] },
       ],
       tags: [
-        { name: "白天", color: "#3157d5", image_count: 3, values: [{ value: "晴", image_count: 2 }, { value: "阴", image_count: 1 }] },
+        { name: "光线", color: "#3157d5", image_count: 3, values: [{ value: "晴", image_count: 2 }, { value: "阴", image_count: 1 }] },
       ],
     }),
       listMaterialTypes: vi.fn().mockResolvedValue([]),
@@ -256,11 +259,13 @@ describe("数据源统计看板", () => {
 
     expect(api.sourceStats).toHaveBeenCalled();
     const text = document.body.textContent ?? "";
-    expect(text).toContain("素材类型分布");
-    expect(text).toContain("标签分布");
+    // 素材类型 → 标签 → 二级取值 三层全部默认展开
+    expect(text).toContain("素材分布");
     expect(text).toContain("可见光图片");
     expect(text).toContain("红外视频");
     expect(text).toContain("未使用");
-    expect(text).toContain("晴 · 2");
+    expect(text).toContain("光线");
+    expect(text).toContain("晴");
+    expect(text).toContain("白天");
   });
 });
