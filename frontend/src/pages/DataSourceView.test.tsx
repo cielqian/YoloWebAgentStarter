@@ -26,6 +26,8 @@ beforeAll(() => {
 });
 
 import { DataSourceView } from "./DataSourceView";
+
+vi.mock("../components/confirm", () => ({ confirmDialog: vi.fn().mockResolvedValue(true) }));
 import type { SourceImage } from "../types";
 
 vi.mock("../api/client", () => {
@@ -269,5 +271,27 @@ describe("数据源统计看板", () => {
     expect(text).toContain("白天");
     // 占比列:可见光 3/4 = 75%
     expect(text).toContain("75%");
+  });
+});
+
+
+describe("DataSourceView batch delete", () => {
+  it("deletes selected images after confirmation", async () => {
+    const { api } = await import("../api/client");
+    const { confirmDialog } = await import("../components/confirm");
+    await openDetail();
+
+    await clickButton("批量选择");
+    const card = Array.from(document.body.querySelectorAll(".source-image-card")).find((el) => el.textContent?.includes("one.png"));
+    await act(async () => { card?.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    await act(async () => {});
+
+    const del = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find((btn) => btn.textContent?.includes("删除所选 1 张"));
+    expect(del).toBeTruthy();
+    await act(async () => { del?.click(); });
+    await act(async () => {});
+
+    expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({ title: "删除选中的 1 张图片？" }));
+    expect(api.deleteSourceImage).toHaveBeenCalledWith("sd-1", "simg-1");
   });
 });

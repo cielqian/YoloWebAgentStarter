@@ -629,6 +629,15 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .canvas-toolbar .ant-input-number-input { font-size: 11px; }
 
 
+/* 标注侧栏图片多选删除 */
+.annotation-image-batch { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 8px; border: 1px solid #f0d3d1; border-radius: 8px; background: #fdf5f4; }
+.annotation-image-batch .ant-btn { font-size: 11px; }
+.annotation-image-item.batch { position: relative; }
+.annotation-image-item.batch-checked { border-color: #e89ba1; background: #fdeff0; box-shadow: inset 3px 0 #d9534f; }
+.annotation-image-check { position: absolute; z-index: 2; top: 5px; right: 5px; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: rgba(255, 255, 255, .92); box-shadow: 0 0 0 1px #d5dbe7; }
+.annotation-image-check-box { width: 9px; height: 9px; border-radius: 2px; background: transparent; }
+.annotation-image-check-box.on { background: #d9534f; }
+
 /* 数据源统计看板 */
 .source-stats-board { display: grid; gap: 0; }
 .source-stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }

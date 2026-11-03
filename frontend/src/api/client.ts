@@ -233,6 +233,8 @@ export const api = {
   },
   updateSourceImage: (datasetId: string, imageId: string, payload: { file_name?: string; tag_ids?: string[]; tag_values?: Record<string, string> }) =>
     request<SourceImagePage["items"][number]>(`/api/source-datasets/${datasetId}/images/${imageId}`, json(payload, "PATCH")),
+  deleteDatasetImage: (datasetId: string, imageId: string) =>
+    request<void>(`/api/datasets/${datasetId}/images/${imageId}`, { method: "DELETE" }),
   deleteSourceImage: (datasetId: string, imageId: string) =>
     request<void>(`/api/source-datasets/${datasetId}/images/${imageId}`, { method: "DELETE" }),
   listTagTemplates: () => request<TagTemplate[]>("/api/tag-templates"),

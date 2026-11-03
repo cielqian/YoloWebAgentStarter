@@ -23,6 +23,7 @@ import {
 } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { SourceStatsBoard } from "../components/SourceStatsBoard";
+import { confirmDialog } from "../components/confirm";
 import { api, apiUrl, type FtpSyncProgressEvent } from "../api/client";
 import type { FtpEntry, MaterialType, SourceDataset, SourceImage, SourceImagePage, SourceTag } from "../types";
 
@@ -426,6 +427,23 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
     setBatchValues({});
   };
 
+  const deleteSelected = async () => {
+    if (!selectedIds.length) return;
+    const imageIds = [...selectedIds];
+    const confirmed = await confirmDialog({
+      title: `删除选中的 ${imageIds.length} 张图片？`,
+      description: "图片文件及其标签关联会从素材集永久删除，不可恢复。",
+      confirmLabel: `确认删除 ${imageIds.length} 张`,
+      danger: true,
+    });
+    if (!confirmed) return;
+    await runAction(async () => {
+      for (const id of imageIds) await api.deleteSourceImage(dataset.id, id);
+      setSelectedIds([]);
+      return `已删除 ${imageIds.length} 张图片`;
+    });
+  };
+
   const exitSelectMode = () => {
     setSelectMode(false);
     setSelectedIds([]);
@@ -613,6 +631,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
             <strong>已选 {selectedIds.length} 张</strong>
             <button className="button" disabled={busy || !items.length} onClick={selectAllPage}>全选本页</button>
             <button className="button" disabled={busy || !selectedIds.length} onClick={() => setSelectedIds([])}>清空选择</button>
+            <button className="button danger" disabled={busy || !selectedIds.length} onClick={() => void deleteSelected()}>删除所选 {selectedIds.length || ""} 张</button>
             <div className="source-batch-mode" role="group" aria-label="批量操作模式">
               <button className={batchMode === "add" ? "active" : ""} onClick={() => { setBatchMode("add"); setBatchPickedTagIds([]); setBatchValues({}); }}>关联标签</button>
               <button className={batchMode === "remove" ? "active" : ""} onClick={() => { setBatchMode("remove"); setBatchPickedTagIds([]); setBatchValues({}); }}>取消关联</button>
@@ -671,7 +690,7 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
                   width="100%"
                   height={140}
                   style={{ objectFit: "cover" }}
-                  preview={{ src: apiUrl(image.file_url) }}
+                  preview={selectMode ? false : { src: apiUrl(image.file_url) }}
                 />
                 <span className="source-image-name">{image.file_name}</span>
                 <span className="source-image-meta">

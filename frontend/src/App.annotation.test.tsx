@@ -18,6 +18,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {afterEach, beforeEach, describe, expect, it, vi, beforeAll} from "vitest";
 import { AnnotationView } from "./App";
+
+vi.mock("./components/confirm", () => ({ confirmDialog: vi.fn().mockResolvedValue(true), ConfirmProvider: () => null }));
 import type { Annotation, ClassLabel, Dataset, ImageItem } from "./types";
 
 vi.mock("./annotation/AnnotationCanvas", () => ({
@@ -342,5 +344,38 @@ describe("AnnotationView persistence", () => {
     act(() => save?.click());
 
     expect(onSave).toHaveBeenCalledWith([{ id: "ann-1", class_id: personClass.id, type: "obb", obb: { cx: 45, cy: 35, width: 30, height: 20, angle: 20 }, source: "manual" }]);
+  });
+});
+
+
+describe("AnnotationView image batch delete", () => {
+  it("multi-selects images and deletes them after confirmation", async () => {
+    const onDeleteImages = vi.fn().mockResolvedValue(true);
+    act(() => {
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 2 }} image={image} images={[image, secondImage]} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} onDeleteImages={onDeleteImages} />);
+    });
+    await act(async () => {});
+
+    const items = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>(".annotation-image-item"));
+    expect(items().length).toBe(2);
+
+    const batchToggle = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find((btn) => btn.textContent === "多选");
+    act(() => { batchToggle?.click(); });
+
+    // 多选模式下点两张图片 = 勾选,不切换图片
+    act(() => { items()[0]?.click(); });
+    act(() => { items()[1]?.click(); });
+    expect(document.body.querySelectorAll(".annotation-image-item.batch-checked").length).toBe(2);
+
+    const del = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find((btn) => btn.textContent?.includes("删除所选 2 张"));
+    expect(del).toBeTruthy();
+    await act(async () => { del?.click(); });
+
+    const { confirmDialog } = await import("./components/confirm");
+    expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({ title: "删除选中的 2 张图片？" }));
+    expect(onDeleteImages).toHaveBeenCalledWith([image.id, secondImage.id]);
+    // 删除成功后退出多选
+    await act(async () => {});
+    expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).some((btn) => btn.textContent === "多选")).toBe(true);
   });
 });
