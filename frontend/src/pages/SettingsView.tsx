@@ -154,19 +154,18 @@ const copy = {
     webhookNav: "Webhook 通知",
     webhookNavDescription: "训练启动 / 结束 / 异常回调",
     webhookTitle: "Webhook 通知",
-    webhookSubtitle: "训练任务启动、完成、异常（及手动停止）时，向下方地址发送 HTTP 通知：POST 使用事件模板，GET 携带查询参数。配置保存在 settings.json。",
+    webhookSubtitle: "训练任务启动、结束（完成或手动停止）、异常时，向下方地址发送 HTTP 通知：POST 使用事件模板，GET 携带查询参数。配置保存在 settings.json。",
     webhookEnabled: "启用 Webhook 通知",
     webhookEnabledHint: "关闭后不发送任何通知。",
     webhookUrl: "通知地址",
     webhookUrlHint: "以 http:// 或 https:// 开头，例如 https://example.com/hook。",
     webhookMethod: "请求方法",
-    webhookEventTemplate: "事件模板（启动 / 完成 / 异常 / 停止）",
+    webhookEventTemplate: "事件模板（启动 / 完成 / 异常）",
     webhookEventTemplateHint: "每个事件已预置完整模板，可直接修改后保存；清空并保存即恢复预置。可用占位符：{title} 标题、{task_name} 任务名称、{status} 状态、{model} 模型、{dataset} 数据集、{dataset_version} 数据集版本、{duration} 耗时、{metrics} 关键指标、{error_message} 错误信息、{task_id} 任务ID、{progress_percent} 进度。",
     webhookEvents: "通知事件",
     eventStarted: "训练启动",
-    eventCompleted: "训练完成",
+    eventCompleted: "训练结束",
     eventFailed: "训练失败",
-    eventStopped: "训练停止",
     webhookTest: "发送测试",
     webhookTesting: "发送中…",
     saveWebhook: "保存 Webhook 设置",
@@ -321,7 +320,7 @@ const copy = {
     webhookEventTemplateHint: "Each event ships with a complete preset template; edit and save, or clear to restore the preset. Placeholders: {title} {task_name} {status} {model} {dataset} {dataset_version} {duration} {metrics} {error_message} {task_id} {progress_percent}.",
     webhookEvents: "Events",
     eventStarted: "Training started",
-    eventCompleted: "Training completed",
+    eventCompleted: "Training finished",
     eventFailed: "Training failed",
     eventStopped: "Training stopped",
     webhookTest: "Send test",
@@ -1131,14 +1130,14 @@ function NodesPanel({ kind, text }: { kind: "training" | "om"; text: SettingsTex
 }
 
 const WEBHOOK_METHODS: WebhookMethod[] = ["POST", "GET"];
-const WEBHOOK_EVENT_ITEMS: WebhookEvent[] = ["started", "completed", "failed", "stopped"];
+// 三个事件:启动 / 完成(含手动停止) / 异常
+const WEBHOOK_EVENT_ITEMS: WebhookEvent[] = ["started", "completed", "failed"];
 
 function webhookEventLabel(text: SettingsText, event: WebhookEvent): string {
   switch (event) {
     case "started": return text.eventStarted;
     case "completed": return text.eventCompleted;
     case "failed": return text.eventFailed;
-    case "stopped": return text.eventStopped;
   }
 }
 
@@ -1146,7 +1145,6 @@ const EVENT_TEMPLATE_PLACEHOLDERS: Record<WebhookEvent, string> = {
   started: '{"msgtype":"text","text":{"content":"🚀 训练启动：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n模型：{model}"}}',
   completed: '{"msgtype":"text","text":{"content":"✅ 训练完成：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n指标：{metrics}\\n耗时：{duration}"}}',
   failed: '{"msgtype":"text","text":{"content":"❌ 训练异常：{task_name}\\n错误：{error_message}"}}',
-  stopped: '{"msgtype":"text","text":{"content":"⏹️ 训练已停止：{task_name}\\n耗时：{duration}"}}',
 };
 
 function WebhookSettingsPanel({ text }: { text: SettingsText }) {
@@ -1155,7 +1153,7 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
     url: "",
     method: "POST",
     events: ["started", "completed", "failed"],
-    body_templates: { started: "", completed: "", failed: "", stopped: "" },
+    body_templates: { started: "", completed: "", failed: "" },
   });
   const [busy, setBusy] = useState(true);
   const [saving, setSaving] = useState(false);

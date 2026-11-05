@@ -154,20 +154,15 @@ class TrainingNodeTestResult(BaseModel):
 
 
 WebhookMethod = Literal["GET", "POST"]
-WebhookEvent = Literal["started", "completed", "failed", "stopped"]
+WebhookEvent = Literal["started", "completed", "failed"]
 
-WEBHOOK_EVENTS: tuple[WebhookEvent, ...] = ("started", "completed", "failed", "stopped")
-# 默认订阅的核心事件:启动 / 完成 / 异常(stopped 仍可手动勾选)。
+WEBHOOK_EVENTS: tuple[WebhookEvent, ...] = ("started", "completed", "failed")
+# 三个事件:启动 / 完成(含手动停止) / 异常;默认全部订阅。
 DEFAULT_WEBHOOK_EVENTS: tuple[WebhookEvent, ...] = ("started", "completed", "failed")
 
 # 每个事件预置的完整请求体模板(企业微信文本消息格式);留空即使用对应预置。
 DEFAULT_EVENT_TEMPLATES: dict[str, str] = {
-    'started': '{"msgtype":"text","text":{"content":"🚀 训练启动：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n模型：{model}\\n任务ID：{task_id}"}}',
-    'completed': '{"msgtype":"text","text":{"content":"✅ 训练完成：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n模型：{model}\\n指标：{metrics}\\n耗时：{duration}\\n任务ID：{task_id}"}}',
-    'failed': '{"msgtype":"text","text":{"content":"❌ 训练异常：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n模型：{model}\\n耗时：{duration}\\n错误：{error_message}\\n任务ID：{task_id}"}}',
-    'stopped': '{"msgtype":"text","text":{"content":"⏹️ 训练已停止：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n耗时：{duration}\\n任务ID：{task_id}"}}',
-}
-
+    'started': '{"msgtype":"text","text":{"content":"🚀 训练启动：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n模型：{model}\\n任务ID：{task_id}"}}',    'completed': '{"msgtype":"text","text":{"content":"✅ 训练结束：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n模型：{model}\\n状态：{status}\\n指标：{metrics}\\n耗时：{duration}\\n任务ID：{task_id}"}}',    'failed': '{"msgtype":"text","text":{"content":"❌ 训练异常：{task_name}\\n数据集：{dataset}（{dataset_version}）\\n模型：{model}\\n耗时：{duration}\\n错误：{error_message}\\n任务ID：{task_id}"}}',}
 
 class WebhookSettingsOut(BaseModel):
     enabled: bool = False

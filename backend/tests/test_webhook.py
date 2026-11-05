@@ -59,7 +59,7 @@ def test_webhook_settings_roundtrip(client: TestClient):
         "url": "",
         "method": "POST",
         "events": ["started", "completed", "failed"],
-        "body_templates": {e: DEFAULT_EVENT_TEMPLATES[e] for e in ("started", "completed", "failed", "stopped")},
+        "body_templates": {e: DEFAULT_EVENT_TEMPLATES[e] for e in ("started", "completed", "failed")},
     }
 
     updated = client.put(
@@ -84,7 +84,6 @@ def test_webhook_settings_roundtrip(client: TestClient):
             "started": DEFAULT_EVENT_TEMPLATES["started"],
             "completed": DEFAULT_EVENT_TEMPLATES["completed"],
             "failed": "err {error_message}",
-            "stopped": DEFAULT_EVENT_TEMPLATES["stopped"],
         },
     }
 

@@ -23,14 +23,14 @@ EVENT_BY_STATUS = {
     "running": "started",
     "completed": "completed",
     "failed": "failed",
-    "stopped": "stopped",
+    # 停止并入完成事件:同一开关、同一模板,模板里用 {status} 区分“已完成/已停止”。
+    "stopped": "completed",
 }
 
 EVENT_LABELS = {
     "started": "🚀 训练启动",
     "completed": "✅ 训练成功完成",
     "failed": "❌ 训练异常退出",
-    "stopped": "⏹️ 训练已停止",
     "test": "🔔 Webhook 测试",
 }
 STATUS_LABELS = {

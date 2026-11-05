@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS: WebhookSettings = {
   url: "http://hook.test/notify",
   method: "POST",
   events: ["started", "completed", "failed"],
-  body_templates: { started: PRESET_STARTED, completed: '{"msgtype":"text","text":{"content":"✅ 训练完成：{task_name}"}}', failed: "err {error_message}", stopped: "" },
+  body_templates: { started: PRESET_STARTED, completed: '{"msgtype":"text","text":{"content":"✅ 训练结束：{task_name}"}}', failed: "err {error_message}" },
 };
 
 let root: Root | undefined;
@@ -95,15 +95,14 @@ describe("SettingsView webhook 按事件模板", () => {
     const genericLabel = Array.from(container!.querySelectorAll("label")).find((el) => el.textContent?.includes("通用请求体模板"));
     expect(genericLabel).toBeUndefined();
     expect(textareaByLabel("训练启动").value).toContain("🚀 训练启动：{task_name}");
-    expect(textareaByLabel("训练完成").value).toContain("✅ 训练完成");
+    expect(textareaByLabel("训练结束").value).toContain("✅ 训练结束");
     expect(textareaByLabel("训练失败").value).toBe("err {error_message}");
-    expect(textareaByLabel("训练停止").value).toBe("");
-    // 启动/完成/异常 三态默认选中,停止默认不选
+    // 只剩 启动/完成/异常 三个事件,默认全选;停止并入完成
+    expect(Array.from(container!.querySelectorAll("label")).some((el) => (el.textContent ?? "").includes("训练停止"))).toBe(false);
     const checked = Array.from(container!.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked")).map((el) => el.closest("label")?.textContent ?? "");
     expect(checked.some((t) => t.includes("训练启动"))).toBe(true);
-    expect(checked.some((t) => t.includes("训练完成"))).toBe(true);
+    expect(checked.some((t) => t.includes("训练结束"))).toBe(true);
     expect(checked.some((t) => t.includes("训练失败"))).toBe(true);
-    expect(checked.some((t) => t.includes("训练停止"))).toBe(false);
   });
 
   it("编辑事件模板后保存提交 body_templates", async () => {

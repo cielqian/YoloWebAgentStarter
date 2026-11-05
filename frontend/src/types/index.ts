@@ -235,7 +235,7 @@ export interface LLMConnectionTestResult {
 }
 
 export type WebhookMethod = "GET" | "POST";
-export type WebhookEvent = "started" | "completed" | "failed" | "stopped";
+export type WebhookEvent = "started" | "completed" | "failed";
 
 /** Webhook settings persisted in settings.json; fires on training lifecycle events. */
 export interface WebhookSettings {
