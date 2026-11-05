@@ -16,6 +16,8 @@ from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.ids import new_id
 from app.settings.schemas import (
+    DEFAULT_EVENT_TEMPLATES,
+    DEFAULT_WEBHOOK_EVENTS,
     FtpSettingsInternal,
     FtpSettingsOut,
     FtpSettingsUpdate,
@@ -371,7 +373,7 @@ class SettingsService:
         section = self._read().get("webhook", {})
         if not isinstance(section, dict):
             section = {}
-        raw_events = section.get("events", WEBHOOK_EVENTS)
+        raw_events = section.get("events", DEFAULT_WEBHOOK_EVENTS)
         events = [item for item in WEBHOOK_EVENTS if item in raw_events]
         method = str(section.get("method", "POST")).upper()
         raw_templates = section.get("body_templates", {})
@@ -381,9 +383,10 @@ class SettingsService:
             url=str(section.get("url", "")).strip(),
             method=method if method in ("GET", "POST") else "POST",
             events=events,
-            body_template=str(section.get("body_template", "")),
+            # 空模板回填预置的完整模板:开箱即用,清空即恢复默认。
             body_templates={
-                event: str(templates.get(event, "") or "") for event in WEBHOOK_EVENTS
+                event: str(templates.get(event, "") or "").strip() or DEFAULT_EVENT_TEMPLATES.get(event, "")
+                for event in WEBHOOK_EVENTS
             },
         )
 
@@ -400,8 +403,10 @@ class SettingsService:
             "url": url,
             "method": payload.method,
             "events": events,
-            "body_template": payload.body_template.strip(),
-            "body_templates": payload.body_templates,
+            "body_templates": {
+                event: str(payload.body_templates.get(event, "") or "").strip()
+                for event in WEBHOOK_EVENTS
+            },
         }
         self._write(data)
         return self.get_webhook_settings()

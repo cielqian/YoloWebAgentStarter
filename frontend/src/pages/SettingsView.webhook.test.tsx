@@ -34,13 +34,13 @@ vi.mock("../api/client", () => ({
   apiUrl: (path: string) => path,
 }));
 
+const PRESET_STARTED = '{"msgtype":"text","text":{"content":"🚀 训练启动：{task_name}\n数据集：{dataset}"}}';
 const DEFAULT_SETTINGS: WebhookSettings = {
   enabled: true,
   url: "http://hook.test/notify",
   method: "POST",
-  events: ["started", "completed", "failed", "stopped"],
-  body_template: "generic {title}",
-  body_templates: { started: "", completed: "", failed: "err {error_message}", stopped: "" },
+  events: ["started", "completed", "failed"],
+  body_templates: { started: PRESET_STARTED, completed: '{"msgtype":"text","text":{"content":"✅ 训练完成：{task_name}"}}', failed: "err {error_message}", stopped: "" },
 };
 
 let root: Root | undefined;
@@ -86,18 +86,24 @@ function clickSave() {
 }
 
 describe("SettingsView webhook 按事件模板", () => {
-  it("渲染通用模板与四类事件模板，并回显已保存的事件模板", async () => {
+    it("渲染四类事件模板(预置完整模板回显),不再有通用模板", async () => {
     await act(async () => {
-      root?.render(<SettingsView tab="webhook" locale="zh" onLocaleChange={() => undefined} onTabChange={() => undefined} />);
+      root?.render(<SettingsView tab="webhook" locale="zh" onTabChange={() => undefined} onLocaleChange={() => undefined} />);
     });
     await act(async () => {});
 
-    expect(textareaByLabel("通用请求体模板").value).toBe("generic {title}");
-    expect(textareaByLabel("训练启动").value).toBe("");
-    expect(textareaByLabel("训练启动").placeholder).toContain("{task_name}");
-    expect(textareaByLabel("训练完成").placeholder).toContain("{dataset_version}");
+    const genericLabel = Array.from(container!.querySelectorAll("label")).find((el) => el.textContent?.includes("通用请求体模板"));
+    expect(genericLabel).toBeUndefined();
+    expect(textareaByLabel("训练启动").value).toContain("🚀 训练启动：{task_name}");
+    expect(textareaByLabel("训练完成").value).toContain("✅ 训练完成");
     expect(textareaByLabel("训练失败").value).toBe("err {error_message}");
-    expect(textareaByLabel("训练停止").placeholder).toContain("{duration}");
+    expect(textareaByLabel("训练停止").value).toBe("");
+    // 启动/完成/异常 三态默认选中,停止默认不选
+    const checked = Array.from(container!.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked")).map((el) => el.closest("label")?.textContent ?? "");
+    expect(checked.some((t) => t.includes("训练启动"))).toBe(true);
+    expect(checked.some((t) => t.includes("训练完成"))).toBe(true);
+    expect(checked.some((t) => t.includes("训练失败"))).toBe(true);
+    expect(checked.some((t) => t.includes("训练停止"))).toBe(false);
   });
 
   it("编辑事件模板后保存提交 body_templates", async () => {

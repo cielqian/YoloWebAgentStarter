@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings
 from app.core.models import Dataset, TrainingTask
 from app.main import create_app
-from app.settings.schemas import WebhookSettingsOut, WebhookSettingsUpdate
+from app.settings.schemas import DEFAULT_EVENT_TEMPLATES, WebhookSettingsOut, WebhookSettingsUpdate
 from app.settings.service import SettingsService
 from app.training import webhooks
 from app.training.webhooks import TrainingWebhookNotifier, deliver_webhook
@@ -58,9 +58,8 @@ def test_webhook_settings_roundtrip(client: TestClient):
         "enabled": False,
         "url": "",
         "method": "POST",
-        "events": ["started", "completed", "failed", "stopped"],
-        "body_template": "",
-        "body_templates": {"started": "", "completed": "", "failed": "", "stopped": ""},
+        "events": ["started", "completed", "failed"],
+        "body_templates": {e: DEFAULT_EVENT_TEMPLATES[e] for e in ("started", "completed", "failed", "stopped")},
     }
 
     updated = client.put(
@@ -70,7 +69,6 @@ def test_webhook_settings_roundtrip(client: TestClient):
             "url": "http://127.0.0.1:9000/hook ",
             "method": "GET",
             "events": ["failed", "started"],
-            "body_template": '{"msg": "{title}"}',
             "body_templates": {"failed": "err {error_message}", "bogus": "ignored"},
         },
     )
@@ -81,8 +79,13 @@ def test_webhook_settings_roundtrip(client: TestClient):
         "url": "http://127.0.0.1:9000/hook",
         "method": "GET",
         "events": ["started", "failed"],
-        "body_template": '{"msg": "{title}"}',
-        "body_templates": {"started": "", "completed": "", "failed": "err {error_message}", "stopped": ""},
+        # 未填写的事件回填预置完整模板;自定义的保留
+        "body_templates": {
+            "started": DEFAULT_EVENT_TEMPLATES["started"],
+            "completed": DEFAULT_EVENT_TEMPLATES["completed"],
+            "failed": "err {error_message}",
+            "stopped": DEFAULT_EVENT_TEMPLATES["stopped"],
+        },
     }
 
     assert client.get("/api/settings/webhook").json() == body
@@ -126,13 +129,14 @@ def test_deliver_webhook_post_sends_json_body():
     config = WebhookSettingsOut(enabled=True, url="http://hook.test/notify", method="POST")
     result = deliver_webhook(config, "failed", {"id": "train-1", "name": "叶片检测训练", "status": "failed"}, transport=httpx.MockTransport(handler))
 
+    # 未配置模板时按预置完整模板投递(企业微信文本消息 JSON,占位符已渲染)
     assert result.ok is True
     assert result.code == "ok"
     assert captured["method"] == "POST"
     assert captured["url"] == "http://hook.test/notify"
-    assert captured["body"]["event"] == "failed"
-    assert captured["body"]["task"]["id"] == "train-1"
-    assert captured["body"]["occurred_at"]
+    assert captured["body"]["msgtype"] == "text"
+    assert "❌ 训练异常：叶片检测训练" in captured["body"]["text"]["content"]
+    assert "{task_name}" not in captured["body"]["text"]["content"]
 
 
 def test_deliver_webhook_get_sends_query_params():
@@ -208,7 +212,7 @@ def test_deliver_webhook_post_renders_body_template():
         enabled=True,
         url="http://hook.test/notify",
         method="POST",
-        body_template='{"title":"{title}","status":"{status}","model":"{model}","dataset":"{dataset}","duration":"{duration}"}',
+        body_templates={"completed": '{"title":"{title}","status":"{status}","model":"{model}","dataset":"{dataset}","duration":"{duration}"}'},
     )
     payload = {
         "id": "train-1",
@@ -243,7 +247,6 @@ def test_deliver_webhook_prefers_event_template_and_renders_new_placeholders():
         enabled=True,
         url="http://hook.test/notify",
         method="POST",
-        body_template="generic",
         body_templates={"started": "🚀 {task_name} · {dataset} · {dataset_version}", "failed": "  "},
     )
     payload = {
@@ -262,7 +265,8 @@ def test_deliver_webhook_prefers_event_template_and_renders_new_placeholders():
     assert captured["body"] == "🚀 叶片检测训练 · 叶片数据集 · 跟随数据集"
 
     deliver_webhook(config, "failed", payload, transport=httpx.MockTransport(handler))
-    assert captured["body"] == "generic"
+    # 留空的事件模板回退到预置完整模板
+    assert "❌ 训练异常" in captured["body"] and "{error_message}" not in captured["body"]
 
 
 def test_deliver_webhook_template_text_body_uses_plain_content_type():
@@ -277,7 +281,7 @@ def test_deliver_webhook_template_text_body_uses_plain_content_type():
         enabled=True,
         url="http://hook.test/notify",
         method="POST",
-        body_template="{title} | {status} | {duration}",
+        body_templates={"failed": "{title} | {status} | {duration}"},
     )
     result = deliver_webhook(
         config, "failed", {"name": "冒烟", "status": "failed", "error_message": "boom"}, transport=httpx.MockTransport(handler)
@@ -296,7 +300,7 @@ def test_deliver_webhook_logs_body_on_rejection(caplog):
         enabled=True,
         url="http://hook.test/notify",
         method="POST",
-        body_template='{"msg_type":"text","content":{"text":"{title} · {duration}"}}',
+        body_templates={"completed": '{"msg_type":"text","content":{"text":"{title} · {duration}"}}'},
     )
     result = deliver_webhook(
         config,

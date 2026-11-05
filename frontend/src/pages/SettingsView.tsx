@@ -154,17 +154,14 @@ const copy = {
     webhookNav: "Webhook 通知",
     webhookNavDescription: "训练启动 / 结束 / 异常回调",
     webhookTitle: "Webhook 通知",
-    webhookSubtitle: "训练任务启动、完成、失败或停止时，向下方地址发送 HTTP 通知：POST 可自定义请求体模板，GET 携带查询参数。配置保存在 settings.json。",
+    webhookSubtitle: "训练任务启动、完成、异常（及手动停止）时，向下方地址发送 HTTP 通知：POST 使用事件模板，GET 携带查询参数。配置保存在 settings.json。",
     webhookEnabled: "启用 Webhook 通知",
     webhookEnabledHint: "关闭后不发送任何通知。",
     webhookUrl: "通知地址",
     webhookUrlHint: "以 http:// 或 https:// 开头，例如 https://example.com/hook。",
     webhookMethod: "请求方法",
-    webhookBody: "通用请求体模板（仅 POST 生效，留空发送默认 JSON）",
-    webhookBodyHint: "可用占位符：{title} 标题、{task_name}/{name} 任务名称、{status} 状态、{model} 模型名、{dataset} 数据集、{dataset_version} 数据集版本、{duration} 训练耗时、{metrics} 关键指标(mAP50/mAP50-95/P/R)；另有 {event}、{task_id}、{error_message}、{progress_percent}。",
-    webhookEventTemplate: "按事件模板",
-    webhookEventTemplateHint: "为不同事件定制内容，留空使用上方通用模板。",
-    webhookEventTemplateFallback: "留空使用通用模板",
+    webhookEventTemplate: "事件模板（启动 / 完成 / 异常 / 停止）",
+    webhookEventTemplateHint: "每个事件已预置完整模板，可直接修改后保存；清空并保存即恢复预置。可用占位符：{title} 标题、{task_name} 任务名称、{status} 状态、{model} 模型、{dataset} 数据集、{dataset_version} 数据集版本、{duration} 耗时、{metrics} 关键指标、{error_message} 错误信息、{task_id} 任务ID、{progress_percent} 进度。",
     webhookEvents: "通知事件",
     eventStarted: "训练启动",
     eventCompleted: "训练完成",
@@ -320,11 +317,8 @@ const copy = {
     webhookUrl: "Notification URL",
     webhookUrlHint: "Must start with http:// or https://, e.g. https://example.com/hook.",
     webhookMethod: "HTTP method",
-    webhookBody: "Shared body template (POST only; empty sends default JSON)",
-    webhookBodyHint: "Placeholders: {title}, {task_name}/{name}, {status}, {model}, {dataset}, {dataset_version}, {duration}, {metrics} key metrics (mAP50/mAP50-95/P/R); also {event}, {task_id}, {error_message}, {progress_percent}.",
-    webhookEventTemplate: "Per-event templates",
-    webhookEventTemplateHint: "Customise the message per event; empty falls back to the shared template above.",
-    webhookEventTemplateFallback: "Empty = shared template",
+    webhookEventTemplate: "Event templates",
+    webhookEventTemplateHint: "Each event ships with a complete preset template; edit and save, or clear to restore the preset. Placeholders: {title} {task_name} {status} {model} {dataset} {dataset_version} {duration} {metrics} {error_message} {task_id} {progress_percent}.",
     webhookEvents: "Events",
     eventStarted: "Training started",
     eventCompleted: "Training completed",
@@ -1160,8 +1154,7 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
     enabled: false,
     url: "",
     method: "POST",
-    events: [...WEBHOOK_EVENT_ITEMS],
-    body_template: "",
+    events: ["started", "completed", "failed"],
     body_templates: { started: "", completed: "", failed: "", stopped: "" },
   });
   const [busy, setBusy] = useState(true);
@@ -1253,16 +1246,6 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
             onChange={(method) => setForm({ ...form, method: method as WebhookMethod })}
           />
         </label>
-        <label className="settings-span-2">
-          <span>{text.webhookBody}</span>
-          <AntdInput.TextArea
-            rows={4}
-            value={form.body_template}
-            placeholder={'{"msgtype":"text","text":{"content":"{title}\n状态：{status}\n模型：{model}\n数据集：{dataset}（{dataset_version}）\n指标：{metrics}\n耗时：{duration}"}}'}
-            onChange={(event) => setForm({ ...form, body_template: event.target.value })}
-          />
-          <small>{text.webhookBodyHint}</small>
-        </label>
         <div className="settings-span-2 settings-webhook-events-head">
           <span>{text.webhookEventTemplate}</span>
           <small>{text.webhookEventTemplateHint}</small>
@@ -1279,7 +1262,6 @@ function WebhookSettingsPanel({ text }: { text: SettingsText }) {
                 body_templates: { ...form.body_templates, [event]: input.target.value },
               })}
             />
-            <small>{text.webhookEventTemplateFallback}</small>
           </label>
         ))}
         <div className="settings-span-2">

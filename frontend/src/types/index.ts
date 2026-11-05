@@ -243,7 +243,6 @@ export interface WebhookSettings {
   url: string;
   method: WebhookMethod;
   events: WebhookEvent[];
-  body_template: string;
   body_templates: Record<WebhookEvent, string>;
 }
 

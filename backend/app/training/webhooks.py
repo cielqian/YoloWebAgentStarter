@@ -11,7 +11,7 @@ import httpx
 from app.core.config import Settings
 from app.core.models import TrainingTask
 from app.core.time import utc_now
-from app.settings.schemas import WebhookDeliveryResult, WebhookSettingsOut
+from app.settings.schemas import DEFAULT_EVENT_TEMPLATES, WebhookDeliveryResult, WebhookSettingsOut
 from app.settings.service import SettingsService
 
 logger = logging.getLogger("ywa")
@@ -157,9 +157,9 @@ def task_payload(task: TrainingTask) -> dict[str, Any]:
 
 
 def select_body_template(config: WebhookSettingsOut, event: str) -> str:
-    """事件专属模板优先，留空回退通用模板。"""
+    """事件专属模板优先；留空使用该事件的预置完整模板。"""
     per_event = (config.body_templates or {}).get(event, "")
-    return per_event.strip() or config.body_template.strip()
+    return per_event.strip() or DEFAULT_EVENT_TEMPLATES.get(event, "")
 
 
 def deliver_webhook(
