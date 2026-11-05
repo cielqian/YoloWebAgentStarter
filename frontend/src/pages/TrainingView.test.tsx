@@ -172,3 +172,18 @@ describe("TrainingView list-first workspace", () => {
     expect(container?.textContent).toContain(segment.name);
   });
 });
+
+describe("开始训练按钮与表单的关联", () => {
+  it("rail 的提交按钮 form 属性指向真实存在的表单", async () => {
+    await act(async () => { root?.render(<TrainingView datasets={[detect]} onDatasetChange={vi.fn()} />); });
+    await act(async () => {});
+    const create = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent === "新建训练");
+    await act(async () => { create?.click(); });
+    await act(async () => {});
+    const start = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.includes("开始训练"));
+    expect(start, "开始训练按钮应存在").toBeTruthy();
+    const formId = start?.getAttribute("form");
+    expect(formId, "按钮应通过 form 属性关联表单").toBeTruthy();
+    expect(document.getElementById(formId ?? ""), "关联的表单必须真实存在,否则点击无任何反应").toBeTruthy();
+  });
+});

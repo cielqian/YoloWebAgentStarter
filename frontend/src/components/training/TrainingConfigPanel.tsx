@@ -86,7 +86,7 @@ export function TrainingConfigPanel({
         </Flex>
       )}
 
-      <form onSubmit={onSubmit}>
+      <form id="dataset-training-ws-form" onSubmit={onSubmit}>
         {/* 数据集选择 */}
         <Card size="small" title="数据集" style={{ marginBottom: 16 }}>
           <Flex gap={12} wrap style={{ marginBottom: 12 }}>
