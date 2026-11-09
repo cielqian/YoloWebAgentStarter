@@ -72,6 +72,8 @@ export interface TagTemplate {
   color: string;
   values?: string[] | null;
   description?: string | null;
+  /** 关联的素材类型名称(多选);数据源只同步与其素材类型匹配的标签 */
+  material_types?: string[] | null;
   created_at: string;
   updated_at: string;
 }

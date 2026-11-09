@@ -238,9 +238,9 @@ export const api = {
   deleteSourceImage: (datasetId: string, imageId: string) =>
     request<void>(`/api/source-datasets/${datasetId}/images/${imageId}`, { method: "DELETE" }),
   listTagTemplates: () => request<TagTemplate[]>("/api/tag-templates"),
-  createTagTemplate: (payload: { name: string; color: string; values?: string[] | null; description?: string | null }) =>
+  createTagTemplate: (payload: { name: string; color: string; values?: string[] | null; description?: string | null; material_types?: string[] | null }) =>
     request<TagTemplate>("/api/tag-templates", json(payload)),
-  updateTagTemplate: (id: string, payload: { name?: string; color?: string; values?: string[] | null; description?: string | null }) =>
+  updateTagTemplate: (id: string, payload: { name?: string; color?: string; values?: string[] | null; description?: string | null; material_types?: string[] | null }) =>
     request<TagTemplate>(`/api/tag-templates/${id}`, json(payload, "PATCH")),
   deleteTagTemplate: (id: string) => request<void>(`/api/tag-templates/${id}`, { method: "DELETE" }),
   syncTagTemplates: (datasetId: string) => request<TagTemplate[]>(`/api/tag-templates/sync/${datasetId}`, json({})),

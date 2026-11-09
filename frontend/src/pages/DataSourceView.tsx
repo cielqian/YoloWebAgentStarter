@@ -315,6 +315,8 @@ function DataSourceDetail({ dataset, onChanged, onBack }: { dataset: SourceDatas
   const loadDetail = async (options: { quiet?: boolean } = {}) => {
     if (!options.quiet) setLoading(true);
     try {
+      // 标签库按数据源素材类型过滤后同步进来(只加载匹配的标签)
+      await api.syncTagTemplates(dataset.id).catch(() => undefined);
       const [nextTags, nextPage] = await Promise.all([
         api.listSourceTags(dataset.id),
         api.listSourceImages(dataset.id, { offset: pageIndex * PAGE_SIZE, limit: PAGE_SIZE, tagIds: tagFilter.length ? tagFilter : undefined, tagValues: tagValueFilter, tagMatch, query: query || undefined }),

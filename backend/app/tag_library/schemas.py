@@ -10,6 +10,8 @@ class TagTemplateCreate(BaseModel):
     color: str = Field(default="#3157d5", pattern=r"^#[0-9a-fA-F]{6}$")
     values: list[str] | None = Field(default=None, max_length=32)
     description: str | None = Field(default=None, max_length=2000)
+    # 关联的素材类型名称(多选);需存在于素材类型库
+    material_types: list[str] | None = Field(default=None, max_length=32)
 
     @field_validator("name")
     @classmethod
@@ -35,6 +37,7 @@ class TagTemplateUpdate(BaseModel):
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     values: list[str] | None = Field(default=None, max_length=32)
     description: str | None = Field(default=None, max_length=2000)
+    material_types: list[str] | None = Field(default=None, max_length=32)
 
     @field_validator("name")
     @classmethod
@@ -65,5 +68,6 @@ class TagTemplateOut(BaseModel):
     color: str
     values: list[str] | None = None
     description: str | None = None
+    material_types: list[str] | None = None
     created_at: datetime
     updated_at: datetime

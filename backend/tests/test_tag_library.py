@@ -2,7 +2,8 @@ from __future__ import annotations
 
 
 def test_tag_template_crud_and_sync(client):
-    created = client.post("/api/tag-templates", json={"name": "光线", "color": "#f59e0b", "values": ["强", "弱"]})
+    client.post("/api/material-types", json={"name": "可见光"})
+    created = client.post("/api/tag-templates", json={"name": "光线", "color": "#f59e0b", "values": ["强", "弱"], "material_types": ["可见光"]})
     assert created.status_code == 201, created.text
     template = created.json()
     assert template["values"] == ["强", "弱"]
@@ -18,7 +19,7 @@ def test_tag_template_crud_and_sync(client):
     assert [item["name"] for item in listed] == ["光线"]
 
     # 同步到数据源:创建同名枚举标签
-    dataset = client.post("/api/source-datasets", json={"name": "tag-lib-src"}).json()
+    dataset = client.post("/api/source-datasets", json={"name": "tag-lib-src", "material_types": ["可见光"]}).json()
     synced = client.post(f"/api/tag-templates/sync/{dataset['id']}")
     assert synced.status_code == 200
     tags = client.get(f"/api/source-datasets/{dataset['id']}/tags").json()
@@ -80,3 +81,33 @@ def test_material_type_crud_and_source_dataset_attribute(client):
 
     assert client.delete(f"/api/material-types/{visible['id']}").status_code == 204
     assert client.get("/api/material-types").json() == []
+
+
+def test_tag_sync_filters_by_material_types(client):
+    """数据源只加载与其素材类型匹配的标签;未关联类型的标签不同步。"""
+    client.post("/api/material-types", json={"name": "叶片"})
+    client.post("/api/material-types", json={"name": "红外"})
+    client.post("/api/tag-templates", json={"name": "叶标签", "color": "#f59e0b", "material_types": ["叶片"]})
+    client.post("/api/tag-templates", json={"name": "红标签", "color": "#22c55e", "material_types": ["红外"]})
+    client.post("/api/tag-templates", json={"name": "未关联", "color": "#3157d5"})
+
+    blade = client.post("/api/source-datasets", json={"name": "叶源", "material_types": ["叶片"]}).json()
+    tags = client.get(f"/api/source-datasets/{blade['id']}/tags").json()
+    assert [item["name"] for item in tags] == ["叶标签"]
+
+    infrared = client.post("/api/source-datasets", json={"name": "红源", "material_types": ["红外"]}).json()
+    tags = client.get(f"/api/source-datasets/{infrared['id']}/tags").json()
+    assert [item["name"] for item in tags] == ["红标签"]
+
+    untyped = client.post("/api/source-datasets", json={"name": "无源"}).json()
+    assert client.get(f"/api/source-datasets/{untyped['id']}/tags").json() == []
+
+    # 同步端点同样按类型过滤
+    synced = client.post(f"/api/tag-templates/sync/{blade['id']}")
+    assert [item["name"] for item in synced.json()] == ["叶标签"]
+
+
+def test_tag_material_types_validated(client):
+    """关联的素材类型必须存在于素材类型库。"""
+    bad = client.post("/api/tag-templates", json={"name": "坏", "color": "#f59e0b", "material_types": ["不存在"]})
+    assert bad.status_code == 409

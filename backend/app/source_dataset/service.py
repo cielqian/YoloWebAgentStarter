@@ -333,11 +333,14 @@ def delete_image(session: Session, storage: Storage, source_dataset_id: str, ima
 
 
 def list_tags(session: Session, source_dataset_id: str) -> list[tuple[SourceTag, int]]:
-    get_source_dataset(session, source_dataset_id)
-    # 标签定义直接取全局标签库;同名落库到 source tag 以承载图片关联与计数
+    dataset = get_source_dataset(session, source_dataset_id)
+    # 标签定义直接取全局标签库;同名落库到 source tag 以承载图片关联与计数。
+    # 只加载与数据源素材类型匹配的标签(未关联类型的标签也不同步)。
     from app.core.models import TagTemplate
+    from app.tag_library.service import _template_matches
 
-    templates = list(session.scalars(select(TagTemplate).order_by(TagTemplate.name)))
+    dataset_types = list(dataset.material_types or [])
+    templates = [item for item in session.scalars(select(TagTemplate).order_by(TagTemplate.name)) if _template_matches(item, dataset_types)]
     if templates:
         existing = {
             tag.name: tag

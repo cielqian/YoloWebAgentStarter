@@ -200,15 +200,22 @@ function ClassLibraryPanel() {
   );
 }
 
-type TagFormValues = { name: string; color: string; values?: string[]; description?: string };
+type TagFormValues = { name: string; color: string; values?: string[]; description?: string; materialTypes?: string[] };
 
 function TagLibraryPanel() {
   const { message } = AntdApp.useApp();
   const [tags, setTags] = useState<TagTemplate[]>([]);
+  const [materialTypes, setMaterialTypes] = useState<MaterialType[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<TagTemplate | null>(null);
   const [form] = AntdForm.useForm<TagFormValues>();
+
+  useEffect(() => {
+    api.listMaterialTypes()
+      .then(setMaterialTypes)
+      .catch((reason: unknown) => message.error(errorMessage(reason)));
+  }, []);
 
   const refresh = () =>
     api.listTagTemplates()
@@ -220,13 +227,13 @@ function TagLibraryPanel() {
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ color: CLASS_COLORS[tags.length % CLASS_COLORS.length] });
+    form.setFieldsValue({ color: CLASS_COLORS[tags.length % CLASS_COLORS.length], materialTypes: [] });
     setDialogOpen(true);
   };
 
   const openEdit = (item: TagTemplate) => {
     setEditing(item);
-    form.setFieldsValue({ name: item.name, color: item.color, values: item.values ?? [], description: item.description ?? "" });
+    form.setFieldsValue({ name: item.name, color: item.color, values: item.values ?? [], description: item.description ?? "", materialTypes: item.material_types ?? [] });
     setDialogOpen(true);
   };
 
@@ -236,6 +243,7 @@ function TagLibraryPanel() {
       color: values.color,
       values: values.values?.length ? values.values : null,
       description: values.description?.trim() || null,
+      material_types: values.materialTypes?.length ? values.materialTypes : null,
     };
     try {
       if (editing) {
@@ -281,6 +289,11 @@ function TagLibraryPanel() {
       key: "values",
       render: (values: string[] | null) =>
         values?.length ? <Space size={4} wrap>{values.map((value) => <Tag key={value}>{value}</Tag>)}</Space> : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "关联素材类型", dataIndex: "material_types", key: "material_types",
+      render: (value: string[] | null) =>
+        value?.length ? <Space size={4} wrap>{value.map((name) => <Tag key={name} color="blue">{name}</Tag>)}</Space> : <Text type="secondary">未关联</Text>,
     },
     { title: "备注", dataIndex: "description", key: "description", render: (value: string | null) => value || <Text type="secondary">—</Text> },
     { title: "更新时间", dataIndex: "updated_at", key: "updated_at", width: 170, render: (value: string) => formatTime(value) },
@@ -332,6 +345,9 @@ function TagLibraryPanel() {
           </AntdForm.Item>
           <AntdForm.Item name="values" label="枚举取值" tooltip="选填。填写后打标时可选具体取值(如 强/弱)，回车或逗号分隔">
             <Select mode="tags" placeholder="输入后回车，如：强、弱" tokenSeparators={[",", "，", "、"]} open={false} suffixIcon={null} />
+          </AntdForm.Item>
+          <AntdForm.Item name="materialTypes" label="关联素材类型" tooltip="可多选；数据源只会加载其素材类型匹配的标签" rules={[{ required: true, message: "请至少选择一个素材类型" }]}>
+            <Select mode="multiple" placeholder="选择素材类型，可多选" options={materialTypes.map((item) => ({ value: item.name, label: item.name }))} />
           </AntdForm.Item>
           <AntdForm.Item name="description" label="备注">
             <AntdInput placeholder="选填" />

@@ -527,6 +527,8 @@ class TagTemplate(Base, TimestampMixin):
     color: Mapped[str] = mapped_column(String(16), default="#3157d5", nullable=False)
     values: Mapped[list | None] = mapped_column(JSON, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 关联的素材类型(多选,取值为素材类型库中的名称);数据源只同步与其素材类型匹配的标签
+    material_types: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
 
 class MaterialType(Base, TimestampMixin):
