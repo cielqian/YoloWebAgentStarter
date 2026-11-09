@@ -75,11 +75,26 @@ describe("AnnotationView persistence", () => {
     });
 
     expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(20);
-    expect(container?.textContent).toContain("第 1 / 2 页");
-    const next = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) => button.textContent === "下一页");
+    // 简洁分页:图标翻页 + 输入页码跳转
+    const pager = container?.querySelector(".annotation-image-pager");
+    expect(pager).toBeTruthy();
+    expect(pager?.querySelector("input")?.value).toBe("1");
+    expect(pager?.textContent).toContain("/2");
+    const next = pager?.querySelector<HTMLButtonElement>(".ant-pagination-next button");
     act(() => next?.click());
     expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(1);
     expect(container?.textContent).toContain("vehicle-21.png");
+
+    // 跳转回第 1 页:输入页码回车
+    const jump = pager?.querySelector<HTMLInputElement>("input");
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    act(() => {
+      setter?.call(jump, "1");
+      jump?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => jump?.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(pager?.querySelector("input")?.value).toBe("1");
+    expect(container?.querySelector(".annotation-image-item.active")?.textContent).toContain("vehicle.png");
   });
 
   it("filters the image list by train, val and test split", () => {
