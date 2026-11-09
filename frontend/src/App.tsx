@@ -265,6 +265,26 @@ export default function App() {
     try { await action(); } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); setUpload(null); }
   };
 
+  /** 本地图片后台异步上传:右下角进度条展示,不阻塞页面其他操作。 */
+  const uploadImagesInBackground = async (dataset: Dataset, files: File[], split: SplitName) => {
+    const label = files.length === 1 ? files[0].name : `${files.length} 个文件`;
+    const onProgress = (progress: UploadProgress) => setUpload((prev) => (prev?.label === label ? { label, progress } : prev));
+    setUpload({ label, progress: { loaded: 0, total: 0, percent: 0 } });
+    try {
+      const result = await api.uploadImages(dataset.id, files, split, onProgress);
+      await refreshDatasets();
+      if (selectedDatasetRef.current === dataset.id) {
+        const nextImages = await api.listImages(dataset.id);
+        setImages(nextImages.items);
+      }
+      setNotice(`已添加 ${result.imported} 张图片到 ${dataset.name} / ${split}`);
+    } catch (reason) {
+      setError(`上传「${label}」失败：${errorMessage(reason)}`);
+    } finally {
+      setUpload(null);
+    }
+  };
+
   const runResult = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
     setBusy(true);
     setError("");
@@ -604,15 +624,7 @@ export default function App() {
             setNotice(`已从视频导入 ${task.generated_images} 张图片`);
           })}
           onContinueAnnotation={(dataset) => void continueAnnotation(dataset)}
-          onUpload={(dataset, files, split) => run(async () => {
-            const result = await api.uploadImages(dataset.id, files, split, trackUpload(files.length === 1 ? files[0].name : `${files.length} 个文件`));
-            await refreshDatasets();
-            if (selected?.id === dataset.id) {
-              const nextImages = await api.listImages(dataset.id);
-              setImages(nextImages.items);
-            }
-            setNotice(`已添加 ${result.imported} 张图片到 ${split}`);
-          })}
+          onUpload={(dataset, files, split) => void uploadImagesInBackground(dataset, files, split)}
           onMergeYoloFromFtp={(dataset, path, source) => run(async () => {
             await api.mergeDatasetFromFtp(dataset.id, { path, source });
             await refreshDatasets();
