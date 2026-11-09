@@ -36,9 +36,9 @@ _MAX_LABEL_BYTES = 10 * 1024 * 1024
 class YoloArchiveLimits:
     """Defence-in-depth limits for untrusted YOLO ZIP uploads."""
 
-    max_members: int = 2_000
+    max_members: int = 1_000_000
     max_member_bytes: int = 100 * 1024 * 1024
-    max_total_uncompressed_bytes: int = 250 * 1024 * 1024
+    max_total_uncompressed_bytes: int = 5 * 1024 * 1024 * 1024
     max_compression_ratio: float = 100.0
 
 

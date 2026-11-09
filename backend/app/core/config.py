@@ -30,9 +30,9 @@ class Settings:
     max_video_generated_images: int = 100_000
     max_video_output_bytes: int = 50 * 1024 * 1024 * 1024
     min_video_free_bytes: int = 2 * 1024 * 1024 * 1024
-    max_yolo_archive_members: int = 20_000
+    max_yolo_archive_members: int = 1_000_000
     max_yolo_archive_member_bytes: int = 100 * 1024 * 1024
-    max_yolo_archive_uncompressed_bytes: int = 2 * 1024 * 1024 * 1024
+    max_yolo_archive_uncompressed_bytes: int = 5 * 1024 * 1024 * 1024
     max_yolo_archive_compression_ratio: float = 100.0
     sam_model: str | None = None
     sam_device: str = "auto"
@@ -78,9 +78,9 @@ class Settings:
             max_video_generated_images=int(os.getenv("YWA_MAX_VIDEO_GENERATED_IMAGES", "100000")),
             max_video_output_bytes=int(os.getenv("YWA_MAX_VIDEO_OUTPUT_MB", str(50 * 1024))) * 1024 * 1024,
             min_video_free_bytes=int(os.getenv("YWA_MIN_VIDEO_FREE_MB", "2048")) * 1024 * 1024,
-            max_yolo_archive_members=int(os.getenv("YWA_MAX_YOLO_ARCHIVE_MEMBERS", "20000")),
+            max_yolo_archive_members=int(os.getenv("YWA_MAX_YOLO_ARCHIVE_MEMBERS", "1000000")),
             max_yolo_archive_member_bytes=int(os.getenv("YWA_MAX_YOLO_ARCHIVE_MEMBER_MB", "100")) * 1024 * 1024,
-            max_yolo_archive_uncompressed_bytes=int(os.getenv("YWA_MAX_YOLO_ARCHIVE_UNCOMPRESSED_MB", "2048")) * 1024 * 1024,
+            max_yolo_archive_uncompressed_bytes=int(os.getenv("YWA_MAX_YOLO_ARCHIVE_UNCOMPRESSED_MB", "5120")) * 1024 * 1024,
             max_yolo_archive_compression_ratio=float(os.getenv("YWA_MAX_YOLO_ARCHIVE_COMPRESSION_RATIO", "100")),
             sam_model=os.getenv("YWA_SAM_MODEL") or None,
             sam_device=os.getenv("YWA_SAM_DEVICE", "auto"),
