@@ -593,8 +593,8 @@ def merge_yolo_into_dataset(
                             except (ValueError, IndexError):
                                 pass
                 names = [f"class_{index}" for index in range(max_class_index + 1)]
-        if not names:
-            raise ValidationError("no_classes_in_archive", "The YOLO archive does not define any classes.")
+        # 空类别压缩包(纯背景图)允许合并:图片按未标注导入,不创建新类别
+        # (仅当压缩包也没有 data.yaml names 和非空标签行时 names 为空)
 
         pose_kpt_shape: tuple[int, int] | None = None
         if task_type == "pose":
