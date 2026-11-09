@@ -285,6 +285,44 @@ export default function App() {
     }
   };
 
+  /** YOLO 压缩包合并后台异步:上传阶段右下角进度条,服务器合并进度见数据集列表。 */
+  const mergeYoloZipInBackground = async (dataset: Dataset, file: File) => {
+    const onProgress = (progress: UploadProgress) => setUpload((prev) => (prev?.label === file.name ? { label: file.name, progress } : prev));
+    setUpload({ label: file.name, progress: { loaded: 0, total: 0, percent: 0 } });
+    try {
+      await api.mergeDatasetYoloZip(dataset.id, file, onProgress);
+      await refreshDatasets();
+      if (selectedDatasetRef.current === dataset.id) {
+        const nextImages = await api.listImages(dataset.id);
+        setImages(nextImages.items);
+        const nextClasses = await api.listClasses(dataset.id);
+        setClasses(nextClasses);
+      }
+      setNotice(`已开始合并到「${dataset.name}」，进度见数据集列表。`);
+    } catch (reason) {
+      setError(`合并「${file.name}」失败：${errorMessage(reason)}`);
+    } finally {
+      setUpload(null);
+    }
+  };
+
+  /** 导入中心 YOLO/COCO 压缩包新建数据集:后台异步,不阻塞页面。 */
+  const importArchiveInBackground = async (file: File, name: string, taskType: TaskType, format: "yolo" | "coco", modelName?: string) => {
+    const onProgress = (progress: UploadProgress) => setUpload((prev) => (prev?.label === file.name ? { label: file.name, progress } : prev));
+    setUpload({ label: file.name, progress: { loaded: 0, total: 0, percent: 0 } });
+    try {
+      const result = format === "coco"
+        ? await api.importCoco(file, name, taskType, false, modelName, onProgress)
+        : await api.importYolo(file, name, taskType, false, modelName, onProgress);
+      await refreshDatasets();
+      setNotice(`已开始导入「${result.dataset.name}」，进度见数据集列表。`);
+    } catch (reason) {
+      setError(`导入「${file.name}」失败：${errorMessage(reason)}`);
+    } finally {
+      setUpload(null);
+    }
+  };
+
   const runResult = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
     setBusy(true);
     setError("");
@@ -609,7 +647,7 @@ export default function App() {
             await refreshDatasets();
             setNotice(`已克隆为“${result.dataset.name}”：复制 ${result.imported_images} 张图片、${result.imported_annotations} 条标注${result.skipped_images ? `，${result.skipped_images} 张因文件缺失被跳过` : ""}`);
           })}
-          onImport={(file, name, taskType, format, modelName) => run(async () => { const onUploadProgress = trackUpload(file.name); const result = format === "coco" ? await api.importCoco(file, name, taskType, false, modelName, onUploadProgress) : await api.importYolo(file, name, taskType, false, modelName, onUploadProgress); await refreshDatasets(); setNotice(`已开始导入「${result.dataset.name}」，进度见数据集列表。`); })}
+          onImport={(file, name, taskType, format, modelName) => void importArchiveInBackground(file, name, taskType, format, modelName)}
           onFtpImport={(path, name, taskType, format, source, modelName) => run(async () => { const result = await api.importDatasetFromFtp({ path, name, ...(modelName ? { model_name: modelName } : {}), task_type: taskType, format, source }, false); await refreshDatasets(); setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}导入「${result.dataset.name}」，进度见数据集列表。`); })}
           onCancelImport={(dataset) => run(async () => { await api.cancelDatasetImport(dataset.id); await refreshDatasets(); setNotice(`已请求停止「${dataset.name}」的导入。`); })}
           onQuality={(dataset) => runResult(() => api.qualityReport(dataset.id))}
@@ -630,17 +668,7 @@ export default function App() {
             await refreshDatasets();
             setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}合并到「${dataset.name}」，进度见数据集列表。`);
           })}
-          onMergeYolo={(dataset, file) => run(async () => {
-            await api.mergeDatasetYoloZip(dataset.id, file, trackUpload(file.name));
-            await refreshDatasets();
-            if (selected?.id === dataset.id) {
-              const nextImages = await api.listImages(dataset.id);
-              setImages(nextImages.items);
-              const nextClasses = await api.listClasses(dataset.id);
-              setClasses(nextClasses);
-            }
-            setNotice(`已开始合并到「${dataset.name}」，进度见数据集列表。`);
-          })}
+          onMergeYolo={(dataset, file) => void mergeYoloZipInBackground(dataset, file)}
           onSourceSync={(dataset, sourceDatasetId, tagIds, tagMatch, tagValues, split) => run(async () => {
             const result = await api.syncDatasetFromSource(dataset.id, { sourceDatasetId, tagIds, tagMatch, tagValues, split });
             await refreshDatasets();
