@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Breadcrumb, Button as AntdButton, Empty as AntdEmpty, Flex, Form, Input as AntdInput, InputNumber, Modal, Segmented, Select as AntdSelect, Space, Table, Tag as AntdTag, Typography, type TableProps } from "antd";
+import { Breadcrumb, Button as AntdButton, Checkbox, Empty as AntdEmpty, Flex, Form, Input as AntdInput, InputNumber, Modal, Segmented, Select as AntdSelect, Space, Table, Tag as AntdTag, Typography, type TableProps } from "antd";
 import { api, apiUrl } from "../api/client";
 import { Toast } from "../components/Toast";
 import { confirmDialog } from "../components/confirm";
@@ -46,6 +46,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const [omTarget, setOmTarget] = useState<ModelVersion>();
   const [onnxTarget, setOnnxTarget] = useState<ModelVersion>();
   const [onnxBatch, setOnnxBatch] = useState(1);
+  const [onnxDynamic, setOnnxDynamic] = useState(false);
   const [onnxImgsz, setOnnxImgsz] = useState(640);
   const [onnxOpset, setOnnxOpset] = useState(11);
   const [omNodeId, setOmNodeId] = useState("");
@@ -257,11 +258,11 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     if (!onnxTarget) return;
     const target = onnxTarget;
     void run(async () => {
-      const exported = await api.exportModelOnnx(target.id, { batch: onnxBatch, imgsz: onnxImgsz, opset: onnxOpset });
+      const exported = await api.exportModelOnnx(target.id, { batch: onnxBatch, dynamic: onnxDynamic, imgsz: onnxImgsz, opset: onnxOpset });
       setOnnxTarget(undefined);
       await refresh();
       setDetailId(exported.id);
-      setNotice(`已导出 ONNX：${exported.name}（${onnxBatch === 0 ? "动态 batch" : `batch ${onnxBatch}`} · imgsz ${onnxImgsz} · opset ${onnxOpset}）`);
+      setNotice(`已导出 ONNX：${exported.name}（${onnxDynamic ? "动态 batch" : `batch ${onnxBatch}`} · imgsz ${onnxImgsz} · opset ${onnxOpset}）`);
     });
   };
 
@@ -465,7 +466,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
             {model.format === "pt" ? (
               <>
                 <AntdButton type="link" size="small" autoInsertSpace={false} disabled={busy} onClick={() => setTesting(model)}>测试</AntdButton>
-                <AntdButton type="link" size="small" disabled={busy} onClick={() => { setOnnxTarget(model); setOnnxBatch(1); setOnnxImgsz(640); setOnnxOpset(11); }}>转ONNX</AntdButton>
+                <AntdButton type="link" size="small" disabled={busy} onClick={() => { setOnnxTarget(model); setOnnxBatch(1); setOnnxDynamic(false); setOnnxImgsz(640); setOnnxOpset(11); }}>转ONNX</AntdButton>
               </>
             ) : null}
             {model.format === "onnx" ? (
@@ -672,8 +673,11 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
             FP32 ONNX，自动化简；文件名与 PT 同名仅换后缀。
           </Typography.Paragraph>
           <Form layout="vertical">
-            <Form.Item label="batch（0 = 动态尺寸）" tooltip="0 表示 batch 维度动态，推理时可变 batch 输入；>0 为固定 batch" style={{ marginBottom: 12 }}>
-              <InputNumber min={0} max={64} value={onnxBatch} onChange={(v) => setOnnxBatch(v ?? 1)} style={{ width: "100%" }} placeholder="0=动态" />
+            <Form.Item label="batch" tooltip="固定 batch 大小；勾选动态尺寸后此值被忽略" style={{ marginBottom: 12 }}>
+              <Space>
+                <InputNumber min={1} max={64} value={onnxBatch} onChange={(v) => setOnnxBatch(v ?? 1)} style={{ width: 100 }} disabled={onnxDynamic} />
+                <Checkbox checked={onnxDynamic} onChange={(e) => setOnnxDynamic(e.target.checked)}>动态尺寸</Checkbox>
+              </Space>
             </Form.Item>
             <Form.Item label="imgsz（图像尺寸）" style={{ marginBottom: 12 }}>
               <InputNumber min={32} max={4096} value={onnxImgsz} onChange={(v) => setOnnxImgsz(v ?? 640)} style={{ width: "100%" }} placeholder="640" />
