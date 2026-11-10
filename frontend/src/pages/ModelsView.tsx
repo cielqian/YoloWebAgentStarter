@@ -262,7 +262,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
       setOnnxTarget(undefined);
       await refresh();
       setDetailId(exported.id);
-      setNotice(`已导出 ONNX：${exported.name}（${onnxDynamic ? "动态 batch" : `batch ${onnxBatch}`} · imgsz ${onnxImgsz} · opset ${onnxOpset}）`);
+      setNotice(`已导出 ONNX：${exported.name}（batch ${onnxBatch}${onnxDynamic ? " · 动态" : ""} · imgsz ${onnxImgsz} · opset ${onnxOpset}）`);
     });
   };
 
@@ -673,9 +673,9 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
             FP32 ONNX，自动化简；文件名与 PT 同名仅换后缀。
           </Typography.Paragraph>
           <Form layout="vertical">
-            <Form.Item label="batch" tooltip="固定 batch 大小；勾选动态尺寸后此值被忽略" style={{ marginBottom: 12 }}>
+            <Form.Item label="batch" style={{ marginBottom: 12 }}>
               <Space>
-                <InputNumber min={1} max={64} value={onnxBatch} onChange={(v) => setOnnxBatch(v ?? 1)} style={{ width: 100 }} disabled={onnxDynamic} />
+                <InputNumber min={1} max={64} value={onnxBatch} onChange={(v) => setOnnxBatch(v ?? 1)} style={{ width: 100 }} />
                 <Checkbox checked={onnxDynamic} onChange={(e) => setOnnxDynamic(e.target.checked)}>动态尺寸</Checkbox>
               </Space>
             </Form.Item>
