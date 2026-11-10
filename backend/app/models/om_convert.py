@@ -174,6 +174,9 @@ def _ensure_converting_row(session: Session, storage: Storage, source: ModelVers
     else:
         existing.status = "converting"
         existing.notes = f"Converting from {source.name} via ATC ({soc_version}) ..."
+        # 补设血缘:老记录可能缺 source_model_id,导致版本继承链断裂
+        if existing.source_model_id is None:
+            existing.source_model_id = source.id
     session.commit()
     return target_id
 
