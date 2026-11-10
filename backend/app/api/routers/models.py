@@ -184,8 +184,7 @@ def export_onnx(
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
 ) -> ModelVersionResponse:
-    dynamic = payload.dynamic if payload is not None else True
-    return ModelService(storage).export_onnx(session, model_id, dynamic=dynamic)
+    return ModelService(storage).export_onnx(session, model_id, **(payload.model_dump() if payload else {}))
 
 
 @router.post("/{model_id}/test", response_model=InferenceResult)
