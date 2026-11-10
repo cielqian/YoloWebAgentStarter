@@ -108,7 +108,7 @@ class ModelService:
         if dataset_id:
             query = query.where(ModelVersion.dataset_id == dataset_id)
         if not include_archived:
-            query = query.where(ModelVersion.status == "active")
+            query = query.where(ModelVersion.status != "archived")
         query = query.order_by(ModelVersion.created_at.desc(), ModelVersion.id.desc())
         items = [item for item in session.scalars(query) if matches(item)]
         total = len(items) if dataset_version is not None else self._total_count(session, dataset_id, include_archived)
@@ -124,7 +124,7 @@ class ModelService:
         if dataset_id:
             query = query.where(ModelVersion.dataset_id == dataset_id)
         if not include_archived:
-            query = query.where(ModelVersion.status == "active")
+            query = query.where(ModelVersion.status != "archived")
         return session.scalar(query) or 0
 
     def _dataset_versions_by_model(self, session: Session) -> dict[str, int | None]:
