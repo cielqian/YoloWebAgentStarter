@@ -472,7 +472,7 @@ export const api = {
   archiveModel: (modelId: string) => request<ModelVersion>(`/api/models/${modelId}/archive`, { method: "POST" }),
   restoreModel: (modelId: string) => request<ModelVersion>(`/api/models/${modelId}/restore`, { method: "POST" }),
   deleteModel: (modelId: string) => request<void>(`/api/models/${modelId}`, { method: "DELETE" }),
-  exportModelOnnx: (modelId: string, dynamic = true) => request<ModelVersion>(`/api/models/${modelId}/export-onnx`, json({ dynamic })),
+  exportModelOnnx: (modelId: string, options?: { batch?: number; imgsz?: number; opset?: number }) => request<ModelVersion>(`/api/models/${modelId}/export-onnx`, json(options ?? { batch: 1, imgsz: 640, opset: 11 })),
   convertModelToOm: (modelId: string, payload: { node_id: string; soc_version: string; input_shape: string }) =>
     request<OmConvertJob>(`/api/models/${modelId}/convert-om`, json(payload)),
   testModel: async (modelId: string, file: File, confidence: number, iou: number) => { const form = new FormData(); form.append("file", file); return request<InferenceResult>(`/api/models/${modelId}/test?confidence=${confidence}&iou=${iou}`, { method: "POST", body: form }); },

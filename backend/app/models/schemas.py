@@ -127,7 +127,10 @@ class ModelCompareResponse(BaseModel):
 
 
 class OnnxExportRequest(BaseModel):
-    dynamic: bool = True
+    # batch 维度:0 表示动态(ultralytics dynamic=True),>0 为固定 batch
+    batch: int = Field(default=1, ge=0, le=64)
+    imgsz: int = Field(default=640, ge=32, le=4096)
+    opset: int = Field(default=11, ge=7, le=20)
 
 
 class OmConvertRequest(BaseModel):

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Breadcrumb, Button as AntdButton, Checkbox, Empty as AntdEmpty, Flex, Form, Input as AntdInput, Modal, Segmented, Select as AntdSelect, Space, Table, Tag as AntdTag, Typography, type TableProps } from "antd";
+import { Breadcrumb, Button as AntdButton, Empty as AntdEmpty, Flex, Form, Input as AntdInput, InputNumber, Modal, Segmented, Select as AntdSelect, Space, Table, Tag as AntdTag, Typography, type TableProps } from "antd";
 import { api, apiUrl } from "../api/client";
 import { Toast } from "../components/Toast";
 import { confirmDialog } from "../components/confirm";
@@ -45,7 +45,9 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
   const [nodes, setNodes] = useState<TrainingNode[]>([]);
   const [omTarget, setOmTarget] = useState<ModelVersion>();
   const [onnxTarget, setOnnxTarget] = useState<ModelVersion>();
-  const [onnxDynamic, setOnnxDynamic] = useState(true);
+  const [onnxBatch, setOnnxBatch] = useState(1);
+  const [onnxImgsz, setOnnxImgsz] = useState(640);
+  const [onnxOpset, setOnnxOpset] = useState(11);
   const [omNodeId, setOmNodeId] = useState("");
   const [omSocVersion, setOmSocVersion] = useState("Ascend310P3");
   const [omInputShape, setOmInputShape] = useState("images:1,3,640,640");
@@ -255,11 +257,11 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
     if (!onnxTarget) return;
     const target = onnxTarget;
     void run(async () => {
-      const exported = await api.exportModelOnnx(target.id, onnxDynamic);
+      const exported = await api.exportModelOnnx(target.id, { batch: onnxBatch, imgsz: onnxImgsz, opset: onnxOpset });
       setOnnxTarget(undefined);
       await refresh();
       setDetailId(exported.id);
-      setNotice(`已导出 ONNX：${exported.name}${onnxDynamic ? "（动态 batch）" : "（固定 batch）"}`);
+      setNotice(`已导出 ONNX：${exported.name}（${onnxBatch === 0 ? "动态 batch" : `batch ${onnxBatch}`} · imgsz ${onnxImgsz} · opset ${onnxOpset}）`);
     });
   };
 
@@ -463,7 +465,7 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
             {model.format === "pt" ? (
               <>
                 <AntdButton type="link" size="small" autoInsertSpace={false} disabled={busy} onClick={() => setTesting(model)}>测试</AntdButton>
-                <AntdButton type="link" size="small" disabled={busy} onClick={() => { setOnnxTarget(model); setOnnxDynamic(true); }}>转ONNX</AntdButton>
+                <AntdButton type="link" size="small" disabled={busy} onClick={() => { setOnnxTarget(model); setOnnxBatch(1); setOnnxImgsz(640); setOnnxOpset(11); }}>转ONNX</AntdButton>
               </>
             ) : null}
             {model.format === "onnx" ? (
@@ -667,12 +669,19 @@ export function ModelsView({ datasets, focusModelId, onFocusModelConsumed, onAsk
           ]}
         >
           <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
-            FP32 ONNX，opset 18，自动化简；文件名与 PT 同名仅换后缀。
+            FP32 ONNX，自动化简；文件名与 PT 同名仅换后缀。
           </Typography.Paragraph>
-          <Space orientation="vertical" size={4}>
-            <Checkbox checked={onnxDynamic} onChange={(event) => setOnnxDynamic(event.target.checked)}>动态尺寸（dynamic）</Checkbox>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>勾选后 batch 维度动态，推理时可变 batch 输入；不勾选则固定为 1×3×640×640。</Typography.Text>
-          </Space>
+          <Form layout="vertical">
+            <Form.Item label="batch（0 = 动态尺寸）" tooltip="0 表示 batch 维度动态，推理时可变 batch 输入；>0 为固定 batch" style={{ marginBottom: 12 }}>
+              <InputNumber min={0} max={64} value={onnxBatch} onChange={(v) => setOnnxBatch(v ?? 1)} style={{ width: "100%" }} placeholder="0=动态" />
+            </Form.Item>
+            <Form.Item label="imgsz（图像尺寸）" style={{ marginBottom: 12 }}>
+              <InputNumber min={32} max={4096} value={onnxImgsz} onChange={(v) => setOnnxImgsz(v ?? 640)} style={{ width: "100%" }} placeholder="640" />
+            </Form.Item>
+            <Form.Item label="opset" style={{ marginBottom: 0 }}>
+              <InputNumber min={7} max={20} value={onnxOpset} onChange={(v) => setOnnxOpset(v ?? 11)} style={{ width: "100%" }} placeholder="11" />
+            </Form.Item>
+          </Form>
         </Modal>
       )}
 
