@@ -279,7 +279,8 @@ def _persist_om(session: Session, storage: Storage, job: dict[str, Any], om_byte
     source = _load_source_model(session, job["source_model_id"])
     target_id = f"model_{source.id}_om"
     output_dir = storage.model_version_dir(target_id)
-    output_path = output_dir / "model.om"
+    # 文件名与 ONNX 同名(仅换后缀),不再用通用的 model.om
+    output_path = output_dir / _om_file_name(session, source)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(om_bytes)
     managed = storage.managed_model_path(output_path)
