@@ -233,6 +233,11 @@ export const api = {
   },
   updateSourceImage: (datasetId: string, imageId: string, payload: { file_name?: string; tag_ids?: string[]; tag_values?: Record<string, string> }) =>
     request<SourceImagePage["items"][number]>(`/api/source-datasets/${datasetId}/images/${imageId}`, json(payload, "PATCH")),
+  translateClassNames: (datasetId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return uploadForm<{ dataset_id: string; total_classes: number; updated: number; renamed: Array<{ class_index: number; old_name: string; new_name: string }> }>(`/api/datasets/${datasetId}/classes/translate`, form);
+  },
   deleteDatasetImage: (datasetId: string, imageId: string) =>
     request<void>(`/api/datasets/${datasetId}/images/${imageId}`, { method: "DELETE" }),
   deleteSourceImage: (datasetId: string, imageId: string) =>

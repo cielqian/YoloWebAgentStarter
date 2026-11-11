@@ -457,6 +457,57 @@ def cancel_dataset_import(
     return get_dataset_detail(dataset_id, session)
 
 
+@router.post("/{dataset_id}/classes/translate", status_code=200)
+async def translate_class_names(
+    dataset_id: str,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+) -> dict:
+    """导入 YOLO data.yaml,按 names 序号覆盖数据集类名(类别翻译)。"""
+    import yaml
+    from app.core.models import ClassLabel as CL
+
+    dataset = get_dataset(session, dataset_id)
+    content = await file.read()
+    try:
+        data = yaml.safe_load(content.decode("utf-8"))
+    except Exception as exc:
+        raise ValidationError("invalid_yaml", f"无法解析 YAML 文件：{exc}") from exc
+    names = data.get("names") if isinstance(data, dict) else None
+    if not names or not isinstance(names, (dict, list)):
+        raise ValidationError("yaml_names_missing", "YAML 文件中未找到有效的 names 字段。")
+
+    # names 可以是 {0: "pointer", 1: "center"} 或 ["pointer", "center"]
+    if isinstance(names, dict):
+        mapping = {int(k): str(v).strip() for k, v in names.items() if str(v).strip()}
+    else:
+        mapping = {i: str(v).strip() for i, v in enumerate(names) if str(v).strip()}
+    if not mapping:
+        raise ValidationError("yaml_names_empty", "YAML 文件的 names 字段为空。")
+
+    classes = list(session.scalars(select(CL).where(CL.dataset_id == dataset.id).order_by(CL.class_index)))
+    if not classes:
+        raise ValidationError("dataset_no_classes", "该数据集还没有类别，请先创建或导入。")
+
+    updated = 0
+    renamed: list[dict] = []
+    for cls in classes:
+        new_name = mapping.get(cls.class_index)
+        if new_name and new_name != cls.name:
+            old = cls.name
+            cls.name = new_name
+            updated += 1
+            renamed.append({"class_index": cls.class_index, "old_name": old, "new_name": new_name})
+    if updated:
+        session.commit()
+    return {
+        "dataset_id": dataset.id,
+        "total_classes": len(classes),
+        "updated": updated,
+        "renamed": renamed,
+    }
+
+
 @router.post("/{dataset_id}/images/upload-yolo", response_model=DatasetMergeStarted, status_code=201)
 async def merge_yolo_archive_into_dataset(
     dataset_id: str,

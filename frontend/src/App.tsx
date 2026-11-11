@@ -265,6 +265,23 @@ export default function App() {
     try { await action(); } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); setUpload(null); }
   };
 
+  /** 类别翻译:上传 yaml,按 names 序号覆盖类名 */
+  const translateClasses = async (dataset: Dataset, file: File) => {
+    try {
+      setBusy(true);
+      const result = await api.translateClassNames(dataset.id, file);
+      setNotice(`已按 YAML 更新 ${result.updated}/${result.total_classes} 个类别名称`);
+      if (selected?.id === dataset.id) {
+        const nextClasses = await api.listClasses(dataset.id);
+        setClasses(nextClasses);
+      }
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /** 本地图片后台异步上传:右下角进度条展示,不阻塞页面其他操作。 */
   const uploadImagesInBackground = async (dataset: Dataset, files: File[], split: SplitName) => {
     const label = files.length === 1 ? files[0].name : `${files.length} 个文件`;
@@ -669,6 +686,7 @@ export default function App() {
             setNotice(`已开始从 FTP ${source === "dir" ? "目录" : "压缩包"}合并到「${dataset.name}」，进度见数据集列表。`);
           })}
           onMergeYolo={(dataset, file) => void mergeYoloZipInBackground(dataset, file)}
+          onTranslateClasses={(dataset, file) => void translateClasses(dataset, file)}
           onSourceSync={(dataset, sourceDatasetId, tagIds, tagMatch, tagValues, split) => run(async () => {
             const result = await api.syncDatasetFromSource(dataset.id, { sourceDatasetId, tagIds, tagMatch, tagValues, split });
             await refreshDatasets();
@@ -709,6 +727,7 @@ export function DatasetHome(props: {
   onImport: (file: File, name: string, type: TaskType, format: "yolo" | "coco", modelName?: string) => void;
   onFtpImport: (path: string, name: string, type: TaskType, format: "yolo" | "coco", source: "zip" | "dir", modelName?: string) => void;
   onMergeYolo: (dataset: Dataset, file: File) => void;
+  onTranslateClasses?: (dataset: Dataset, file: File) => void;
   onMergeYoloFromFtp: (dataset: Dataset, path: string, source: "zip" | "dir") => void;
   onCancelImport: (dataset: Dataset) => void;
   onQuality: (dataset: Dataset) => Promise<DatasetQualityReport | undefined>;
@@ -780,6 +799,8 @@ export function DatasetHome(props: {
   const [expandedReports, setExpandedReports] = useState<Record<string, CardReportKind | undefined>>({});
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [datasetSearch, setDatasetSearch] = useState("");
+  const translateRef = useRef<HTMLInputElement>(null);
+  const [translateDs, setTranslateDs] = useState<Dataset>();
   const uploadFileRef = useRef<HTMLInputElement>(null);
   const [draggingImages, setDraggingImages] = useState(false);
   const [autoAnnotationTarget, setAutoAnnotationTarget] = useState<Dataset>();
@@ -1016,6 +1037,7 @@ export function DatasetHome(props: {
                 { key: "auto", label: "自动标注", disabled: props.busy || ds.import_state === "importing" || !ds.image_count || historical },
                 { key: "export", label: "导出", disabled: props.busy || ds.import_state === "importing" || !ds.image_count },
                 { key: "versions", label: "版本管理", disabled: props.busy || ds.import_state === "importing" },
+                ...(props.onTranslateClasses ? [{ key: "translate", label: "类别翻译", disabled: props.busy || ds.import_state === "importing" }] : []),
                 ...(ds.import_state === "importing" || ds.import_state === "merging"
                   ? [{ type: "divider" as const }, { key: "stop", label: `停止${ds.import_state === "importing" ? "导入" : "合并"}`, danger: true, disabled: props.busy }]
                   : []),
@@ -1025,6 +1047,7 @@ export function DatasetHome(props: {
                 else if (key === "auto") setAutoAnnotationTarget(ds);
                 else if (key === "export") openExport(ds);
                 else if (key === "versions") setVersionTarget(ds);
+                else if (key === "translate") { setTranslateDs(ds); translateRef.current?.click(); }
                 else if (key === "stop") props.onCancelImport(ds);
               },
             }}
@@ -1048,6 +1071,7 @@ export function DatasetHome(props: {
         />
         <AntdButton icon={<DownloadOutlined />} onClick={() => setDialog("import")}>导入数据</AntdButton>
         <AntdButton type="primary" icon={<PlusOutlined />} onClick={() => setDialog("create")}>新建数据集</AntdButton>
+        <input ref={translateRef} type="file" accept=".yaml,.yml" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file && translateDs && props.onTranslateClasses) void props.onTranslateClasses(translateDs, file); setTranslateDs(undefined); event.currentTarget.value = ""; }} />
       </Flex>
       <Table<Dataset>
         rowKey="id"
