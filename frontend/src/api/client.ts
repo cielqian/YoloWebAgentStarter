@@ -384,6 +384,7 @@ export const api = {
     return uploadForm<DatasetImportResult>(`/api/datasets/import/yolo${wait ? "" : "?wait=false"}`, form, onProgress);
   },
   imageThumbnailUrl: (imageId: string) => apiUrl(`/api/images/${imageId}/thumbnail`),
+  imageUrl: (imageId: string) => apiUrl(`/api/images/${imageId}/file`),
   listWeights: () => request<{ items: BaseWeight[] }>("/api/weights"),
   uploadWeight: async (file: File, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
