@@ -224,7 +224,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 .annotation-head, .training-head, .models-head { padding-bottom: 22px; border-bottom: 1px solid #e5e9f0; }
 /* 标注页页头已改为 antd 组件(Button/Select/Space/Tag),网格列宽交给内容自适应 */
 .annotation-head { display: grid; grid-template-columns: auto minmax(180px, 1fr) auto auto; align-items: center; gap: 16px; }.annotation-head h1, .training-head h1, .models-head h1 { font-size: 27px; }.annotation-actions { display: flex; align-items: center; gap: 8px; }
-.annotation-body { display: grid; grid-template-columns: 238px minmax(0, 1fr) 300px; gap: 18px; margin-top: 16px; align-items: stretch; min-height: 0; flex: 1 1 auto; }
+.annotation-body { display: grid; grid-template-columns: 260px minmax(0, 1fr) 300px; gap: 18px; margin-top: 16px; align-items: stretch; min-height: 0; flex: 1 1 auto; }
 .annotation-canvas-column { min-width: 0; min-height: 0; overflow-y: auto; }
 .annotation-layout { display: flex; flex-direction: column; height: calc(100dvh - 62px); overflow: hidden; padding: 16px 28px 20px; }
 .annotation-layout .annotation-head { flex: 0 0 auto; padding-bottom: 14px; }
@@ -466,7 +466,7 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
   .starter-sidebar { padding-inline: 12px; }
   .content-grid { grid-template-columns: 220px minmax(0, 1fr); }
   .workspace, .annotation-layout, .training-layout, .models-layout, .settings-layout, .logs-layout, .ftp-page, .agent-layout { padding-inline: 24px; }
-  .annotation-body { grid-template-columns: 210px minmax(0, 1fr) 260px; gap: 12px; }
+  .annotation-body { grid-template-columns: 230px minmax(0, 1fr) 260px; gap: 12px; }
   .settings-section-layout, .agent-section-layout { grid-template-columns: 220px minmax(0, 1fr); }
   .image-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
@@ -640,7 +640,8 @@ input:focus, select:focus, textarea:focus { border-color: #6682e5; box-shadow: 0
 
 /* 标注侧栏图片多选删除 */
 .annotation-image-batch { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 8px; border: 1px solid #f0d3d1; border-radius: 8px; background: #fdf5f4; }
-.annotation-image-batch .ant-btn { font-size: 11px; }
+.annotation-image-batch .ant-btn-sm { height: 24px; padding-inline: 6px; }
+.annotation-image-batch .ant-btn { font-size: 11px; padding-inline: 6px; }
 .annotation-image-item.batch { position: relative; }
 .annotation-image-item.batch-checked { border-color: #e89ba1; background: #fdeff0; box-shadow: inset 3px 0 #d9534f; }
 .annotation-image-check { position: absolute; z-index: 2; top: 5px; right: 5px; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: rgba(255, 255, 255, .92); box-shadow: 0 0 0 1px #d5dbe7; }
