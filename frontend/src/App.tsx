@@ -120,6 +120,7 @@ export default function App() {
 
   const loadDataset = async (dataset: Dataset, nextView: View = "workspace") => {
     setSelected(dataset);
+    setView(nextView);
     setSelectedImage(undefined);
     // 先切视图再等数据,用户立即看到标注界面(骨架屏);首屏只取第一页,其余页后台补齐。
     const [nextClasses, firstPage] = await Promise.all([api.listClasses(dataset.id), api.listImagesPage(dataset.id, 0, 200)]);
