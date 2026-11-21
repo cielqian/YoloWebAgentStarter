@@ -394,3 +394,53 @@ describe("AnnotationView image batch delete", () => {
     expect(Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).some((btn) => btn.textContent === "多选")).toBe(true);
   });
 });
+
+describe("AnnotationView 每页条数切换", () => {
+  it("changes page size and keeps the user on a valid page", async () => {
+    // 造 25 张图:page size 20 时 2 页,切到 50 时应变成 1 页且不重置
+    const images = Array.from({ length: 25 }, (_, index) => ({ ...image, id: `img-${index + 1}`, file_name: `v-${index + 1}.png` }));
+    act(() => {
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 25 }} image={images[0]} images={images} imageTotal={25} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+    await act(async () => {});
+
+    // 默认 20 条/页 → 应显示 20 个条目
+    expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(20);
+    const pager = container?.querySelector(".annotation-image-pager");
+    expect(pager).toBeTruthy();
+
+    // 点第 2 页
+    const next = pager?.querySelector<HTMLButtonElement>(".ant-pagination-next button");
+    act(() => next?.click());
+    await act(async () => {});
+    expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(5);
+
+    // 切换每页条数到 50:应显示全部 25 个,且只有 1 页
+    const sizeOptions = container?.querySelectorAll<HTMLElement>(".ant-segmented-item");
+    const size50 = Array.from(sizeOptions ?? []).find((el) => el.textContent === "50");
+    expect(size50).toBeTruthy();
+    await act(async () => { size50?.click(); });
+    await act(async () => {});
+    const visible = container?.querySelectorAll(".annotation-image-item");
+    expect(visible?.length).toBe(25);
+  });
+
+  it("keeps the page stable when imageTotal arrives after initial render", async () => {
+    const images = Array.from({ length: 20 }, (_, index) => ({ ...image, id: `img-${index + 1}`, file_name: `v-${index + 1}.png` }));
+    act(() => {
+      // 先不传 imageTotal(模拟数据未到位)
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 100 }} image={images[0]} images={images} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+    await act(async () => {});
+
+    // 然后传入 imageTotal(模拟后台加载完成,total 突然变大)
+    await act(async () => {
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 100 }} image={images[5]} images={images} imageTotal={100} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+    await act(async () => {});
+
+    // 图片 img-6 在第 1 页(index 5 / 20 = 0),页码应为 1
+    const pager = container?.querySelector(".ant-pagination-simple-pager");
+    expect(pager?.querySelector("input")?.value).toBe("1");
+  });
+});

@@ -1485,14 +1485,12 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
   const imageCount = !imageSplitFilter && !imageStatusFilter && props.imageTotal != null ? props.imageTotal : filteredImages.length;
   const imagePageCount = Math.max(1, Math.ceil(imageCount / imagePageSize));
   useEffect(() => setImagePage(0), [imageSplitFilter, imageStatusFilter]);
+  // 仅在当前图片或每页条数变化时同步页码;不依赖 images/imagePageCount,
+  // 避免后台补齐列表或 total 更新时反复重置用户的翻页状态。
   useEffect(() => {
-    if (!filteredImages.length) {
-      setImagePage(0);
-      return;
-    }
     const imageIndex = filteredImages.findIndex((item) => item.id === props.image.id);
-    if (imageIndex >= 0) setImagePage(Math.min(Math.floor(imageIndex / imagePageSize), imagePageCount - 1));
-  }, [props.image.id, props.images, imageSplitFilter, imageStatusFilter, imagePageCount]);
+    if (imageIndex >= 0) setImagePage(Math.floor(imageIndex / imagePageSize));
+  }, [props.image.id, imagePageSize]);
   const appendSamDrafts = (suggestion: SamPrediction) => {
     const source: AnnotationDraft["source"] = suggestion.backend_used === "ultralytics_sam" ? "sam" : "manual";
     setDrafts((items) => [
