@@ -341,6 +341,8 @@ class ImagePage(BaseModel):
 class UploadImagesResponse(BaseModel):
     imported: int
     items: list[ImageItemResponse]
+    # MD5 去重:跳过的重复文件名列表
+    duplicates: list[str] = Field(default_factory=list)
 
 
 class SourceImportRequest(BaseModel):

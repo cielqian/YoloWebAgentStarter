@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from sqlalchemy import select
+
 import random
 from pathlib import Path
 from typing import Literal
@@ -54,18 +56,44 @@ def _stage_image(
     return image
 
 
+def _md5_hex(content: bytes) -> str:
+    import hashlib
+    return hashlib.md5(content, usedforsecurity=False).hexdigest()
+
+
 def add_uploaded_images(
     session: Session,
     storage: Storage,
     dataset_id: str,
     uploads: list[tuple[str, bytes]],
     split: SplitName,
-) -> list[ImageItem]:
+) -> tuple[list[ImageItem], list[str]]:
+    """上传图片,MD5 去重:同数据集内已有相同内容的图片跳过,返回 (新图片, 重复文件名列表)。"""
     get_dataset(session, dataset_id)
+    # 数据集内已有的 MD5 集合(包括历史上没有记录 checksum 的旧图,按文件内容实时算)
+    from app.core.models import ImageItem
+    existing_checksums: set[str] = set()
+    for row in session.execute(
+        select(ImageItem.source_checksum).where(
+            ImageItem.dataset_id == dataset_id,
+            ImageItem.source_checksum.is_not(None),
+        )
+    ):
+        existing_checksums.add(row[0])
+
     staged: list[ImageItem] = []
+    duplicates: list[str] = []
+    batch_seen: set[str] = set()
     try:
         for file_name, content in uploads:
-            staged.append(_stage_image(session, storage, dataset_id, file_name, content, split))
+            checksum = _md5_hex(content)
+            if checksum in existing_checksums or checksum in batch_seen:
+                duplicates.append(file_name)
+                continue
+            batch_seen.add(checksum)
+            image = _stage_image(session, storage, dataset_id, file_name, content, split)
+            image.source_checksum = checksum
+            staged.append(image)
         session.flush()
         refresh_dataset_counts(session, dataset_id)
         session.commit()
@@ -76,7 +104,7 @@ def add_uploaded_images(
         raise
     for image in staged:
         session.refresh(image)
-    return staged
+    return staged, duplicates
 
 
 def add_images_from_source(

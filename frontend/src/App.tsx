@@ -294,7 +294,8 @@ export default function App() {
         const nextImages = await api.listImages(dataset.id);
         setImages(nextImages.items);
       }
-      setNotice(`已添加 ${result.imported} 张图片到 ${dataset.name} / ${split}`);
+      const dupInfo = result.duplicates?.length ? `（跳过 ${result.duplicates.length} 个重复文件：${result.duplicates.slice(0, 5).join("、")}${result.duplicates.length > 5 ? " 等" : ""}）` : "";
+      setNotice(`已添加 ${result.imported} 张图片到 ${dataset.name} / ${split}${dupInfo}`);
     } catch (reason) {
       setError(`上传「${label}」失败：${errorMessage(reason)}`);
     } finally {

@@ -743,8 +743,8 @@ async def upload_images(
         if total > settings.max_upload_bytes:
             raise ValidationError("upload_too_large", "The combined image upload exceeds the configured limit.")
         uploads.append((file.filename or "image", content))
-    items = add_uploaded_images(session, storage, dataset_id, uploads, split)
-    return UploadImagesResponse(imported=len(items), items=[_image_response(item) for item in items])
+    items, duplicates = add_uploaded_images(session, storage, dataset_id, uploads, split)
+    return UploadImagesResponse(imported=len(items), items=[_image_response(item) for item in items], duplicates=duplicates)
 
 
 @router.post("/{dataset_id}/images/from-source", response_model=SourceImportResponse, status_code=201, dependencies=[Depends(require_editable)])

@@ -324,7 +324,7 @@ export const api = {
     const form = new FormData();
     files.forEach((file) => form.append("files", file));
     form.append("split", split);
-    return uploadForm<{ imported: number; items: ImageItem[] }>(`/api/datasets/${datasetId}/images/upload`, form, onProgress);
+    return uploadForm<{ imported: number; items: ImageItem[]; duplicates?: string[] }>(`/api/datasets/${datasetId}/images/upload`, form, onProgress);
   },
   updateImageSplit: (datasetId: string, imageId: string, split: SplitName) =>
     request<ImageItem>(`/api/datasets/${datasetId}/images/${imageId}`, json({ split }, "PATCH")),
