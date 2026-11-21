@@ -49,7 +49,7 @@ import type { Annotation, BBox, ClassLabel, Dataset, FtpEntry, DatasetQualityRep
 
 type View = "workspace" | "annotation" | "training" | "models" | "agent" | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language" | "logs" | "ftp" | "datasources" | "plugin-manager" | "plugin";
 type CardReportKind = "validation" | "quality" | "duplicates";
-const ANNOTATION_IMAGE_PAGE_SIZE = 20;
+const imagePageSizeOptions = [20, 50, 100];
 
 /** 标注断点续作:按数据集记录最后标注到的图片 id,重新进入时自动定位。 */
 const ANNOTATION_CURSOR_PREFIX = "ywa.annotation.cursor.";
@@ -1401,6 +1401,7 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
   const [hiddenDraftIds, setHiddenDraftIds] = useState<Set<string>>(new Set());
   useEffect(() => { setHiddenDraftIds(new Set()); }, [props.image.id]);
   const [imagePage, setImagePage] = useState(0);
+  const [imagePageSize, setImagePageSize] = useState(20);
   const [imageSplitFilter, setImageSplitFilter] = useState<SplitName | "">("");
   const [imageStatusFilter, setImageStatusFilter] = useState<"" | "annotated" | "unannotated">("");
   const [imageBatchMode, setImageBatchMode] = useState(false);
@@ -1471,7 +1472,7 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
     (!imageSplitFilter || item.split === imageSplitFilter)
     && (!imageStatusFilter || item.status === imageStatusFilter));
   const imageCount = filteredImages.length;
-  const imagePageCount = Math.max(1, Math.ceil(imageCount / ANNOTATION_IMAGE_PAGE_SIZE));
+  const imagePageCount = Math.max(1, Math.ceil(imageCount / imagePageSize));
   useEffect(() => setImagePage(0), [imageSplitFilter, imageStatusFilter]);
   useEffect(() => {
     if (!filteredImages.length) {
@@ -1479,7 +1480,7 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
       return;
     }
     const imageIndex = filteredImages.findIndex((item) => item.id === props.image.id);
-    if (imageIndex >= 0) setImagePage(Math.min(Math.floor(imageIndex / ANNOTATION_IMAGE_PAGE_SIZE), imagePageCount - 1));
+    if (imageIndex >= 0) setImagePage(Math.min(Math.floor(imageIndex / imagePageSize), imagePageCount - 1));
   }, [props.image.id, props.images, imageSplitFilter, imageStatusFilter, imagePageCount]);
   const appendSamDrafts = (suggestion: SamPrediction) => {
     const source: AnnotationDraft["source"] = suggestion.backend_used === "ultralytics_sam" ? "sam" : "manual";
@@ -1571,12 +1572,12 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
                 <Typography.Text type="secondary" style={{ fontSize: 11 }}>已选 {batchImageIds.length} 张</Typography.Text>
                 <Space size={4}>
                   <AntdButton size="small" type="primary" danger disabled={props.busy || !batchImageIds.length} onClick={() => void removeBatchImages()}>删除所选 {batchImageIds.length || ""} 张</AntdButton>
-                  <AntdButton size="small" disabled={props.busy} onClick={() => setBatchImageIds(filteredImages.slice(imagePage * ANNOTATION_IMAGE_PAGE_SIZE, (imagePage + 1) * ANNOTATION_IMAGE_PAGE_SIZE).map((item) => item.id))}>全选本页</AntdButton>
+                  <AntdButton size="small" disabled={props.busy} onClick={() => setBatchImageIds(filteredImages.slice(imagePage * imagePageSize, (imagePage + 1) * imagePageSize).map((item) => item.id))}>全选本页</AntdButton>
                   <AntdButton size="small" disabled={props.busy || !batchImageIds.length} onClick={() => setBatchImageIds([])}>清空</AntdButton>
                 </Space>
               </div>
             )}
-            <Segmented className="annotation-image-split-tabs" block size="small" aria-label="按 split 筛选图片" value={imageSplitFilter} onChange={(value) => setImageSplitFilter(value as SplitName | "")} options={IMAGE_SPLIT_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><Segmented className="annotation-image-split-tabs" block size="small" aria-label="按标注状态筛选图片" value={imageStatusFilter} onChange={(value) => setImageStatusFilter(value as "" | "annotated" | "unannotated")} options={IMAGE_STATUS_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><div className="annotation-image-list">{filteredImages.slice(imagePage * ANNOTATION_IMAGE_PAGE_SIZE, (imagePage + 1) * ANNOTATION_IMAGE_PAGE_SIZE).map((item, index) => { const absoluteIndex = imagePage * ANNOTATION_IMAGE_PAGE_SIZE + index; return <AntdButton key={item.id} type="text" block className={`annotation-image-item${item.id === props.image.id ? " active" : ""}${imageBatchMode ? " batch" : ""}${imageBatchMode && batchImageIds.includes(item.id) ? " batch-checked" : ""}`} aria-label={`选择图片 ${item.file_name}`} onClick={() => { if (imageBatchMode) { toggleBatchImage(item.id); return; } props.onImageSelect?.(item); }}>{imageBatchMode && <span className="annotation-image-check" aria-hidden><span className={`annotation-image-check-box${batchImageIds.includes(item.id) ? " on" : ""}`} /></span>}<img src={api.imageThumbnailUrl(item.id)} alt="" loading="lazy" decoding="async" /><span className="annotation-image-copy"><strong>{String(absoluteIndex + 1).padStart(2, "0")} · {item.file_name}</strong><small className={item.status === "annotated" ? "annotated" : "unannotated"}>{item.split} · {item.status === "annotated" ? "已标注" : "未标注"}</small></span></AntdButton>; })}{!filteredImages.length && <AntdEmpty image={AntdEmpty.PRESENTED_IMAGE_SIMPLE} description="当前筛选下没有图片" />}</div>{imagePageCount > 1 && <div className="annotation-image-pagination"><Pagination className="annotation-image-pager" size="small" simple current={imagePage + 1} pageSize={ANNOTATION_IMAGE_PAGE_SIZE} total={imageCount} onChange={(page) => setImagePage(Math.min(Math.max(page, 1), imagePageCount) - 1)} /></div>}</aside>}
+            <Segmented className="annotation-image-split-tabs" block size="small" aria-label="按 split 筛选图片" value={imageSplitFilter} onChange={(value) => setImageSplitFilter(value as SplitName | "")} options={IMAGE_SPLIT_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><Segmented className="annotation-image-split-tabs" block size="small" aria-label="按标注状态筛选图片" value={imageStatusFilter} onChange={(value) => setImageStatusFilter(value as "" | "annotated" | "unannotated")} options={IMAGE_STATUS_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><div className="annotation-image-list">{filteredImages.slice(imagePage * imagePageSize, (imagePage + 1) * imagePageSize).map((item, index) => { const absoluteIndex = imagePage * imagePageSize + index; return <AntdButton key={item.id} type="text" block className={`annotation-image-item${item.id === props.image.id ? " active" : ""}${imageBatchMode ? " batch" : ""}${imageBatchMode && batchImageIds.includes(item.id) ? " batch-checked" : ""}`} aria-label={`选择图片 ${item.file_name}`} onClick={() => { if (imageBatchMode) { toggleBatchImage(item.id); return; } props.onImageSelect?.(item); }}>{imageBatchMode && <span className="annotation-image-check" aria-hidden><span className={`annotation-image-check-box${batchImageIds.includes(item.id) ? " on" : ""}`} /></span>}<img src={api.imageThumbnailUrl(item.id)} alt="" loading="lazy" decoding="async" /><span className="annotation-image-copy"><strong>{String(absoluteIndex + 1).padStart(2, "0")} · {item.file_name}</strong><small className={item.status === "annotated" ? "annotated" : "unannotated"}>{item.split} · {item.status === "annotated" ? "已标注" : "未标注"}</small></span></AntdButton>; })}{!filteredImages.length && <AntdEmpty image={AntdEmpty.PRESENTED_IMAGE_SIMPLE} description="当前筛选下没有图片" />}</div><div className="annotation-image-pagination"><Pagination className="annotation-image-pager" size="small" simple current={imagePage + 1} pageSize={imagePageSize} total={imageCount} onChange={(page) => setImagePage(Math.min(Math.max(page, 1), imagePageCount) - 1)} hideOnSinglePage /><Segmented size="small" value={imagePageSize} onChange={(value) => { setImagePageSize(value); setImagePage(0); }} options={imagePageSizeOptions.map((n) => ({ value: n, label: `${n}` }))} /></div></aside>}
     <div className="annotation-canvas-column">{props.dataset.task_type === "classify" ? <section className="canvas-card classification-card">
               <div className="classification-image-wrap"><img src={api.imageUrl(props.image.id)} alt={props.image.file_name} /></div>
               <div className="classification-info"><Typography.Text type="secondary">IMAGE CLASSIFICATION</Typography.Text><Typography.Title level={5} className="annotation-title">{props.image.file_name}</Typography.Title><Typography.Text type="secondary">选择这张图片的唯一类别，训练时会按 train/类别名/图片 导出。</Typography.Text>
