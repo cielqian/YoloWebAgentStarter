@@ -120,9 +120,8 @@ export default function App() {
 
   const loadDataset = async (dataset: Dataset, nextView: View = "workspace") => {
     setSelected(dataset);
-    setView(nextView);
     setSelectedImage(undefined);
-    // 首屏只取第一页(侧栏分页展示),其余页后台补齐;进入大库不再整表等待。
+    // 先切视图再等数据,用户立即看到标注界面(骨架屏);首屏只取第一页,其余页后台补齐。
     const [nextClasses, firstPage] = await Promise.all([api.listClasses(dataset.id), api.listImagesPage(dataset.id, 0, 200)]);
     setClasses(nextClasses);
     setImages(firstPage.items);
@@ -137,14 +136,21 @@ export default function App() {
   const fillRemainingImages = (datasetId: string, firstPage: ImagePage) => {
     const pageSize = 500;
     const offsets = Array.from({ length: Math.ceil((firstPage.total - firstPage.items.length) / pageSize) }, (_, index) => firstPage.items.length + index * pageSize);
-    return Promise.all(offsets.map((offset) => api.listImagesPage(datasetId, offset, pageSize))).then((pages) => {
-      if (selectedDatasetRef.current !== datasetId) return;
-      setImages((current) => {
-        const ids = new Set(current.map((item) => item.id));
-        const additions = pages.flatMap((page) => page.items).filter((item) => !ids.has(item.id));
-        return additions.length ? [...current, ...additions] : current;
-      });
-    }).catch(() => undefined); // 首屏已可用,补齐失败不打扰;刷新或重进可恢复
+    // 顺序分批拉取,避免一次性发出数百个并发请求挤占带宽、拖慢标注请求。
+    const fill = async () => {
+      for (const offset of offsets) {
+        if (selectedDatasetRef.current !== datasetId) return;
+        try {
+          const page = await api.listImagesPage(datasetId, offset, pageSize);
+          setImages((current) => {
+            const ids = new Set(current.map((item) => item.id));
+            const additions = page.items.filter((item) => !ids.has(item.id));
+            return additions.length ? [...current, ...additions] : current;
+          });
+        } catch { break; } // 首屏已可用,补齐失败不打扰;刷新或重进可恢复
+      }
+    };
+    return fill();
   };
 
   const createDatasetClass = async (name: string, color: string): Promise<ClassLabel | undefined> => {
@@ -414,21 +420,20 @@ export default function App() {
 
   const continueAnnotation = async (dataset: Dataset) => {
     await run(async () => {
-      // 立即给出反馈,再等首屏数据(类别+第一页图片+目标图标注);此前整表拉两遍才切视图,大库明显卡顿。
-      setNotice(`正在打开「${dataset.name}」的标注…`);
+      // 立即切到标注视图(带骨架屏),数据在后台加载,不阻塞用户进入。
+      setNotice("");
       const firstPage = await loadDataset(dataset);
       // 断点续作:上次标注到哪张就回到哪张;游标失效(图片已删)再退回首张未标注。
       const savedId = readAnnotationCursor(dataset.id);
       const savedImage = savedId ? firstPage.items.find((item) => item.id === savedId) : undefined;
       const image = savedImage ?? firstPage.items.find((item) => item.status === "unannotated") ?? firstPage.items[0];
       if (!image) {
+        setView("workspace");
         setNotice("该数据集还没有图片可标注。");
         return;
       }
       setSelectedImage(image);
       setAnnotations(await api.getAnnotations(dataset.id, image.id));
-      setView("annotation");
-      setNotice("");
       // 上次的图片不在首屏(大库)时,等后台补齐列表再自动翻过去;期间用户已动手标注就不打扰。
       const pending = savedId && !savedImage ? fillImagesRef.current : null;
       if (pending) void pending.then(() => {
