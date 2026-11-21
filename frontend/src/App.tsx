@@ -423,7 +423,7 @@ export default function App() {
     await run(async () => {
       // 立即切到标注视图(带骨架屏),数据在后台加载,不阻塞用户进入。
       setNotice("");
-      const firstPage = await loadDataset(dataset);
+      const firstPage = await loadDataset(dataset, "annotation");
       // 断点续作:上次标注到哪张就回到哪张;游标失效(图片已删)再退回首张未标注。
       const savedId = readAnnotationCursor(dataset.id);
       const savedImage = savedId ? firstPage.items.find((item) => item.id === savedId) : undefined;
