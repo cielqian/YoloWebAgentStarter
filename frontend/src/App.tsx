@@ -72,6 +72,7 @@ export default function App() {
   useEffect(() => { selectedDatasetRef.current = selected?.id; }, [selected?.id]);
   const [classes, setClasses] = useState<ClassLabel[]>([]);
   const [images, setImages] = useState<ImageItem[]>([]);
+  const [imageTotal, setImageTotal] = useState<number>();
   const [selectedImage, setSelectedImage] = useState<ImageItem>();
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [view, setView] = useState<View>("workspace");
@@ -126,6 +127,7 @@ export default function App() {
     const [nextClasses, firstPage] = await Promise.all([api.listClasses(dataset.id), api.listImagesPage(dataset.id, 0, 200)]);
     setClasses(nextClasses);
     setImages(firstPage.items);
+    setImageTotal(firstPage.total);
     // A class id belongs to one dataset. Reusing the previous dataset's
     // active id leaves the annotation canvas without a valid label.
     setActiveClassId(nextClasses[0]?.id || "");
@@ -387,6 +389,7 @@ export default function App() {
       for (const id of imageIds) await api.deleteDatasetImage(selected.id, id);
       const firstPage = await api.listImagesPage(selected.id, 0, 200);
       setImages(firstPage.items);
+      setImageTotal(firstPage.total);
       if (firstPage.total > firstPage.items.length) fillImagesRef.current = fillRemainingImages(selected.id, firstPage);
       setSelected((current) => (current ? { ...current, image_count: Math.max(0, current.image_count - imageIds.length) } : current));
       setNotice(`已删除 ${imageIds.length} 张图片`);
@@ -564,6 +567,7 @@ export default function App() {
           dataset={displayedDataset}
           image={selectedImage}
           images={images}
+          imageTotal={imageTotal}
           onImageSelect={(image) => void openImage(image)}
           classes={classes}
           annotations={annotations}
@@ -1365,7 +1369,7 @@ const IMAGE_SPLIT_FILTERS: Array<{ value: SplitName | ""; label: string }> = [
   { value: "test", label: "test" },
 ];
 
-export function AnnotationView(props: { dataset: Dataset; image: ImageItem; images?: ImageItem[]; onImageSelect?: (image: ImageItem) => void; classes: ClassLabel[]; annotations: Annotation[]; activeClassId: string; onClassChange: (id: string) => void; onBack: () => void; onPrevious?: () => void; onNext?: (drafts?: AnnotationDraft[]) => void; hasPrevious?: boolean; hasNext?: boolean; onSave: (drafts: AnnotationDraft[]) => void; onDirtyChange?: (dirty: boolean) => void; samBusy?: boolean; onCreateClass?: (name: string, color: string) => Promise<ClassLabel | undefined>; onImportClasses?: (templateIds: string[]) => Promise<ClassLabel[] | undefined>; onUpdateClass?: (classId: string, payload: { sam3_prompt?: string; name?: string; color?: string }) => Promise<ClassLabel | undefined>; onDeleteClass?: (classId: string) => Promise<boolean | undefined>; onSam: (box: BBox) => Promise<SamPrediction>; onSamPoints: (points: [number, number][]) => Promise<SamPrediction>; busy: boolean; readOnly?: boolean; samCapabilities?: SamCapabilities; focusMode?: boolean; onToggleFocusMode?: () => void; onDeleteImages?: (imageIds: string[]) => Promise<boolean> }) {
+export function AnnotationView(props: { dataset: Dataset; image: ImageItem; images?: ImageItem[]; imageTotal?: number; onImageSelect?: (image: ImageItem) => void; classes: ClassLabel[]; annotations: Annotation[]; activeClassId: string; onClassChange: (id: string) => void; onBack: () => void; onPrevious?: () => void; onNext?: (drafts?: AnnotationDraft[]) => void; hasPrevious?: boolean; hasNext?: boolean; onSave: (drafts: AnnotationDraft[]) => void; onDirtyChange?: (dirty: boolean) => void; samBusy?: boolean; onCreateClass?: (name: string, color: string) => Promise<ClassLabel | undefined>; onImportClasses?: (templateIds: string[]) => Promise<ClassLabel[] | undefined>; onUpdateClass?: (classId: string, payload: { sam3_prompt?: string; name?: string; color?: string }) => Promise<ClassLabel | undefined>; onDeleteClass?: (classId: string) => Promise<boolean | undefined>; onSam: (box: BBox) => Promise<SamPrediction>; onSamPoints: (points: [number, number][]) => Promise<SamPrediction>; busy: boolean; readOnly?: boolean; samCapabilities?: SamCapabilities; focusMode?: boolean; onToggleFocusMode?: () => void; onDeleteImages?: (imageIds: string[]) => Promise<boolean> }) {
   const toDraft = (item: Annotation): AnnotationDraft => ({ id: item.id, class_id: item.class_id, type: item.type, bbox: item.bbox ?? undefined, polygon: item.polygon ?? undefined, obb: item.obb ?? undefined, keypoints: item.keypoints ?? undefined, source: item.source });
   const [drafts, setDrafts] = useState<AnnotationDraft[]>(props.annotations.map(toDraft));
   // 撤销栈：记录每次标注变更前的快照（不含纯选中态），切换图片/外部加载标注时清空
@@ -1477,7 +1481,8 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
   const filteredImages = (props.images ?? []).filter((item) =>
     (!imageSplitFilter || item.split === imageSplitFilter)
     && (!imageStatusFilter || item.status === imageStatusFilter));
-  const imageCount = filteredImages.length;
+  // 无筛选时用后端返回的 total(首屏已知且稳定);有筛选时用已加载的过滤结果数
+  const imageCount = !imageSplitFilter && !imageStatusFilter && props.imageTotal != null ? props.imageTotal : filteredImages.length;
   const imagePageCount = Math.max(1, Math.ceil(imageCount / imagePageSize));
   useEffect(() => setImagePage(0), [imageSplitFilter, imageStatusFilter]);
   useEffect(() => {
