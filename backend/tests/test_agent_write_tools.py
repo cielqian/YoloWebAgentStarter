@@ -12,8 +12,8 @@ from app.core.models import AgentApproval
 from app.core.time import utc_now
 
 
-def image_bytes() -> bytes:
-    image = Image.new("RGB", (80, 60), "#6688aa")
+def image_bytes(color: str = "#6688aa") -> bytes:
+    image = Image.new("RGB", (80, 60), color)
     output = io.BytesIO()
     image.save(output, format="PNG")
     return output.getvalue()
@@ -46,11 +46,12 @@ def prepared_dataset(client, task_type: str = "detect") -> tuple[str, str]:
     dataset_id = dataset["id"]
     label = client.post(f"/api/datasets/{dataset_id}/classes", json={"name": "object"}).json()["id"]
     images = []
-    for split in ("train", "val"):
+    # 每个 split 内容不同：相同内容会被上传去重跳过
+    for split, color in (("train", "#3157d5"), ("val", "#22c55e")):
         response = client.post(
             f"/api/datasets/{dataset_id}/images/upload",
             data={"split": split},
-            files={"files": (f"{split}.png", image_bytes(), "image/png")},
+            files={"files": (f"{split}.png", image_bytes(color), "image/png")},
         )
         images.append(response.json()["items"][0])
     for image in images:

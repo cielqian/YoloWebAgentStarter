@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import zlib
 
 from PIL import Image
 
@@ -19,9 +20,11 @@ def create_dataset(client, task_type: str = "detect") -> str:
 
 
 def upload_image(client, dataset_id: str, name: str = "cat.png") -> dict:
+    # 同一数据集内内容相同会被上传去重跳过：按文件名生成不同的图片内容
+    color = f"#{zlib.crc32(name.encode()) & 0xFFFFFF:06x}"
     response = client.post(
         f"/api/datasets/{dataset_id}/images/upload",
-        files={"files": (name, png_bytes(), "image/png")},
+        files={"files": (name, png_bytes(color), "image/png")},
     )
     assert response.status_code == 201, response.text
     return response.json()["items"][0]

@@ -124,7 +124,8 @@ def test_quality_report_and_deterministic_bulk_splits(client):
     client.post(f"/api/datasets/{dataset_id}/classes", json={"name": "b"})
     images = []
     for index in range(5):
-        response = client.post(f"/api/datasets/{dataset_id}/images/upload", files={"files": (f"{index}.png", png_bytes(), "image/png")})
+        # 每张图片内容不同：相同内容会被上传去重跳过
+        response = client.post(f"/api/datasets/{dataset_id}/images/upload", files={"files": (f"{index}.png", png_bytes(color=f"#{(index + 1) * 0x101010:06x}"), "image/png")})
         images.append(response.json()["items"][0])
     client.put(f"/api/datasets/{dataset_id}/images/{images[0]['id']}/annotations", json={"annotations": [
         {"type": "bbox", "class_id": class_a, "bbox": {"x": 10, "y": 10, "width": 10, "height": 10}},
@@ -369,11 +370,11 @@ def test_classification_uses_yolo_class_directories(client):
     cat_id = client.post(f"/api/datasets/{dataset_id}/classes", json={"name": "cat"}).json()["id"]
     dog_id = client.post(f"/api/datasets/{dataset_id}/classes", json={"name": "dog"}).json()["id"]
     images = []
-    for split in ("train", "val"):
+    for split, color in (("train", "#3157d5"), ("val", "#22c55e")):
         response = client.post(
             f"/api/datasets/{dataset_id}/images/upload",
             data={"split": split},
-            files={"files": (f"{split}.png", png_bytes(), "image/png")},
+            files={"files": (f"{split}.png", png_bytes(color=color), "image/png")},
         )
         images.append(response.json()["items"][0])
     for image, class_id in zip(images, (cat_id, dog_id), strict=True):
