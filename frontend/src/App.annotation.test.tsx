@@ -20,6 +20,31 @@ import {afterEach, beforeEach, describe, expect, it, vi, beforeAll} from "vitest
 import { AnnotationView } from "./App";
 
 vi.mock("./components/confirm", () => ({ confirmDialog: vi.fn().mockResolvedValue(true), ConfirmProvider: () => null }));
+
+// 侧栏图片列表走服务端分页:这里只替换分页接口,其余 api 保持原样
+const listImagesPage = vi.hoisted(() => vi.fn());
+vi.mock("./api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api/client")>();
+  return { ...actual, api: { ...actual.api, listImagesPage } };
+});
+
+/** 等侧栏那一页的请求回来 */
+const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+/** 内存版分页接口:按 offset/limit/split/status/anchor 切片,对应后端的契约 */
+function serveImages(all: ImageItem[]) {
+  listImagesPage.mockImplementation(async (_datasetId: string, offset: number, limit: number, filters: { split?: string; status?: string; anchor?: string }) => {
+    const rows = all.filter((item) => (!filters?.split || item.split === filters.split) && (!filters?.status || item.status === filters.status));
+    let resolved = offset;
+    if (filters?.anchor) {
+      const index = rows.findIndex((item) => item.id === filters.anchor);
+      if (index >= 0) resolved = Math.floor(index / limit) * limit;
+    }
+    return { items: rows.slice(resolved, resolved + limit), total: rows.length, offset: resolved };
+  });
+}
+
+const lastImageQuery = () => listImagesPage.mock.calls[listImagesPage.mock.calls.length - 1]?.[3];
 import type { Annotation, ClassLabel, Dataset, ImageItem } from "./types";
 
 vi.mock("./annotation/AnnotationCanvas", () => ({
@@ -46,6 +71,8 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  listImagesPage.mockReset();
+  listImagesPage.mockResolvedValue({ items: [], total: 0, offset: 0 });
 });
 
 afterEach(() => {
@@ -54,12 +81,17 @@ afterEach(() => {
 });
 
 describe("AnnotationView persistence", () => {
-  it("shows the complete image list and switches the active image", () => {
+  it("shows the current page from the server and switches the active image", async () => {
     const onImageSelect = vi.fn();
+    serveImages([image, secondImage]);
     act(() => {
-      root?.render(<AnnotationView dataset={dataset} image={image} images={[image, secondImage]} onImageSelect={onImageSelect} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+      root?.render(<AnnotationView dataset={dataset} image={image} onImageSelect={onImageSelect} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
     });
+    await settle();
 
+    // 进入时只发一次请求,并按当前图片定位
+    expect(listImagesPage).toHaveBeenCalledTimes(1);
+    expect(listImagesPage.mock.calls[0]).toEqual(["ds-1", 0, 20, { split: "", status: "", anchor: image.id }]);
     expect(container?.textContent).toContain("2 张图片");
     expect(container?.textContent).toContain("vehicle-02.png");
     expect(container?.textContent).toContain("未标注");
@@ -68,24 +100,34 @@ describe("AnnotationView persistence", () => {
     expect(onImageSelect).toHaveBeenCalledWith(secondImage);
   });
 
-  it("paginates the image list at twenty items", () => {
+  it("loads only the page being shown, twenty items at a time", async () => {
     const images = [image, ...Array.from({ length: 20 }, (_, index) => ({ ...image, id: `img-${index + 2}`, file_name: `vehicle-${index + 2}.png` }))];
+    serveImages(images);
     act(() => {
-      root?.render(<AnnotationView dataset={{ ...dataset, image_count: images.length }} image={image} images={images} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: images.length }} image={image} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
     });
+    await settle();
 
+    // 首屏只有第 1 页的 20 条,但总数是整个数据集的
     expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(20);
+    expect(container?.textContent).toContain("21 张图片");
     // 简洁分页:图标翻页 + 输入页码跳转
     const pager = container?.querySelector(".annotation-image-pager");
     expect(pager).toBeTruthy();
     expect(pager?.querySelector("input")?.value).toBe("1");
     expect(pager?.textContent).toContain("/2");
+
+    // 翻到第 2 页:按 offset 再取一页,不带上 anchor
     const next = pager?.querySelector<HTMLButtonElement>(".ant-pagination-next button");
     act(() => next?.click());
+    await settle();
+    expect(listImagesPage).toHaveBeenCalledTimes(2);
+    expect(listImagesPage.mock.calls[1]).toEqual(["ds-1", 20, 20, { split: "", status: "", anchor: undefined }]);
     expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(1);
     expect(container?.textContent).toContain("vehicle-21.png");
+    expect(container?.querySelector(".annotation-image-item.active")).toBeNull();
 
-    // 跳转回第 1 页:输入页码回车
+    // 跳转回第 1 页:输入页码后失焦
     const jump = pager?.querySelector<HTMLInputElement>("input");
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     act(() => {
@@ -93,24 +135,57 @@ describe("AnnotationView persistence", () => {
       jump?.dispatchEvent(new Event("input", { bubbles: true }));
     });
     act(() => jump?.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    await settle();
     expect(pager?.querySelector("input")?.value).toBe("1");
+    expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(20);
     expect(container?.querySelector(".annotation-image-item.active")?.textContent).toContain("vehicle.png");
   });
 
-  it("filters the image list by train, val and test split", () => {
-    const valImage = { ...secondImage, split: "val" as const };
-    const testImage = { ...image, id: "img-3", file_name: "vehicle-03.png", split: "test" as const };
+  it("opens on the page that contains the current image", async () => {
+    const images = Array.from({ length: 100 }, (_, index) => ({ ...image, id: `img-${index + 1}`, file_name: `v-${index + 1}.png`, status: "annotated" as const }));
+    serveImages(images);
+    // 第 46 张(下标 45)在每页 20 张的第 3 页
     act(() => {
-      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 3 }} image={image} images={[image, valImage, testImage]} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 100 }} image={images[45]} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
     });
+    await settle();
 
+    expect(listImagesPage).toHaveBeenCalledTimes(1);
+    expect(lastImageQuery()).toEqual({ split: "", status: "", anchor: "img-46" });
+    expect(container?.querySelector<HTMLInputElement>(".annotation-image-pager input")?.value).toBe("3");
+    const names = Array.from(container?.querySelectorAll(".annotation-image-item") ?? []).map((item) => item.textContent ?? "");
+    expect(names[0]).toContain("v-41.png");
+    expect(names[19]).toContain("v-60.png");
+    expect(container?.querySelector(".annotation-image-item.active")?.textContent).toContain("v-46.png");
+  });
+
+  it("sends split and status filters to the server", async () => {
+    const valImage = { ...secondImage, split: "val" as const };
+    const testImage = { ...image, id: "img-3", file_name: "vehicle-03.png", split: "test" as const, status: "unannotated" as const };
+    serveImages([image, valImage, testImage]);
+    act(() => {
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 3 }} image={image} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+    await settle();
     expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(3);
-    const valTab = Array.from(container?.querySelectorAll<HTMLElement>(".annotation-image-split-tabs .ant-segmented-item") ?? []).find((item) => item.textContent === "val");
-    act(() => valTab?.click());
 
+    const tab = (group: string, text: string) =>
+      Array.from(container?.querySelectorAll<HTMLElement>(`.${group} .ant-segmented-item`) ?? []).find((item) => item.textContent === text);
+    act(() => tab("annotation-image-split-tabs", "val")?.click());
+    await settle();
+    // 筛选在服务端做:总数是筛选后的数量;当前图片不在结果里时停在第 1 页
+    expect(lastImageQuery()).toEqual({ split: "val", status: "", anchor: image.id });
     expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(1);
+    expect(container?.textContent).toContain("1 张图片");
     expect(container?.textContent).toContain("vehicle-02.png");
     expect(container?.textContent).not.toContain("vehicle-03.png");
+
+    act(() => tab("annotation-image-split-tabs", "全部")?.click());
+    act(() => tab("annotation-image-split-tabs", "已标注")?.click());
+    await settle();
+    expect(lastImageQuery()).toEqual({ split: "", status: "annotated", anchor: image.id });
+    expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(1);
+    expect(container?.textContent).toContain("vehicle.png");
   });
 
   it("saves the edited OBB draft without its client-only id", () => {
@@ -203,7 +278,7 @@ describe("AnnotationView persistence", () => {
     const onPrevious = vi.fn();
     const onNext = vi.fn();
     act(() => {
-      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 2 }} image={image} images={[image, secondImage]} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onPrevious={onPrevious} onNext={onNext} hasPrevious hasNext onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 2 }} image={secondImage} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onPrevious={onPrevious} onNext={onNext} hasPrevious hasNext onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
     });
 
     const buttons = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []);
@@ -220,7 +295,7 @@ describe("AnnotationView persistence", () => {
   it("passes current drafts to next navigation for auto-save", () => {
     const onNext = vi.fn();
     act(() => {
-      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 2 }} image={image} images={[image, secondImage]} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onPrevious={vi.fn()} onNext={onNext} hasPrevious hasNext onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 2 }} image={image} onImageSelect={vi.fn()} classes={classes} annotations={[annotation]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onPrevious={vi.fn()} onNext={onNext} hasPrevious hasNext onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
     });
 
     const row = container?.querySelector<HTMLDivElement>(".shape-row");
@@ -366,10 +441,11 @@ describe("AnnotationView persistence", () => {
 describe("AnnotationView image batch delete", () => {
   it("multi-selects images and deletes them after confirmation", async () => {
     const onDeleteImages = vi.fn().mockResolvedValue(true);
+    serveImages([image, secondImage]);
     act(() => {
-      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 2 }} image={image} images={[image, secondImage]} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} onDeleteImages={onDeleteImages} />);
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 2 }} image={image} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} onDeleteImages={onDeleteImages} />);
     });
-    await act(async () => {});
+    await settle();
 
     const items = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>(".annotation-image-item"));
     expect(items().length).toBe(2);
@@ -396,51 +472,67 @@ describe("AnnotationView image batch delete", () => {
 });
 
 describe("AnnotationView 每页条数切换", () => {
-  it("changes page size and keeps the user on a valid page", async () => {
-    // 造 25 张图:page size 20 时 2 页,切到 50 时应变成 1 页且不重置
+  it("shows the whole list on one page after raising the page size", async () => {
+    // 25 张图:每页 20 时 2 页,切到 50 后应收成 1 页并显示全部 25 条
     const images = Array.from({ length: 25 }, (_, index) => ({ ...image, id: `img-${index + 1}`, file_name: `v-${index + 1}.png` }));
+    serveImages(images);
     act(() => {
-      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 25 }} image={images[0]} images={images} imageTotal={25} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 25 }} image={images[0]} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
     });
-    await act(async () => {});
-
-    // 默认 20 条/页 → 应显示 20 个条目
+    await settle();
     expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(20);
-    const pager = container?.querySelector(".annotation-image-pager");
-    expect(pager).toBeTruthy();
 
-    // 点第 2 页
-    const next = pager?.querySelector<HTMLButtonElement>(".ant-pagination-next button");
-    act(() => next?.click());
-    await act(async () => {});
-    expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(5);
+    const sizeOption = (size: string) =>
+      Array.from(container?.querySelectorAll<HTMLElement>(".annotation-image-pagination .ant-segmented-item") ?? []).find((el) => el.textContent === size);
+    act(() => sizeOption("50")?.click());
+    await settle();
 
-    // 切换每页条数到 50:应显示全部 25 个,且只有 1 页
-    const sizeOptions = container?.querySelectorAll<HTMLElement>(".ant-segmented-item");
-    const size50 = Array.from(sizeOptions ?? []).find((el) => el.textContent === "50");
-    expect(size50).toBeTruthy();
-    await act(async () => { size50?.click(); });
-    await act(async () => {});
-    const visible = container?.querySelectorAll(".annotation-image-item");
-    expect(visible?.length).toBe(25);
+    expect(lastImageQuery()).toEqual({ split: "", status: "", anchor: images[0].id });
+    expect(listImagesPage.mock.calls[listImagesPage.mock.calls.length - 1]?.slice(1, 3)).toEqual([0, 50]);
+    expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(25);
+    // 只有一页时分页器隐藏
+    expect(container?.querySelector(".annotation-image-pager")).toBeNull();
+
+    // 切回 20:重新定位到当前图片所在的页(第 1 页)
+    act(() => sizeOption("20")?.click());
+    await settle();
+    expect(container?.querySelectorAll(".annotation-image-item")).toHaveLength(20);
+    expect(container?.querySelector<HTMLInputElement>(".annotation-image-pager input")?.value).toBe("1");
   });
 
-  it("keeps the page stable when imageTotal arrives after initial render", async () => {
-    const images = Array.from({ length: 20 }, (_, index) => ({ ...image, id: `img-${index + 1}`, file_name: `v-${index + 1}.png` }));
+  it("re-fetches the page the user is on when the list version changes", async () => {
+    const images = Array.from({ length: 30 }, (_, index) => ({ ...image, id: `img-${index + 1}`, file_name: `v-${index + 1}.png` }));
+    serveImages(images);
     act(() => {
-      // 先不传 imageTotal(模拟数据未到位)
-      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 100 }} image={images[0]} images={images} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 30 }} image={images[0]} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} imageListVersion={0} />);
     });
-    await act(async () => {});
+    await settle();
 
-    // 然后传入 imageTotal(模拟后台加载完成,total 突然变大)
-    await act(async () => {
-      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 100 }} image={images[5]} images={images} imageTotal={100} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    // 用户翻到第 2 页
+    act(() => container?.querySelector<HTMLButtonElement>(".ant-pagination-next button")?.click());
+    await settle();
+    expect(container?.textContent).toContain("v-21.png");
+
+    // 列表变化(如保存标注后):重取用户所在的第 2 页,而不是跳回当前图片那一页
+    listImagesPage.mockClear();
+    act(() => {
+      root?.render(<AnnotationView dataset={{ ...dataset, image_count: 30 }} image={images[0]} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} imageListVersion={1} />);
     });
-    await act(async () => {});
+    await settle();
 
-    // 图片 img-6 在第 1 页(index 5 / 20 = 0),页码应为 1
-    const pager = container?.querySelector(".ant-pagination-simple-pager");
-    expect(pager?.querySelector("input")?.value).toBe("1");
+    expect(listImagesPage).toHaveBeenCalledTimes(1);
+    expect(listImagesPage.mock.calls[0]).toEqual(["ds-1", 20, 20, { split: "", status: "", anchor: undefined }]);
+    expect(container?.textContent).toContain("v-21.png");
+  });
+
+  it("shows an error instead of an empty list when the page fails to load", async () => {
+    listImagesPage.mockRejectedValue(new Error("网络异常"));
+    act(() => {
+      root?.render(<AnnotationView dataset={dataset} image={image} onImageSelect={vi.fn()} classes={classes} annotations={[]} activeClassId="cls-1" onClassChange={vi.fn()} onBack={vi.fn()} onSave={vi.fn()} onSam={vi.fn()} onSamPoints={vi.fn()} busy={false} />);
+    });
+    await settle();
+
+    expect(container?.textContent).toContain("图片列表加载失败：网络异常");
+    expect(container?.querySelector(".annotation-image-item")).toBeNull();
   });
 });

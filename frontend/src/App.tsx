@@ -16,6 +16,7 @@ import {
   Select as AntdSelect,
   Space,
   Space as AntdSpace,
+  Spin,
   Table,
   Tag as AntdTag,
   Typography,
@@ -23,6 +24,9 @@ import {
 } from "antd";
 import { DownloadOutlined, MoreOutlined, PlusOutlined } from "@ant-design/icons";
 import { AnnotationCanvas, type AnnotationDraft } from "./annotation/AnnotationCanvas";
+import { writeAnnotationCursor } from "./annotation/cursor";
+import { pickEntryImage, pickReplacementImage, useImageNeighbors } from "./annotation/navigation";
+import { useImagePage } from "./annotation/useImagePage";
 import { api, apiUrl, type UploadProgress } from "./api/client";
 import { StarterShell, type StarterSection } from "./components/StarterShell";
 import { useLeaveConfirm } from "./components/useLeaveConfirm";
@@ -51,15 +55,6 @@ type View = "workspace" | "annotation" | "training" | "models" | "agent" | "sett
 type CardReportKind = "validation" | "quality" | "duplicates";
 const imagePageSizeOptions = [20, 50, 100];
 
-/** 标注断点续作:按数据集记录最后标注到的图片 id,重新进入时自动定位。 */
-const ANNOTATION_CURSOR_PREFIX = "ywa.annotation.cursor.";
-const readAnnotationCursor = (datasetId: string): string | null => {
-  try { return localStorage.getItem(ANNOTATION_CURSOR_PREFIX + datasetId); } catch { return null; }
-};
-const writeAnnotationCursor = (datasetId: string, imageId: string) => {
-  try { localStorage.setItem(ANNOTATION_CURSOR_PREFIX + datasetId, imageId); } catch { /* 隐私模式等场景 localStorage 不可用,静默降级 */ }
-};
-
 function isHistoricalActive(dataset: Dataset): boolean {
   return dataset.active_version_number != null && dataset.latest_version_number != null && dataset.active_version_number !== dataset.latest_version_number;
 }
@@ -67,12 +62,12 @@ function isHistoricalActive(dataset: Dataset): boolean {
 export default function App() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selected, setSelected] = useState<Dataset>();
-  // 后台图片补齐的过期判断:记录最新选中的数据集 id,切换后丢弃旧结果。
+  // 后台上传/合并等异步任务的过期判断:记录最新选中的数据集 id,切换数据集后丢弃旧结果。
   const selectedDatasetRef = useRef<string>();
   useEffect(() => { selectedDatasetRef.current = selected?.id; }, [selected?.id]);
   const [classes, setClasses] = useState<ClassLabel[]>([]);
-  const [images, setImages] = useState<ImageItem[]>([]);
-  const [imageTotal, setImageTotal] = useState<number>();
+  // 图片列表只在侧栏按页加载(见 useImagePage);这里只记一个版本号,列表变化时通知侧栏重新拉取。
+  const [imageListVersion, setImageListVersion] = useState(0);
   const [selectedImage, setSelectedImage] = useState<ImageItem>();
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [view, setView] = useState<View>("workspace");
@@ -94,14 +89,11 @@ export default function App() {
   const [activePluginId, setActivePluginId] = useState<string>();
   const { requestLeave, dialog: leaveDialog } = useLeaveConfirm(view === "annotation" && annotationDirty);
 
-  // 标注断点续作:后台补齐 promise 与几份最新值引用,供补齐完成后的延迟定位使用。
-  const fillImagesRef = useRef<Promise<void> | null>(null);
-  const imagesRef = useRef<ImageItem[]>([]);
-  useEffect(() => { imagesRef.current = images; }, [images]);
-  const selectedImageRef = useRef<ImageItem | undefined>();
-  useEffect(() => { selectedImageRef.current = selectedImage; }, [selectedImage]);
   const annotationDirtyRef = useRef(false);
   useEffect(() => { annotationDirtyRef.current = annotationDirty; }, [annotationDirty]);
+
+  // 当前图片的上一张/下一张由服务端按数据集整体顺序给出;列表变化(版本号变化)时自动刷新。
+  const neighbors = useImageNeighbors(selected?.id, selectedImage?.id, imageListVersion);
 
   const rejectReadOnly = (dataset: Dataset) => {
     if (!isHistoricalActive(dataset)) return false;
@@ -123,38 +115,16 @@ export default function App() {
     setSelected(dataset);
     setView(nextView);
     setSelectedImage(undefined);
-    // 先切视图再等数据,用户立即看到标注界面(骨架屏);首屏只取第一页,其余页后台补齐。
-    const [nextClasses, firstPage] = await Promise.all([api.listClasses(dataset.id), api.listImagesPage(dataset.id, 0, 200)]);
+    // 图片列表不在这里取:侧栏按页向服务端请求,进入标注不再等待整个数据集。
+    const nextClasses = await api.listClasses(dataset.id);
     setClasses(nextClasses);
-    setImages(firstPage.items);
-    setImageTotal(firstPage.total);
     // A class id belongs to one dataset. Reusing the previous dataset's
     // active id leaves the annotation canvas without a valid label.
     setActiveClassId(nextClasses[0]?.id || "");
-    if (firstPage.total > firstPage.items.length) fillImagesRef.current = fillRemainingImages(dataset.id, firstPage);
-    return firstPage;
   };
 
-  /** 后台补齐剩余图片页;数据集已切换则丢弃,避免污染新数据集的列表。 */
-  const fillRemainingImages = (datasetId: string, firstPage: ImagePage) => {
-    const pageSize = 500;
-    const offsets = Array.from({ length: Math.ceil((firstPage.total - firstPage.items.length) / pageSize) }, (_, index) => firstPage.items.length + index * pageSize);
-    // 顺序分批拉取,避免一次性发出数百个并发请求挤占带宽、拖慢标注请求。
-    const fill = async () => {
-      for (const offset of offsets) {
-        if (selectedDatasetRef.current !== datasetId) return;
-        try {
-          const page = await api.listImagesPage(datasetId, offset, pageSize);
-          setImages((current) => {
-            const ids = new Set(current.map((item) => item.id));
-            const additions = page.items.filter((item) => !ids.has(item.id));
-            return additions.length ? [...current, ...additions] : current;
-          });
-        } catch { break; } // 首屏已可用,补齐失败不打扰;刷新或重进可恢复
-      }
-    };
-    return fill();
-  };
+  /** 图片列表发生变化(上传/删除/保存/同步)后:让侧栏重新拉取当前页,并刷新上一张/下一张。 */
+  const refreshImageList = () => setImageListVersion((value) => value + 1);
 
   const createDatasetClass = async (name: string, color: string): Promise<ClassLabel | undefined> => {
     if (!selected) return undefined;
@@ -299,10 +269,7 @@ export default function App() {
     try {
       const result = await api.uploadImages(dataset.id, files, split, onProgress);
       await refreshDatasets();
-      if (selectedDatasetRef.current === dataset.id) {
-        const nextImages = await api.listImages(dataset.id);
-        setImages(nextImages.items);
-      }
+      if (selectedDatasetRef.current === dataset.id) refreshImageList();
       const dupInfo = result.duplicates?.length ? `（跳过 ${result.duplicates.length} 个重复文件：${result.duplicates.slice(0, 5).join("、")}${result.duplicates.length > 5 ? " 等" : ""}）` : "";
       setNotice(`已添加 ${result.imported} 张图片到 ${dataset.name} / ${split}${dupInfo}`);
     } catch (reason) {
@@ -320,10 +287,9 @@ export default function App() {
       await api.mergeDatasetYoloZip(dataset.id, file, onProgress);
       await refreshDatasets();
       if (selectedDatasetRef.current === dataset.id) {
-        const nextImages = await api.listImages(dataset.id);
-        setImages(nextImages.items);
         const nextClasses = await api.listClasses(dataset.id);
         setClasses(nextClasses);
+        refreshImageList();
       }
       setNotice(`已开始合并到「${dataset.name}」，进度见数据集列表。`);
     } catch (reason) {
@@ -363,41 +329,42 @@ export default function App() {
     return (progress: UploadProgress) => setUpload((prev) => (prev ? { ...prev, progress } : prev));
   };
 
+  /** 打开一张图片进入标注:记下断点、加载它的标注、切到标注视图。 */
+  const showImage = (datasetId: string, image: ImageItem) => run(async () => {
+    writeAnnotationCursor(datasetId, image.id);
+    setSelectedImage(image);
+    setAnnotations(await api.getAnnotations(datasetId, image.id));
+    setView("annotation");
+  });
+
   const openImage = async (image: ImageItem, options?: { ignoreDirty?: boolean }) => {
     if (!selected) return;
-    const proceed = () => void run(async () => {
-      writeAnnotationCursor(selected.id, image.id);
-      setSelectedImage(image);
-      setAnnotations(await api.getAnnotations(selected.id, image.id));
-      setView("annotation");
-    });
     // 刚保存完时闭包里的 annotationDirty 还是旧值，由调用方声明跳过脏检查。
     if (!options?.ignoreDirty && view === "annotation" && annotationDirty) {
       requestLeave(() => {
         setAnnotationDirty(false);
-        proceed();
+        void showImage(selected.id, image);
       });
       return;
     }
-    proceed();
+    void showImage(selected.id, image);
   };
 
   const deleteDatasetImages = async (imageIds: string[]) => {
     if (!selected) return false;
+    const datasetId = selected.id;
+    const current = selectedImage;
     try {
       setBusy(true);
-      for (const id of imageIds) await api.deleteDatasetImage(selected.id, id);
-      const firstPage = await api.listImagesPage(selected.id, 0, 200);
-      setImages(firstPage.items);
-      setImageTotal(firstPage.total);
-      if (firstPage.total > firstPage.items.length) fillImagesRef.current = fillRemainingImages(selected.id, firstPage);
-      setSelected((current) => (current ? { ...current, image_count: Math.max(0, current.image_count - imageIds.length) } : current));
+      for (const id of imageIds) await api.deleteDatasetImage(datasetId, id);
+      setSelected((value) => (value?.id === datasetId ? { ...value, image_count: Math.max(0, value.image_count - imageIds.length) } : value));
       setNotice(`已删除 ${imageIds.length} 张图片`);
-      if (selectedImage && imageIds.includes(selectedImage.id)) {
-        const next = firstPage.items[0];
-        if (next) void openImage(next, { ignoreDirty: true });
-        else { setAnnotationDirty(false); setView("workspace"); }
+      if (current && imageIds.includes(current.id)) {
+        const replacement = await pickReplacementImage(datasetId, neighbors, imageIds);
+        if (replacement) await showImage(datasetId, replacement);
+        else { setAnnotationDirty(false); setSelectedImage(undefined); setView("workspace"); }
       }
+      refreshImageList();
       return true;
     } catch (reason) {
       setError(errorMessage(reason));
@@ -414,8 +381,8 @@ export default function App() {
     await run(async () => {
       const saved = await api.replaceAnnotations(selected.id, selectedImage.id, drafts.map(({ id: _id, ...item }) => item));
       setAnnotations(saved);
-      setImages((items) => items.map((item) => item.id === selectedImage.id ? { ...item, status: saved.length ? "annotated" : "unannotated" } : item));
       setAnnotationDirty(false);
+      refreshImageList();
       setNotice("标注已保存");
       ok = true;
     });
@@ -424,29 +391,16 @@ export default function App() {
 
   const continueAnnotation = async (dataset: Dataset) => {
     await run(async () => {
-      // 立即切到标注视图(带骨架屏),数据在后台加载,不阻塞用户进入。
       setNotice("");
-      const firstPage = await loadDataset(dataset, "annotation");
-      // 断点续作:上次标注到哪张就回到哪张;游标失效(图片已删)再退回首张未标注。
-      const savedId = readAnnotationCursor(dataset.id);
-      const savedImage = savedId ? firstPage.items.find((item) => item.id === savedId) : undefined;
-      const image = savedImage ?? firstPage.items.find((item) => item.status === "unannotated") ?? firstPage.items[0];
+      // 先切到标注视图,再决定打开哪张图片;侧栏列表由它自己按页加载,这里不等列表。
+      await loadDataset(dataset, "annotation");
+      const image = await pickEntryImage(dataset.id);
       if (!image) {
         setView("workspace");
         setNotice("该数据集还没有图片可标注。");
         return;
       }
-      setSelectedImage(image);
-      setAnnotations(await api.getAnnotations(dataset.id, image.id));
-      // 上次的图片不在首屏(大库)时,等后台补齐列表再自动翻过去;期间用户已动手标注就不打扰。
-      const pending = savedId && !savedImage ? fillImagesRef.current : null;
-      if (pending) void pending.then(() => {
-        if (selectedDatasetRef.current !== dataset.id) return;
-        const target = imagesRef.current.find((item) => item.id === savedId);
-        if (!target || target.id === selectedImageRef.current?.id) return;
-        if (annotationDirtyRef.current) return;
-        void openImage(target);
-      });
+      await showImage(dataset.id, image);
     });
   };
 
@@ -566,19 +520,17 @@ export default function App() {
         <AnnotationView
           dataset={displayedDataset}
           image={selectedImage}
-          images={images}
-          imageTotal={imageTotal}
+          imageListVersion={imageListVersion}
           onImageSelect={(image) => void openImage(image)}
           classes={classes}
           annotations={annotations}
           activeClassId={activeClassId}
           onClassChange={setActiveClassId}
           onBack={() => requestLeave(() => { setAnnotationDirty(false); setView("workspace"); })}
-          onPrevious={() => { const index = images.findIndex((item) => item.id === selectedImage.id); if (index > 0) void openImage(images[index - 1]); }}
+          onPrevious={() => { if (neighbors?.previous) void openImage(neighbors.previous); }}
           onNext={async (drafts) => {
-            const index = images.findIndex((item) => item.id === selectedImage.id);
-            if (index < 0 || index >= images.length - 1) return;
-            const target = images[index + 1];
+            const target = neighbors?.next;
+            if (!target) return;
             // 下一张自动保存未提交标注；保存失败停留在当前图片，避免丢失修改。
             if (annotationDirty) {
               if (!drafts) { void openImage(target); return; }
@@ -586,8 +538,8 @@ export default function App() {
             }
             void openImage(target, { ignoreDirty: true });
           }}
-          hasPrevious={images.findIndex((item) => item.id === selectedImage.id) > 0}
-          hasNext={images.findIndex((item) => item.id === selectedImage.id) < images.length - 1}
+          hasPrevious={Boolean(neighbors?.previous)}
+          hasNext={Boolean(neighbors?.next)}
           onDirtyChange={setAnnotationDirty}
           focusMode={focusMode}
           onToggleFocusMode={() => setFocusMode((value) => !value)}
@@ -616,6 +568,8 @@ export default function App() {
           readOnly={!!displayedDataset && isHistoricalActive(displayedDataset)}
           samCapabilities={samCapabilities}
         />
+      ) : view === "annotation" && displayedDataset ? (
+        <main className="annotation-layout"><section className="panel annotation-opening"><Spin size="small" /><span>正在打开标注…</span></section></main>
       ) : view === "training" ? (
         <TrainingView
           datasets={datasets}
@@ -701,10 +655,7 @@ export default function App() {
           onSourceSync={(dataset, sourceDatasetId, tagIds, tagMatch, tagValues, split) => run(async () => {
             const result = await api.syncDatasetFromSource(dataset.id, { sourceDatasetId, tagIds, tagMatch, tagValues, split });
             await refreshDatasets();
-            if (selected?.id === dataset.id) {
-              const nextImages = await api.listImages(dataset.id);
-              setImages(nextImages.items);
-            }
+            if (selected?.id === dataset.id) refreshImageList();
             setNotice(`已从数据源同步 ${result.imported} 张图片${result.skipped ? `，跳过 ${result.skipped} 张` : ""}`);
           })}
           onTrain={(dataset) => void run(async () => { setTrainingCreateDatasetId(dataset.id); await loadDataset(dataset, "training"); })}
@@ -715,7 +666,6 @@ export default function App() {
             if (selected?.id === dataset.id) {
               setSelected(undefined);
               setClasses([]);
-              setImages([]);
               setSelectedImage(undefined);
               setAnnotations([]);
               setActiveClassId("");
@@ -1369,7 +1319,7 @@ const IMAGE_SPLIT_FILTERS: Array<{ value: SplitName | ""; label: string }> = [
   { value: "test", label: "test" },
 ];
 
-export function AnnotationView(props: { dataset: Dataset; image: ImageItem; images?: ImageItem[]; imageTotal?: number; onImageSelect?: (image: ImageItem) => void; classes: ClassLabel[]; annotations: Annotation[]; activeClassId: string; onClassChange: (id: string) => void; onBack: () => void; onPrevious?: () => void; onNext?: (drafts?: AnnotationDraft[]) => void; hasPrevious?: boolean; hasNext?: boolean; onSave: (drafts: AnnotationDraft[]) => void; onDirtyChange?: (dirty: boolean) => void; samBusy?: boolean; onCreateClass?: (name: string, color: string) => Promise<ClassLabel | undefined>; onImportClasses?: (templateIds: string[]) => Promise<ClassLabel[] | undefined>; onUpdateClass?: (classId: string, payload: { sam3_prompt?: string; name?: string; color?: string }) => Promise<ClassLabel | undefined>; onDeleteClass?: (classId: string) => Promise<boolean | undefined>; onSam: (box: BBox) => Promise<SamPrediction>; onSamPoints: (points: [number, number][]) => Promise<SamPrediction>; busy: boolean; readOnly?: boolean; samCapabilities?: SamCapabilities; focusMode?: boolean; onToggleFocusMode?: () => void; onDeleteImages?: (imageIds: string[]) => Promise<boolean> }) {
+export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imageListVersion?: number; onImageSelect?: (image: ImageItem) => void; classes: ClassLabel[]; annotations: Annotation[]; activeClassId: string; onClassChange: (id: string) => void; onBack: () => void; onPrevious?: () => void; onNext?: (drafts?: AnnotationDraft[]) => void; hasPrevious?: boolean; hasNext?: boolean; onSave: (drafts: AnnotationDraft[]) => void; onDirtyChange?: (dirty: boolean) => void; samBusy?: boolean; onCreateClass?: (name: string, color: string) => Promise<ClassLabel | undefined>; onImportClasses?: (templateIds: string[]) => Promise<ClassLabel[] | undefined>; onUpdateClass?: (classId: string, payload: { sam3_prompt?: string; name?: string; color?: string }) => Promise<ClassLabel | undefined>; onDeleteClass?: (classId: string) => Promise<boolean | undefined>; onSam: (box: BBox) => Promise<SamPrediction>; onSamPoints: (points: [number, number][]) => Promise<SamPrediction>; busy: boolean; readOnly?: boolean; samCapabilities?: SamCapabilities; focusMode?: boolean; onToggleFocusMode?: () => void; onDeleteImages?: (imageIds: string[]) => Promise<boolean> }) {
   const toDraft = (item: Annotation): AnnotationDraft => ({ id: item.id, class_id: item.class_id, type: item.type, bbox: item.bbox ?? undefined, polygon: item.polygon ?? undefined, obb: item.obb ?? undefined, keypoints: item.keypoints ?? undefined, source: item.source });
   const [drafts, setDrafts] = useState<AnnotationDraft[]>(props.annotations.map(toDraft));
   // 撤销栈：记录每次标注变更前的快照（不含纯选中态），切换图片/外部加载标注时清空
@@ -1410,7 +1360,6 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
   const [editError, setEditError] = useState("");
   const [hiddenDraftIds, setHiddenDraftIds] = useState<Set<string>>(new Set());
   useEffect(() => { setHiddenDraftIds(new Set()); }, [props.image.id]);
-  const [imagePage, setImagePage] = useState(0);
   const [imagePageSize, setImagePageSize] = useState(20);
   const [imageSplitFilter, setImageSplitFilter] = useState<SplitName | "">("");
   const [imageStatusFilter, setImageStatusFilter] = useState<"" | "annotated" | "unannotated">("");
@@ -1478,19 +1427,15 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
     if (props.classes.length === 0) setShowClassForm(true);
     if (props.classes.length > 0 && !props.classes.some((item) => item.id === props.activeClassId)) setShowClassForm(false);
   }, [props.classes, props.activeClassId]);
-  const filteredImages = (props.images ?? []).filter((item) =>
-    (!imageSplitFilter || item.split === imageSplitFilter)
-    && (!imageStatusFilter || item.status === imageStatusFilter));
-  // 无筛选时用后端返回的 total(首屏已知且稳定);有筛选时用已加载的过滤结果数
-  const imageCount = !imageSplitFilter && !imageStatusFilter && props.imageTotal != null ? props.imageTotal : filteredImages.length;
-  const imagePageCount = Math.max(1, Math.ceil(imageCount / imagePageSize));
-  useEffect(() => setImagePage(0), [imageSplitFilter, imageStatusFilter]);
-  // 仅在当前图片或每页条数变化时同步页码;不依赖 images/imagePageCount,
-  // 避免后台补齐列表或 total 更新时反复重置用户的翻页状态。
-  useEffect(() => {
-    const imageIndex = filteredImages.findIndex((item) => item.id === props.image.id);
-    if (imageIndex >= 0) setImagePage(Math.floor(imageIndex / imagePageSize));
-  }, [props.image.id, imagePageSize]);
+  // 侧栏图片列表走服务端分页:每次只取当前显示的那一页,筛选与"定位到当前图片"都在服务端完成。
+  const imageList = useImagePage({
+    datasetId: props.dataset.id,
+    currentImageId: props.image.id,
+    pageSize: imagePageSize,
+    split: imageSplitFilter,
+    status: imageStatusFilter,
+    version: props.imageListVersion,
+  });
   const appendSamDrafts = (suggestion: SamPrediction) => {
     const source: AnnotationDraft["source"] = suggestion.backend_used === "ultralytics_sam" ? "sam" : "manual";
     setDrafts((items) => [
@@ -1576,17 +1521,21 @@ export function AnnotationView(props: { dataset: Dataset; image: ImageItem; imag
   useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return; if ((event.key === "Delete" || event.key === "Backspace") && selectedAnnotationId) { event.preventDefault(); deleteAnnotation(selectedAnnotationId); return; } if (event.key === "Escape") { if (selectedAnnotationId) { setSelectedAnnotationId(null); return; } if (props.focusMode) props.onToggleFocusMode?.(); return; } if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z" && !event.shiftKey) { event.preventDefault(); undoDrafts(); return; } const lower = event.key.toLowerCase(); const adNav = props.focusMode && !event.ctrlKey && !event.metaKey; if ((event.key === "ArrowLeft" || (adNav && lower === "a")) && props.hasPrevious && !props.busy) props.onPrevious?.(); if ((event.key === "ArrowRight" || (adNav && lower === "d")) && props.hasNext && !props.busy) props.onNext?.(drafts); if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") { event.preventDefault(); props.onSave(drafts); } }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, [drafts, props, selectedAnnotationId]);
   return <main className="annotation-layout"><div className="annotation-head"><AntdButton onClick={props.onBack}>← 返回数据集</AntdButton><div className="annotation-head-copy"><Typography.Text type="secondary">{props.dataset.name} / {props.dataset.task_type}</Typography.Text><Typography.Title level={4} className="annotation-title">{props.image.file_name}<AntdTag color={isDirty ? "warning" : "success"} style={{ marginInlineStart: 8 }}>{isDirty ? "未保存修改" : "已保存"}</AntdTag></Typography.Title>{props.readOnly && <Alert type="warning" showIcon title={`只读模式：当前激活的是历史版本 ${props.dataset.active_version_label || `v${props.dataset.active_version_number}`}（最新 ${props.dataset.latest_version_label || `v${props.dataset.latest_version_number}`}），仅可查看；请新建版本或激活最新版本后再编辑。`} />}</div><Space.Compact aria-label="图片导航"><AntdButton disabled={props.busy || !props.hasPrevious} title="上一张（←）" onClick={props.onPrevious}>← 上一张</AntdButton><AntdButton disabled={props.busy || !props.hasNext} title="下一张（→）" onClick={() => props.onNext?.(drafts)}>下一张 →</AntdButton></Space.Compact><Space><AntdSelect aria-label="当前类别" value={activeClassId || undefined} placeholder={props.classes.length ? "选择类别" : "请先新增类别"} disabled={!props.classes.length} onChange={props.onClassChange} style={{ minWidth: 168 }}
             options={props.classes.map((item) => ({ value: item.id, label: `${item.class_index}: ${item.name}` }))} /><AntdButton type="primary" disabled={props.busy || !activeClassId || props.readOnly} onClick={() => props.onSave(drafts)}>保存标注</AntdButton>{props.onToggleFocusMode && <AntdButton title="Esc" onClick={props.onToggleFocusMode}>{props.focusMode ? "退出专注" : "专注模式"}</AntdButton>}</Space></div><div className="annotation-body">
-    {props.images && props.images.length > 0 && <aside className="annotation-image-sidebar panel"><div className="annotation-list-heading"><Typography.Text type="secondary">TASK IMAGES</Typography.Text><Space size={4}><Typography.Text strong>{imageCount} 张图片</Typography.Text>{props.onDeleteImages && <AntdButton size="small" type="text" disabled={props.busy} onClick={() => (imageBatchMode ? exitImageBatch() : setImageBatchMode(true))}>{imageBatchMode ? "退出多选" : "多选"}</AntdButton>}</Space></div>{imageBatchMode && (
+    <aside className="annotation-image-sidebar panel"><div className="annotation-list-heading"><Typography.Text type="secondary">TASK IMAGES</Typography.Text><Space size={4}><Typography.Text strong>{imageList.total} 张图片</Typography.Text>{props.onDeleteImages && <AntdButton size="small" type="text" disabled={props.busy} onClick={() => (imageBatchMode ? exitImageBatch() : setImageBatchMode(true))}>{imageBatchMode ? "退出多选" : "多选"}</AntdButton>}</Space></div>{imageBatchMode && (
               <div className="annotation-image-batch">
                 <Typography.Text type="secondary" style={{ fontSize: 11 }}>已选 {batchImageIds.length} 张</Typography.Text>
                 <Space size={4}>
                   <AntdButton size="small" type="primary" danger disabled={props.busy || !batchImageIds.length} onClick={() => void removeBatchImages()}>删除所选 {batchImageIds.length || ""} 张</AntdButton>
-                  <AntdButton size="small" disabled={props.busy} onClick={() => setBatchImageIds(filteredImages.slice(imagePage * imagePageSize, (imagePage + 1) * imagePageSize).map((item) => item.id))}>全选本页</AntdButton>
+                  <AntdButton size="small" disabled={props.busy} onClick={() => setBatchImageIds(imageList.items.map((item) => item.id))}>全选本页</AntdButton>
                   <AntdButton size="small" disabled={props.busy || !batchImageIds.length} onClick={() => setBatchImageIds([])}>清空</AntdButton>
                 </Space>
               </div>
             )}
-            <Segmented className="annotation-image-split-tabs" block size="small" aria-label="按 split 筛选图片" value={imageSplitFilter} onChange={(value) => setImageSplitFilter(value as SplitName | "")} options={IMAGE_SPLIT_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><Segmented className="annotation-image-split-tabs" block size="small" aria-label="按标注状态筛选图片" value={imageStatusFilter} onChange={(value) => setImageStatusFilter(value as "" | "annotated" | "unannotated")} options={IMAGE_STATUS_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><div className="annotation-image-list">{filteredImages.slice(imagePage * imagePageSize, (imagePage + 1) * imagePageSize).map((item, index) => { const absoluteIndex = imagePage * imagePageSize + index; return <AntdButton key={item.id} type="text" block className={`annotation-image-item${item.id === props.image.id ? " active" : ""}${imageBatchMode ? " batch" : ""}${imageBatchMode && batchImageIds.includes(item.id) ? " batch-checked" : ""}`} aria-label={`选择图片 ${item.file_name}`} onClick={() => { if (imageBatchMode) { toggleBatchImage(item.id); return; } props.onImageSelect?.(item); }}>{imageBatchMode && <span className="annotation-image-check" aria-hidden><span className={`annotation-image-check-box${batchImageIds.includes(item.id) ? " on" : ""}`} /></span>}<img src={api.imageThumbnailUrl(item.id)} alt="" loading="lazy" decoding="async" /><span className="annotation-image-copy"><strong>{String(absoluteIndex + 1).padStart(2, "0")} · {item.file_name}</strong><small className={item.status === "annotated" ? "annotated" : "unannotated"}>{item.split} · {item.status === "annotated" ? "已标注" : "未标注"}</small></span></AntdButton>; })}{!filteredImages.length && <AntdEmpty image={AntdEmpty.PRESENTED_IMAGE_SIMPLE} description="当前筛选下没有图片" />}</div><div className="annotation-image-pagination"><Pagination className="annotation-image-pager" size="small" simple current={imagePage + 1} pageSize={imagePageSize} total={imageCount} onChange={(page) => setImagePage(Math.min(Math.max(page, 1), imagePageCount) - 1)} hideOnSinglePage /><Segmented size="small" value={imagePageSize} onChange={(value) => { setImagePageSize(value); setImagePage(0); }} options={imagePageSizeOptions.map((n) => ({ value: n, label: `${n}` }))} /></div></aside>}
+            <Segmented className="annotation-image-split-tabs" block size="small" aria-label="按 split 筛选图片" value={imageSplitFilter} onChange={(value) => setImageSplitFilter(value as SplitName | "")} options={IMAGE_SPLIT_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><Segmented className="annotation-image-split-tabs" block size="small" aria-label="按标注状态筛选图片" value={imageStatusFilter} onChange={(value) => setImageStatusFilter(value as "" | "annotated" | "unannotated")} options={IMAGE_STATUS_FILTERS.map((filter) => ({ value: filter.value, label: filter.label }))} /><div className="annotation-image-list" aria-busy={imageList.loading}>{imageList.error ? (
+              <Typography.Text type="danger" style={{ fontSize: 12 }}>图片列表加载失败：{imageList.error}</Typography.Text>
+            ) : imageList.loading && !imageList.items.length ? (
+              <Spin size="small" />
+            ) : imageList.items.map((item, index) => { const absoluteIndex = (imageList.page - 1) * imagePageSize + index; return <AntdButton key={item.id} type="text" block className={`annotation-image-item${item.id === props.image.id ? " active" : ""}${imageBatchMode ? " batch" : ""}${imageBatchMode && batchImageIds.includes(item.id) ? " batch-checked" : ""}`} aria-label={`选择图片 ${item.file_name}`} onClick={() => { if (imageBatchMode) { toggleBatchImage(item.id); return; } props.onImageSelect?.(item); }}>{imageBatchMode && <span className="annotation-image-check" aria-hidden><span className={`annotation-image-check-box${batchImageIds.includes(item.id) ? " on" : ""}`} /></span>}<img src={api.imageThumbnailUrl(item.id)} alt="" loading="lazy" decoding="async" /><span className="annotation-image-copy"><strong>{String(absoluteIndex + 1).padStart(2, "0")} · {item.file_name}</strong><small className={item.status === "annotated" ? "annotated" : "unannotated"}>{item.split} · {item.status === "annotated" ? "已标注" : "未标注"}</small></span></AntdButton>; })}{!imageList.loading && !imageList.error && !imageList.items.length && <AntdEmpty image={AntdEmpty.PRESENTED_IMAGE_SIMPLE} description="当前筛选下没有图片" />}</div><div className="annotation-image-pagination"><Pagination className="annotation-image-pager" size="small" simple current={imageList.page} pageSize={imagePageSize} total={imageList.total} onChange={(page) => imageList.goToPage(page)} hideOnSinglePage /><Segmented size="small" aria-label="每页条数" value={imagePageSize} onChange={(value) => setImagePageSize(value)} options={imagePageSizeOptions.map((n) => ({ value: n, label: `${n}` }))} /></div></aside>
     <div className="annotation-canvas-column">{props.dataset.task_type === "classify" ? <section className="canvas-card classification-card">
               <div className="classification-image-wrap"><img src={api.imageUrl(props.image.id)} alt={props.image.file_name} /></div>
               <div className="classification-info"><Typography.Text type="secondary">IMAGE CLASSIFICATION</Typography.Text><Typography.Title level={5} className="annotation-title">{props.image.file_name}</Typography.Title><Typography.Text type="secondary">选择这张图片的唯一类别，训练时会按 train/类别名/图片 导出。</Typography.Text>

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import select
-
 import random
 from pathlib import Path
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ValidationError
@@ -29,6 +27,91 @@ def list_images(session: Session, dataset_id: str) -> list[ImageItem]:
     get_dataset(session, dataset_id)
     query = select(ImageItem).where(ImageItem.dataset_id == dataset_id).order_by(ImageItem.created_at, ImageItem.id)
     return list(session.scalars(query))
+
+
+ImageListStatus = Literal["annotated", "unannotated"]
+
+
+def _ordered_before(created_at, image_id: str):
+    """按列表顺序 (created_at, id) 排在指定图片之前的条件。"""
+    return or_(
+        ImageItem.created_at < created_at,
+        and_(ImageItem.created_at == created_at, ImageItem.id < image_id),
+    )
+
+
+def _ordered_after(created_at, image_id: str):
+    """按列表顺序 (created_at, id) 排在指定图片之后的条件。"""
+    return or_(
+        ImageItem.created_at > created_at,
+        and_(ImageItem.created_at == created_at, ImageItem.id > image_id),
+    )
+
+
+def list_images_page(
+    session: Session,
+    dataset_id: str,
+    *,
+    offset: int = 0,
+    limit: int = 200,
+    split: SplitName | None = None,
+    status: ImageListStatus | None = None,
+    anchor: str | None = None,
+) -> tuple[list[ImageItem], int, int]:
+    """数据库分页的图片列表，返回 (当前页图片, 筛选后的总数, 实际使用的 offset)。
+
+    anchor 给定时返回它所在的那一页（offset 对齐到页首）；它不在筛选结果里则沿用 offset。
+    """
+    get_dataset(session, dataset_id)
+    conditions: list = [ImageItem.dataset_id == dataset_id]
+    if split:
+        conditions.append(ImageItem.split == split)
+    if status:
+        conditions.append(ImageItem.status == status)
+    resolved = offset
+    if anchor:
+        target = session.get(ImageItem, anchor)
+        if target is not None and target.dataset_id == dataset_id:
+            in_result = session.scalar(select(func.count()).select_from(ImageItem).where(*conditions, ImageItem.id == anchor))
+            if in_result:
+                index = session.scalar(select(func.count()).select_from(ImageItem).where(*conditions, _ordered_before(target.created_at, target.id))) or 0
+                resolved = (index // limit) * limit
+    total = session.scalar(select(func.count()).select_from(ImageItem).where(*conditions)) or 0
+    query = (
+        select(ImageItem)
+        .where(*conditions)
+        .order_by(ImageItem.created_at, ImageItem.id)
+        .offset(resolved)
+        .limit(limit)
+    )
+    return list(session.scalars(query)), total, resolved
+
+
+def get_image_in_dataset(session: Session, dataset_id: str, image_id: str) -> ImageItem:
+    image = get_image(session, image_id)
+    if image.dataset_id != dataset_id:
+        raise NotFoundError("image_not_found", "Image was not found in this dataset.")
+    return image
+
+
+def get_image_neighbors(session: Session, dataset_id: str, image_id: str) -> dict:
+    """数据集整体顺序下某张图片的前后邻居及其位置（从 0 计）。
+
+    上一张/下一张按数据集整体顺序走，不随侧栏的 split/状态筛选变化。
+    """
+    image = get_image_in_dataset(session, dataset_id, image_id)
+    scope = ImageItem.dataset_id == dataset_id
+    before = _ordered_before(image.created_at, image.id)
+    after = _ordered_after(image.created_at, image.id)
+    index = session.scalar(select(func.count()).select_from(ImageItem).where(scope, before)) or 0
+    total = session.scalar(select(func.count()).select_from(ImageItem).where(scope)) or 0
+    previous = session.scalar(
+        select(ImageItem).where(scope, before).order_by(ImageItem.created_at.desc(), ImageItem.id.desc()).limit(1)
+    )
+    next_image = session.scalar(
+        select(ImageItem).where(scope, after).order_by(ImageItem.created_at.asc(), ImageItem.id.asc()).limit(1)
+    )
+    return {"previous": previous, "next": next_image, "index": index, "total": total}
 
 
 def _stage_image(

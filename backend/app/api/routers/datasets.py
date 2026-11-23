@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import Request, APIRouter, Depends, File, Form, Query, Response, UploadFile
 from fastapi.responses import FileResponse
@@ -37,6 +38,7 @@ from app.core.schemas import (
     DatasetVersionResponse,
     DuplicateReport,
     ImageItemResponse,
+    ImageNeighborsResponse,
     ImagePage,
     ImageSplitUpdate,
     PoseConfig,
@@ -68,7 +70,10 @@ from app.dataset.images import (
     auto_split_images,
     delete_image,
     get_image,
+    get_image_in_dataset,
+    get_image_neighbors,
     list_images,
+    list_images_page,
     scan_images,
     update_image_split,
     update_image_splits,
@@ -710,20 +715,32 @@ def get_images(
     dataset_id: str,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=200, ge=1, le=500),
+    split: SplitName | None = Query(default=None),
+    status: Literal["annotated", "unannotated"] | None = Query(default=None),
+    anchor: str | None = Query(default=None, max_length=64),
     session: Session = Depends(get_session),
 ) -> ImagePage:
-    # 分页下推到数据库:此前每次请求都整表加载再切片,大库下每页都要全量读。
-    get_dataset(session, dataset_id)
-    total = session.scalar(select(func.count()).select_from(ImageItem).where(ImageItem.dataset_id == dataset_id)) or 0
-    query = (
-        select(ImageItem)
-        .where(ImageItem.dataset_id == dataset_id)
-        .order_by(ImageItem.created_at, ImageItem.id)
-        .offset(offset)
-        .limit(limit)
+    # 分页、筛选、定位全部下推到数据库；标注页只取当前显示的那一页。
+    items, total, resolved = list_images_page(
+        session, dataset_id, offset=offset, limit=limit, split=split, status=status, anchor=anchor
     )
-    items = list(session.scalars(query))
-    return ImagePage(items=[_image_response(item) for item in items], total=total)
+    return ImagePage(items=[_image_response(item) for item in items], total=total, offset=resolved)
+
+
+@router.get("/{dataset_id}/images/{image_id}", response_model=ImageItemResponse)
+def get_single_image(dataset_id: str, image_id: str, session: Session = Depends(get_session)) -> ImageItemResponse:
+    return _image_response(get_image_in_dataset(session, dataset_id, image_id))
+
+
+@router.get("/{dataset_id}/images/{image_id}/neighbors", response_model=ImageNeighborsResponse)
+def get_image_neighbors_route(dataset_id: str, image_id: str, session: Session = Depends(get_session)) -> ImageNeighborsResponse:
+    neighbors = get_image_neighbors(session, dataset_id, image_id)
+    return ImageNeighborsResponse(
+        previous=_image_response(neighbors["previous"]) if neighbors["previous"] is not None else None,
+        next=_image_response(neighbors["next"]) if neighbors["next"] is not None else None,
+        index=neighbors["index"],
+        total=neighbors["total"],
+    )
 
 
 @router.post("/{dataset_id}/images/upload", response_model=UploadImagesResponse, status_code=201, dependencies=[Depends(require_editable)])

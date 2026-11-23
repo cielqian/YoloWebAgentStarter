@@ -336,6 +336,15 @@ class ImageItemResponse(ORMModel):
 class ImagePage(BaseModel):
     items: list[ImageItemResponse]
     total: int
+    # 实际使用的偏移；按 anchor 定位时可能不同于请求值
+    offset: int = 0
+
+
+class ImageNeighborsResponse(BaseModel):
+    previous: ImageItemResponse | None
+    next: ImageItemResponse | None
+    index: int
+    total: int
 
 
 class UploadImagesResponse(BaseModel):

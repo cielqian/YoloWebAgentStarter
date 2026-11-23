@@ -392,8 +392,25 @@ export interface DatasetQualityReport {
 }
 export interface DuplicateReport { images: number; duplicate: number; similar: number; invalid_images: number; invalid_image_ids: string[]; phash_distance: number; groups: Array<{ canonical_image_id: string; image_ids: string[]; kind: "exact" | "similar"; score: number; hamming_distance?: number }>; }
 
+export interface ImageListFilters {
+  split?: SplitName | "";
+  status?: "" | "annotated" | "unannotated";
+  /** 给定时返回这张图片所在的那一页（按筛选后的顺序定位） */
+  anchor?: string;
+}
+
 export interface ImagePage {
   items: ImageItem[];
+  total: number;
+  /** 实际使用的偏移；按 anchor 定位时可能不同于请求值 */
+  offset: number;
+}
+
+/** 数据集整体顺序下某张图片的前后邻居；index 从 0 计。 */
+export interface ImageNeighbors {
+  previous: ImageItem | null;
+  next: ImageItem | null;
+  index: number;
   total: number;
 }
 

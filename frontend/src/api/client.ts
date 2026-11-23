@@ -8,6 +8,8 @@ import type {
   DatasetQualityReport,
   DuplicateReport,
   ImageItem,
+  ImageListFilters,
+  ImageNeighbors,
   ImagePage,
   SplitName,
   TaskType,
@@ -310,16 +312,16 @@ export const api = {
     request<ClassTemplate>(`/api/class-templates/${templateId}`, json(payload, "PATCH")),
   deleteClassTemplate: (templateId: string) => request<void>(`/api/class-templates/${templateId}`, { method: "DELETE" }),
   translateSam3Prompt: (name: string) => request<{ sam3_prompt: string | null; source: string }>("/api/class-templates/translate", json({ name })),
-  listImagesPage: (datasetId: string, offset: number, limit: number) =>
-    request<ImagePage>(`/api/datasets/${datasetId}/images?offset=${offset}&limit=${limit}`),
-  listImages: async (datasetId: string) => {
-    const pageSize = 500;
-    const first = await request<ImagePage>(`/api/datasets/${datasetId}/images?offset=0&limit=${pageSize}`);
-    if (first.total <= first.items.length) return first;
-    const offsets = Array.from({ length: Math.ceil((first.total - first.items.length) / pageSize) }, (_, index) => first.items.length + index * pageSize);
-    const pages = await Promise.all(offsets.map((offset) => request<ImagePage>(`/api/datasets/${datasetId}/images?offset=${offset}&limit=${pageSize}`)));
-    return { total: first.total, items: [first, ...pages].flatMap((page) => page.items) };
+  /** 数据库分页的图片列表:只取一页,筛选与定位都在服务端完成。 */
+  listImagesPage: (datasetId: string, offset: number, limit: number, filters: ImageListFilters = {}) => {
+    const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+    if (filters.split) params.set("split", filters.split);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.anchor) params.set("anchor", filters.anchor);
+    return request<ImagePage>(`/api/datasets/${datasetId}/images?${params.toString()}`);
   },
+  getImage: (datasetId: string, imageId: string) => request<ImageItem>(`/api/datasets/${datasetId}/images/${imageId}`),
+  imageNeighbors: (datasetId: string, imageId: string) => request<ImageNeighbors>(`/api/datasets/${datasetId}/images/${imageId}/neighbors`),
   uploadImages: async (datasetId: string, files: File[], split: SplitName, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();
     files.forEach((file) => form.append("files", file));
