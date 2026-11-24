@@ -4,7 +4,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AnnotationCanvas } from "./AnnotationCanvas";
+import { confirmDialog } from "../components/confirm";
 import type { Annotation, ClassLabel, ImageItem } from "../types";
+
+// 清空草稿走 antd 确认弹窗（异步 Promise），单测里 mock 成“用户点了确认”
+vi.mock("../components/confirm", () => ({
+  confirmDialog: vi.fn(async () => true),
+}));
 
 vi.mock("react-konva", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
@@ -108,12 +114,18 @@ beforeEach(() => {
     set src(_value: string) { this.onload?.(); }
   }
   Object.defineProperty(window, "Image", { configurable: true, writable: true, value: ReadyImage });
+  // jsdom 的 getBoundingClientRect 全为 0，画布 fit 会提前返回、displaySize 停在 900x620 初始值，
+  // 坐标换算 scale 不再是 1；给一个不小于图片（100x80）的可用区域，让 displaySize == 原图尺寸。
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    x: 0, y: 0, top: 0, left: 0, right: 800, bottom: 600, width: 800, height: 600, toJSON: () => ({}),
+  } as DOMRect);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   act(() => root?.unmount());
   container?.remove();
   Object.defineProperty(window, "Image", { configurable: true, writable: true, value: originalImage });
@@ -177,16 +189,16 @@ describe("AnnotationCanvas OBB interactions", () => {
 
   it("clears every local draft after confirmation", async () => {
     const onChange = vi.fn();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await act(async () => {
       root?.render(<AnnotationCanvas image={image} annotations={[annotation]} activeClassId="cls-1" taskType="obb" onChange={onChange} />);
     });
 
     const clear = Array.from(container?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((item) => item.textContent === "清空全部草稿");
-    act(() => clear?.click());
-    expect(confirm).toHaveBeenCalledOnce();
+    await act(async () => {
+      clear?.click();
+    });
+    expect(confirmDialog).toHaveBeenCalledOnce();
     expect(onChange).toHaveBeenCalledWith([]);
-    confirm.mockRestore();
   });
 
   it("blocks drawing until a class is selected", async () => {

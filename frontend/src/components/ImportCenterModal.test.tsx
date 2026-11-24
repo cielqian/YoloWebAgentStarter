@@ -136,6 +136,8 @@ describe("ImportCenterModal", () => {
     expect(document.body.textContent).toContain("已选择:/export/ds.zip");
 
     const nameInput = document.body.querySelector<HTMLInputElement>('input[placeholder="例如：road-signs"]');
+    // 名称未手填时应自动取 zip 文件名兜底，不覆盖用户输入
+    expect(nameInput?.value).toBe("ds");
     await act(async () => { if (nameInput) setInputValue(nameInput, "ftp-zip-set"); });
     await act(async () => { findButton("开始导入")?.click(); });
 

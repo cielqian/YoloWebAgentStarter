@@ -20,6 +20,7 @@ beforeAll(() => {
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { App as AntdApp } from "antd";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClassTemplatesView } from "./ClassTemplatesView";
 import { api } from "../api/client";
@@ -61,7 +62,12 @@ afterEach(() => {
 
 async function renderMaterialsTab() {
   await act(async () => {
-    root?.render(<ClassTemplatesView />);
+    // 与 main.tsx 一致包一层 AntdApp，组件内 AntdApp.useApp() 拿到的 message 才是真实实例
+    root?.render(
+      <AntdApp>
+        <ClassTemplatesView />
+      </AntdApp>,
+    );
   });
   await act(async () => {});
   const tab = Array.from(container!.querySelectorAll<HTMLElement>("[role='tab']")).find((el) => el.textContent === "素材类型");

@@ -29,12 +29,20 @@ describe("default remote selection", () => {
   const dev = (id: string, type: TrainingDevice["type"], index: number | null, status: TrainingDevice["status"], node_id = "n1"): TrainingDevice =>
     ({ id: `${node_id}:${id}`, type, name: "x", index, memory_total_mb: null, memory_free_mb: null, status, node_id, node_name: "gpu-1" }) as TrainingDevice;
 
-  it("picks a single free accelerator, skipping busy ones", () => {
+  it("picks the first accelerator even when busy (busy cards allow parallel training)", () => {
     const devices = [
       dev("cpu", "cpu", null, "available"),
       dev("cuda:0", "cuda", 0, "busy"),
       dev("cuda:1", "cuda", 1, "available"),
       dev("cuda:2", "cuda", 2, "available"),
+    ];
+    expect(defaultRemoteSelection(devices)).toEqual({ node_id: "n1", node_device: "cuda:0" });
+  });
+
+  it("skips unavailable accelerators when picking the default", () => {
+    const devices = [
+      dev("cuda:0", "cuda", 0, "unavailable"),
+      dev("cuda:1", "cuda", 1, "available"),
     ];
     expect(defaultRemoteSelection(devices)).toEqual({ node_id: "n1", node_device: "cuda:1" });
   });
