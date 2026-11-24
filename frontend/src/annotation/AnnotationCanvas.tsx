@@ -47,6 +47,9 @@ const ZOOM_MIN = 1;
 const ZOOM_MAX = 20;
 // 靠近已放置的第一个顶点该屏幕距离内点击即闭合多边形（图层坐标阈值随缩放换算）
 const SNAP_CLOSE_RADIUS_PX = 12;
+// 旋转框只在角点等比例缩放；矩形框额外提供四条边的中点手柄，宽高可独立调整。
+const CORNER_ANCHORS = ["top-left", "top-right", "bottom-left", "bottom-right"];
+const RESIZE_ANCHORS = [...CORNER_ANCHORS, "middle-left", "middle-right", "top-center", "bottom-center"];
 
 type PanState = { origin: [number, number]; start: { x: number; y: number } };
 
@@ -608,7 +611,7 @@ export function AnnotationCanvas({ image, annotations, activeClassId, activeClas
             </Layer>
             <Layer>
               {/* 放在未缩放的覆盖层，缩放时手柄/边框保持屏幕尺寸；boundBoxFunc 阈值换算到舞台绝对坐标。 */}
-              <Transformer ref={transformerRef} rotateEnabled={Boolean(selectedObb)} flipEnabled={false} enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right"]} rotateAnchorOffset={28} strokeScaleEnabled={false} boundBoxFunc={(previous, next) => next.width < MIN_SHAPE_SIZE * scale.x * zoom || next.height < MIN_SHAPE_SIZE * scale.y * zoom ? previous : next} />
+              <Transformer ref={transformerRef} rotateEnabled={Boolean(selectedObb)} flipEnabled={false} keepRatio={Boolean(selectedObb)} enabledAnchors={selectedObb ? CORNER_ANCHORS : RESIZE_ANCHORS} rotateAnchorOffset={28} strokeScaleEnabled={false} boundBoxFunc={(previous, next) => next.width < MIN_SHAPE_SIZE * scale.x * zoom || next.height < MIN_SHAPE_SIZE * scale.y * zoom ? previous : next} />
             </Layer>
           </Stage>
         ) : <div className="loading">正在载入图片…</div>}
