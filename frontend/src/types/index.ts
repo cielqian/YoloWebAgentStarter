@@ -414,6 +414,95 @@ export interface ImageNeighbors {
   total: number;
 }
 
+// ---------------------------------------------------------------------------
+// 算法测试模块:测试数据集与预期结果标注(与训练数据集相互独立)
+// ---------------------------------------------------------------------------
+
+/** 算法测试不支持 OCR/pose,任务类型限定四类。 */
+export type TestTaskType = "detect" | "segment" | "obb" | "classify";
+export type TestPurposeTag = "regression" | "augment" | "hard" | "acceptance";
+
+export const TEST_PURPOSE_LABELS: Record<TestPurposeTag, string> = {
+  regression: "回归基线",
+  augment: "扩充集",
+  hard: "难例集",
+  acceptance: "验收集",
+};
+
+export interface TestDataset {
+  id: string;
+  name: string;
+  task_type: TestTaskType;
+  source: "local" | "ftp";
+  version: string;
+  purpose_tag: TestPurposeTag | null;
+  status: "ready" | "annotating" | "locked";
+  ftp_dir: string | null;
+  notes: string | null;
+  image_count: number;
+  class_count: number;
+  marked_count: number;
+  marked_percent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestClassLabel {
+  id: string;
+  test_dataset_id: string;
+  class_index: number;
+  name: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestImage {
+  id: string;
+  test_dataset_id: string;
+  file_name: string;
+  width: number;
+  height: number;
+  status: "unmarked" | "marked";
+  /** 巡视点位 ID,任务执行时替换 {{object_id}} 占位符。 */
+  point_id: string | null;
+  /** 任务 preparing 阶段上传后回填的 FTP 相对路径;空=未上传。 */
+  ftp_path: string | null;
+  created_at: string;
+}
+
+export interface TestImagePage {
+  items: TestImage[];
+  total: number;
+  offset: number;
+}
+
+export interface TestImageNeighbors {
+  previous: TestImage | null;
+  next: TestImage | null;
+  index: number;
+  total: number;
+}
+
+/** 预期结果标注:几何结构与训练 Annotation 同构,多一个难例标记。 */
+export interface TestAnnotation {
+  id: string;
+  image_id: string;
+  test_dataset_id: string;
+  class_id: string;
+  class_index: number;
+  label: string;
+  color: string;
+  type: "bbox" | "polygon" | "obb" | "classify";
+  bbox: BBox | null;
+  polygon: [number, number][] | null;
+  obb: OBB | null;
+  difficult: boolean;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type TrainingStatus = "pending" | "dispatching" | "running" | "completed" | "failed" | "stopped";
 
 export interface TrainingTask {

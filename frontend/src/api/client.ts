@@ -50,6 +50,14 @@ import type {
   TrainingNodeStatus,
   TrainingNodeTestResult,
   ValidationReport,
+  TestDataset,
+  TestTaskType,
+  TestPurposeTag,
+  TestClassLabel,
+  TestImage,
+  TestImagePage,
+  TestImageNeighbors,
+  TestAnnotation,
 } from "../types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -387,6 +395,49 @@ export const api = {
   },
   imageThumbnailUrl: (imageId: string) => apiUrl(`/api/images/${imageId}/thumbnail`),
   imageUrl: (imageId: string) => apiUrl(`/api/images/${imageId}/file`),
+
+  // -- 算法测试模块:测试数据集与预期结果标注 --
+
+  listTestDatasets: () => request<TestDataset[]>("/api/algorithm-test/datasets"),
+  createTestDataset: (payload: { name: string; task_type: TestTaskType; purpose_tag?: TestPurposeTag | null; ftp_dir?: string | null; notes?: string | null }) =>
+    request<TestDataset>("/api/algorithm-test/datasets", json(payload)),
+  getTestDataset: (testDatasetId: string) => request<TestDataset>(`/api/algorithm-test/datasets/${testDatasetId}`),
+  patchTestDataset: (testDatasetId: string, payload: { name?: string; version?: string; purpose_tag?: TestPurposeTag | null; ftp_dir?: string | null; notes?: string | null }) =>
+    request<TestDataset>(`/api/algorithm-test/datasets/${testDatasetId}`, json(payload, "PATCH")),
+  deleteTestDataset: (testDatasetId: string) => request<void>(`/api/algorithm-test/datasets/${testDatasetId}`, { method: "DELETE" }),
+  listTestClasses: (testDatasetId: string) => request<TestClassLabel[]>(`/api/algorithm-test/datasets/${testDatasetId}/classes`),
+  createTestClass: (testDatasetId: string, name: string, color = "#22c55e") =>
+    request<TestClassLabel>(`/api/algorithm-test/datasets/${testDatasetId}/classes`, json({ name, color })),
+  deleteTestClass: (testDatasetId: string, classId: string) =>
+    request<void>(`/api/algorithm-test/datasets/${testDatasetId}/classes/${classId}`, { method: "DELETE" }),
+  importTestClasses: (testDatasetId: string, templateIds: string[]) =>
+    request<{ imported: TestClassLabel[]; skipped_names: string[] }>(`/api/algorithm-test/datasets/${testDatasetId}/classes/import`, json({ template_ids: templateIds })),
+  uploadTestImages: async (testDatasetId: string, files: File[], onProgress?: (progress: UploadProgress) => void) => {
+    const form = new FormData();
+    files.forEach((file) => form.append("files", file));
+    return uploadForm<{ imported: number; items: TestImage[]; duplicates: string[] }>(`/api/algorithm-test/datasets/${testDatasetId}/images/upload`, form, onProgress);
+  },
+  listTestImagesPage: (testDatasetId: string, offset: number, limit: number, filters: { status?: "" | "marked" | "unmarked"; anchor?: string } = {}) => {
+    const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+    if (filters.status) params.set("status", filters.status);
+    if (filters.anchor) params.set("anchor", filters.anchor);
+    return request<TestImagePage>(`/api/algorithm-test/datasets/${testDatasetId}/images?${params.toString()}`);
+  },
+  testImageNeighbors: (testDatasetId: string, imageId: string) => request<TestImageNeighbors>(`/api/algorithm-test/datasets/${testDatasetId}/images/${imageId}/neighbors`),
+  patchTestImage: (testDatasetId: string, imageId: string, payload: { point_id?: string | null }) =>
+    request<TestImage>(`/api/algorithm-test/datasets/${testDatasetId}/images/${imageId}`, json(payload, "PATCH")),
+  deleteTestImage: (testDatasetId: string, imageId: string) =>
+    request<void>(`/api/algorithm-test/datasets/${testDatasetId}/images/${imageId}`, { method: "DELETE" }),
+  getTestAnnotations: (testDatasetId: string, imageId: string) =>
+    request<TestAnnotation[]>(`/api/algorithm-test/datasets/${testDatasetId}/images/${imageId}/annotations`),
+  replaceTestAnnotations: (testDatasetId: string, imageId: string, annotations: unknown[]) =>
+    request<TestAnnotation[]>(`/api/algorithm-test/datasets/${testDatasetId}/images/${imageId}/annotations`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ annotations }),
+    }),
+  testImageThumbnailUrl: (imageId: string) => apiUrl(`/api/algorithm-test/images/${imageId}/thumbnail`),
+  testImageUrl: (imageId: string) => apiUrl(`/api/algorithm-test/images/${imageId}/file`),
   listWeights: () => request<{ items: BaseWeight[] }>("/api/weights"),
   uploadWeight: async (file: File, onProgress?: (progress: UploadProgress) => void) => {
     const form = new FormData();

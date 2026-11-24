@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { ImageItem, SplitName } from "../types";
 
 export type ImageStatusFilter = "" | "annotated" | "unannotated";
+export type TestImageStatusFilter = "" | "marked" | "unmarked";
 
 /** 当前要取哪一页:按当前图片定位(默认),或按用户点选的页。 */
 type Query = { kind: "anchor"; imageId: string } | { kind: "offset"; offset: number };
@@ -36,9 +37,11 @@ interface Params {
   currentImageId: string;
   pageSize: number;
   split: SplitName | "";
-  status: ImageStatusFilter;
+  status: ImageStatusFilter | TestImageStatusFilter;
   /** 外部通知图片列表发生了变化(上传/删除/保存/同步):重新拉取当前页 */
   version?: number;
+  /** test = 算法测试模块的测试数据集(无 split,状态为 marked/unmarked)。 */
+  mode?: "dataset" | "test";
 }
 
 /**
@@ -51,7 +54,7 @@ interface Params {
  * 迟到的旧请求会被丢弃,不会覆盖较新的结果;同一筛选下翻页时总数沿用最近一次
  * 成功的值,分页器不会在加载间隙因 total 归零而消失。
  */
-export function useImagePage({ datasetId, currentImageId, pageSize, split, status, version = 0 }: Params): ImagePageResult {
+export function useImagePage({ datasetId, currentImageId, pageSize, split, status, version = 0, mode = "dataset" }: Params): ImagePageResult {
   const [query, setQuery] = useState<Query>({ kind: "anchor", imageId: currentImageId });
   const [state, setState] = useState<PageState>({ key: "", status: "loading", items: [], total: 0, offset: 0, error: "" });
   const requestSeq = useRef(0);
@@ -59,7 +62,7 @@ export function useImagePage({ datasetId, currentImageId, pageSize, split, statu
   // 避免总数短暂归零把分页器(hideOnSinglePage)整个卸掉重建。
   const lastTotalRef = useRef<{ key: string; total: number }>({ key: "", total: 0 });
 
-  const filterKey = `${datasetId}|${split}|${status}|${pageSize}`;
+  const filterKey = `${mode}|${datasetId}|${split}|${status}|${pageSize}`;
   const lastFilterKey = useRef(filterKey);
 
   // 数据集、筛选或每页条数变化:回到当前图片所在的那一页
@@ -90,26 +93,29 @@ export function useImagePage({ datasetId, currentImageId, pageSize, split, statu
       const keep = prev.key === key;
       return { key, status: "loading", items: keep ? prev.items : [], total: keep ? prev.total : 0, offset: keep ? prev.offset : query.kind === "offset" ? query.offset : 0, error: "" };
     });
-    api
-      .listImagesPage(datasetId, query.kind === "offset" ? query.offset : 0, pageSize, { split, status, anchor: query.kind === "anchor" ? query.imageId : undefined })
-      .then(
-        (page) => {
-          if (seq !== requestSeq.current) return;
-          // 列表变短后这一页可能已经越界(例如批量删除之后):退回到最后一页
-          if (!page.items.length && page.total > 0 && query.kind === "offset" && query.offset >= page.total) {
-            setQuery({ kind: "offset", offset: Math.floor((page.total - 1) / pageSize) * pageSize });
-            return;
-          }
-          setState({ key, status: "ready", items: page.items, total: page.total, offset: page.offset, error: "" });
-          lastTotalRef.current = { key: filterKey, total: page.total };
-        },
-        (reason: unknown) => {
-          if (seq !== requestSeq.current) return;
-          setState({ key, status: "error", items: [], total: 0, offset: 0, error: reason instanceof Error ? reason.message : "加载图片列表失败" });
-        },
-      );
+    const anchor = query.kind === "anchor" ? query.imageId : undefined;
+    const request =
+      mode === "test"
+        ? api.listTestImagesPage(datasetId, query.kind === "offset" ? query.offset : 0, pageSize, { status: status as TestImageStatusFilter, anchor })
+        : api.listImagesPage(datasetId, query.kind === "offset" ? query.offset : 0, pageSize, { split: split as SplitName | "", status: status as ImageStatusFilter, anchor });
+    request.then(
+      (page) => {
+        if (seq !== requestSeq.current) return;
+        // 列表变短后这一页可能已经越界(例如批量删除之后):退回到最后一页
+        if (!page.items.length && page.total > 0 && query.kind === "offset" && query.offset >= page.total) {
+          setQuery({ kind: "offset", offset: Math.floor((page.total - 1) / pageSize) * pageSize });
+          return;
+        }
+        setState({ key, status: "ready", items: page.items as ImageItem[], total: page.total, offset: page.offset, error: "" });
+        lastTotalRef.current = { key: filterKey, total: page.total };
+      },
+      (reason: unknown) => {
+        if (seq !== requestSeq.current) return;
+        setState({ key, status: "error", items: [], total: 0, offset: 0, error: reason instanceof Error ? reason.message : "加载图片列表失败" });
+      },
+    );
     return () => { requestSeq.current += 1; };
-  }, [key, datasetId, query, pageSize, split, status, version]);
+  }, [key, datasetId, query, pageSize, split, status, version, mode]);
 
   // 未就绪(加载中/出错)时沿用同一筛选下的旧总数;筛选或每页条数变了才回到 0
   const total = view?.status === "ready" || lastTotalRef.current.key !== filterKey ? view?.total ?? 0 : lastTotalRef.current.total;

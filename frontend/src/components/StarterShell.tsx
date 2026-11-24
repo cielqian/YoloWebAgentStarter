@@ -3,7 +3,7 @@ import { Flex, Layout, Menu } from "antd";
 import type { AppLocale } from "../locale";
 import { localeText } from "../locale";
 
-export type StarterSection = "workspace" | "training" | "models" | "agent" | "logs" | "ftp" | "datasources" | "plugin-manager" | `plugin:${string}` | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language";
+export type StarterSection = "workspace" | "training" | "models" | "algorithm-test" | "agent" | "logs" | "ftp" | "datasources" | "plugin-manager" | `plugin:${string}` | "settings-llm" | "settings-sam" | "settings-ftp" | "settings-nodes" | "settings-weights" | "settings-basedata" | "settings-webhook" | "settings-language";
 
 interface Props {
   active: StarterSection;
@@ -38,6 +38,7 @@ export function StarterShell({ active, onNavigate, locale = "zh", focusMode = fa
     { key: "workspace", label: labels.workspace ?? "数据集" },
     { key: "training", label: labels.training ?? "训练" },
     { key: "models", label: labels.models ?? "模型" },
+    { key: "algorithm-test", label: locale === "zh" ? "算法测试" : "Algorithm Test" },
     { key: "agent", label: labels.agent ?? "智能体" },
     { key: "logs", label: labels.logs ?? "日志" },
     { key: "ftp", label: labels.ftp ?? "FTP 管理" },

@@ -7,7 +7,8 @@ function errorMessage(reason: unknown): string { return reason instanceof Error 
 
 /** 标注页“从类别库选择”弹窗：勾选模板后导入当前数据集，同名类别会被跳过。 */
 export function ClassLibraryPicker(props: {
-  existingClasses: ClassLabel[];
+  /** 只按 name 判重:训练类别与测试类别都可用。 */
+  existingClasses: Array<Pick<ClassLabel, "name">>;
   isSegment: boolean;
   busy: boolean;
   onImport: (templateIds: string[]) => Promise<ClassLabel[] | undefined>;

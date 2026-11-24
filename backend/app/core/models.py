@@ -567,3 +567,229 @@ class SourceImageTag(Base):
 
     image: Mapped[SourceImage] = relationship(back_populates="tag_links")
     tag: Mapped[SourceTag] = relationship(back_populates="image_links")
+
+
+# ---------------------------------------------------------------------------
+# 算法测试模块(端到端算法服务指标测试)。测试数据集与训练数据集(datasets/image_items/
+# annotations)完全独立;完整设计见 docs/算法测试模块设计.md。
+# ---------------------------------------------------------------------------
+
+
+class TestDataset(Base, TimestampMixin):
+    """测试数据集:预期结果(ground truth)载体,任务执行时按 FTP 相对路径分发给算法服务。"""
+
+    __tablename__ = "test_datasets"
+    __table_args__ = (
+        CheckConstraint("task_type IN ('detect', 'segment', 'obb', 'classify')", name="ck_test_dataset_task_type"),
+        CheckConstraint("source IN ('local', 'ftp')", name="ck_test_dataset_source"),
+        CheckConstraint("status IN ('ready', 'annotating', 'locked')", name="ck_test_dataset_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    task_type: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), default="local", nullable=False)
+    # 数据集版本号(如 v1.2)与用途标签(回归基线/扩充集/难例集/验收集)
+    version: Mapped[str] = mapped_column(String(64), default="v1", nullable=False)
+    purpose_tag: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 任务运行中锁定,禁止改动标注
+    status: Mapped[str] = mapped_column(String(16), default="ready", nullable=False)
+    # 图片分发目录(FTP 相对路径);任务 preparing 阶段上传至此
+    ftp_dir: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    class_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    marked_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    classes: Mapped[list["TestClassLabel"]] = relationship(back_populates="test_dataset", cascade="all, delete-orphan")
+    images: Mapped[list["TestImage"]] = relationship(back_populates="test_dataset", cascade="all, delete-orphan")
+
+
+class TestClassLabel(Base, TimestampMixin):
+    __tablename__ = "test_class_labels"
+    __table_args__ = (
+        UniqueConstraint("test_dataset_id", "class_index", name="uq_test_class_label_dataset_index"),
+        UniqueConstraint("test_dataset_id", "name", name="uq_test_class_label_dataset_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    test_dataset_id: Mapped[str] = mapped_column(ForeignKey("test_datasets.id", ondelete="CASCADE"), index=True, nullable=False)
+    class_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    color: Mapped[str] = mapped_column(String(16), default="#22c55e", nullable=False)
+
+    test_dataset: Mapped[TestDataset] = relationship(back_populates="classes")
+    annotations: Mapped[list["TestAnnotation"]] = relationship(back_populates="class_label")
+
+
+class TestImage(Base, TimestampMixin):
+    __tablename__ = "test_images"
+    __table_args__ = (
+        UniqueConstraint("test_dataset_id", "storage_name", name="uq_test_image_dataset_storage"),
+        CheckConstraint("status IN ('unmarked', 'marked')", name="ck_test_image_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    test_dataset_id: Mapped[str] = mapped_column(ForeignKey("test_datasets.id", ondelete="CASCADE"), index=True, nullable=False)
+    file_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    storage_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="unmarked", index=True, nullable=False)
+    # 上传内容 MD5,同数据集内去重
+    source_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 巡视点位 ID,任务执行时替换 {{object_id}} 占位符;可空
+    point_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 任务 preparing 阶段上传后回填的 FTP 相对路径;空=未上传
+    ftp_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    ftp_uploaded_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    test_dataset: Mapped[TestDataset] = relationship(back_populates="images")
+    annotations: Mapped[list["TestAnnotation"]] = relationship(back_populates="image", cascade="all, delete-orphan")
+
+
+class TestAnnotation(Base, TimestampMixin):
+    """预期结果标注:几何结构与训练 Annotation 同构(bbox/polygon/obb/classify),便于复用标注前端。"""
+
+    __tablename__ = "test_annotations"
+    __table_args__ = (CheckConstraint("type IN ('bbox', 'polygon', 'obb', 'classify')", name="ck_test_annotation_type"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    test_image_id: Mapped[str] = mapped_column(ForeignKey("test_images.id", ondelete="CASCADE"), index=True, nullable=False)
+    test_dataset_id: Mapped[str] = mapped_column(ForeignKey("test_datasets.id", ondelete="CASCADE"), index=True, nullable=False)
+    test_class_id: Mapped[str] = mapped_column(ForeignKey("test_class_labels.id", ondelete="RESTRICT"), index=True, nullable=False)
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    width: Mapped[float | None] = mapped_column(Float, nullable=True)
+    height: Mapped[float | None] = mapped_column(Float, nullable=True)
+    polygon: Mapped[list[list[float]] | None] = mapped_column(JSON, nullable=True)
+    obb: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 难例:参与匹配但单列统计,不计入主指标
+    difficult: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), default="manual", nullable=False)
+    # 整图替换时的输入顺序,保证标注列表/画布渲染顺序稳定(同一 flush 内 created_at 可能相同)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    image: Mapped[TestImage] = relationship(back_populates="annotations")
+    class_label: Mapped[TestClassLabel] = relationship(back_populates="annotations")
+
+
+class AlgorithmService(Base, TimestampMixin):
+    """算法服务:模型经 compute-agent 以 Docker 容器部署后的 HTTP 调用入口(含调用与解析配置)。"""
+
+    __tablename__ = "algorithm_services"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('creating', 'starting', 'running', 'stopped', 'failed', 'deleting')",
+            name="ck_algorithm_service_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), ForeignKey("model_versions.id", ondelete="RESTRICT"), index=True, nullable=False)
+    node_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="creating", index=True, nullable=False)
+    # Step1 调用与解析:{method,url_template,headers,body_template} / {root_path,label_path,score_path,bbox_path,bbox_format}
+    request_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    parse_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # Step2 节点配置:{base_image,container_name,container_port,start_cmd,health_timeout_s,restart_policy,gpu_device,response_mode,task_type_map}
+    deploy_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_health_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    last_health_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    model: Mapped["ModelVersion"] = relationship()
+
+
+class AlgorithmTestTask(Base, TimestampMixin):
+    __tablename__ = "algorithm_test_tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'preparing', 'running', 'computing', 'completed', 'failed', 'canceled')",
+            name="ck_algorithm_test_task_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    service_id: Mapped[str] = mapped_column(ForeignKey("algorithm_services.id", ondelete="CASCADE"), index=True, nullable=False)
+    test_dataset_id: Mapped[str] = mapped_column(ForeignKey("test_datasets.id", ondelete="RESTRICT"), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True, nullable=False)
+    progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    # {confidence,iou,warmup_discard}
+    params: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # 任务创建时的服务配置快照(request_config+parse_config+服务地址),保证重跑可复现
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    service: Mapped[AlgorithmService] = relationship()
+
+
+class AlgorithmTestRecord(Base, TimestampMixin):
+    """测试记录:任务完成后生成;重跑产生新任务与新记录,历史不可变。"""
+
+    __tablename__ = "algorithm_test_records"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("algorithm_test_tasks.id", ondelete="CASCADE"), index=True, nullable=False)
+    service_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    model_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    test_dataset_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    test_dataset_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    test_dataset_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    params: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # 自动匹配口径指标(§6);复核后另有 metrics_reviewed
+    metrics_auto: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    metrics_reviewed: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    latency_stats: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AlgorithmTestImageResult(Base, TimestampMixin):
+    __tablename__ = "algorithm_test_image_results"
+    __table_args__ = (
+        CheckConstraint("status IN ('ok', 'call_failed', 'parse_failed', 'skipped')", name="ck_algorithm_test_image_result_status"),
+        Index("ix_algo_test_image_results_record", "record_id", "test_image_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    record_id: Mapped[str] = mapped_column(ForeignKey("algorithm_test_records.id", ondelete="CASCADE"), index=True, nullable=False)
+    test_image_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="ok", nullable=False)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 解析出的原始预测 [{label,score,bbox/polygon}] 与匹配明细 [{pred_idx,gt_idx,iou,outcome}]
+    predictions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    matches: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    reviewed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class AlgorithmTestReviewMark(Base, TimestampMixin):
+    """TP/FP 人工复核标记(P4):对预测或漏检逐个确认,复核口径指标据此重算。"""
+
+    __tablename__ = "algorithm_test_review_marks"
+    __table_args__ = (
+        CheckConstraint("target IN ('prediction', 'match')", name="ck_algorithm_test_review_target"),
+        CheckConstraint(
+            "mark IN ('confirm_tp', 'confirm_fp', 'ignore', 'missed_confirm')",
+            name="ck_algorithm_test_review_mark",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    record_id: Mapped[str] = mapped_column(ForeignKey("algorithm_test_records.id", ondelete="CASCADE"), index=True, nullable=False)
+    image_result_id: Mapped[str] = mapped_column(ForeignKey("algorithm_test_image_results.id", ondelete="CASCADE"), index=True, nullable=False)
+    target: Mapped[str] = mapped_column(String(16), nullable=False)
+    target_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    mark: Mapped[str] = mapped_column(String(16), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -29,6 +29,7 @@ class Storage:
         self.import_root = import_root.resolve()
         self.datasets_dir = self.data_dir / "datasets"
         self.source_datasets_dir = self.data_dir / "source-datasets"
+        self.test_datasets_dir = self.data_dir / "test-datasets"
         self.exports_dir = self.data_dir / "exports"
         self.training_dir = self.data_dir / "runs" / "training"
         self.evaluation_dir = self.data_dir / "runs" / "evaluation"
@@ -218,6 +219,52 @@ class Storage:
     def remove_source_dataset(self, source_dataset_id: str) -> None:
         directory = self.source_dataset_dir(source_dataset_id).resolve()
         if _is_within(directory, self.source_datasets_dir.resolve()) and directory.exists():
+            shutil.rmtree(directory)
+
+    # -- 算法测试模块:测试数据集存储(data/test-datasets/{id}/images|thumbs) --
+
+    def test_dataset_dir(self, test_dataset_id: str) -> Path:
+        return self.test_datasets_dir / test_dataset_id
+
+    def test_images_dir(self, test_dataset_id: str) -> Path:
+        path = self.test_dataset_dir(test_dataset_id) / "images"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def test_image_path(self, test_dataset_id: str, storage_name: str) -> Path:
+        candidate = (self.test_images_dir(test_dataset_id) / storage_name).resolve()
+        if not _is_within(candidate, self.test_images_dir(test_dataset_id).resolve()):
+            raise ValidationError("unsafe_path", "Image path escapes the managed test dataset directory.")
+        return candidate
+
+    def write_test_image(self, test_dataset_id: str, image_id: str, file_name: str, content: bytes, *, max_bytes: int) -> tuple[str, int, int]:
+        """写一张测试图片并返回 (storage_name, width, height);storage_name 带 image_id 前缀防重名。"""
+
+        source = Path(file_name).name
+        suffix = Path(source).suffix.lower()
+        if suffix not in SUPPORTED_IMAGE_SUFFIXES:
+            raise ValidationError("unsupported_image_format", f"Unsupported image format: {suffix or 'unknown'}.")
+        stem = _SAFE_NAME.sub("_", Path(source).stem).strip("._") or "image"
+        storage_name = f"{image_id}_{stem}{suffix}"
+        destination = self.test_image_path(test_dataset_id, storage_name)
+        try:
+            if len(content) > max_bytes:
+                raise ValidationError("image_too_large", "Image exceeds the configured upload limit.")
+            destination.write_bytes(content)
+        except (OSError, ValidationError):
+            destination.unlink(missing_ok=True)
+            raise
+        width, height = self._verify_image(destination)
+        return storage_name, width, height
+
+    def ensure_test_thumbnail(self, test_dataset_id: str, image_id: str, storage_name: str) -> Path:
+        thumbnail = self.test_dataset_dir(test_dataset_id) / "thumbs" / f"{image_id}.jpg"
+        original = self.test_image_path(test_dataset_id, storage_name)
+        return self._render_thumbnail(original, thumbnail, missing="test_image_file_not_found")
+
+    def remove_test_dataset(self, test_dataset_id: str) -> None:
+        directory = self.test_dataset_dir(test_dataset_id).resolve()
+        if _is_within(directory, self.test_datasets_dir.resolve()) and directory.exists():
             shutil.rmtree(directory)
 
     def video_import_task_dir(self, task_id: str) -> Path:

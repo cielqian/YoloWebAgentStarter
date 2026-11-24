@@ -9,6 +9,7 @@ from app.auto_annotation.router import dataset_router as auto_annotation_dataset
 from app.logs.router import router as logs_router
 from app.plugins.router import router as plugins_router
 from app.video_import.router import router as video_import_router
+from app.algorithm_test.router import router as algorithm_test_router, file_router as algorithm_test_file_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(system.router)
@@ -31,3 +32,5 @@ api_router.include_router(agent_router)
 api_router.include_router(weights.router)
 api_router.include_router(tag_library_router)
 api_router.include_router(material_type_router)
+api_router.include_router(algorithm_test_router)
+api_router.include_router(algorithm_test_file_router)
