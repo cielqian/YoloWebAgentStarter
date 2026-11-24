@@ -2,17 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_session, get_settings, get_storage
 from app.core.config import Settings
 from app.core.errors import NotFoundError, ValidationError
+from app.core.ids import new_id
 from app.core.storage import Storage
 from app.core.models import TestDataset, TestImage
 from app.algorithm_test import datasets as test_datasets
 from app.algorithm_test import expected_annotations as test_annotations
+from app.algorithm_test.ftp_import import request_cancel as request_import_cancel, run_async_test_import
 from app.algorithm_test.schemas import (
     ReplaceTestAnnotationsRequest,
     TestClassCreate,
@@ -22,6 +24,7 @@ from app.algorithm_test.schemas import (
     TestDatasetCreate,
     TestDatasetResponse,
     TestDatasetUpdate,
+    TestFtpImportCreate,
     TestImageNeighborsResponse,
     TestImagePage,
     TestImageResponse,
@@ -62,6 +65,57 @@ def list_datasets(session: Session = Depends(get_session)) -> list[TestDatasetRe
 @router.post("/datasets", response_model=TestDatasetResponse, status_code=201)
 def post_dataset(payload: TestDatasetCreate, session: Session = Depends(get_session)) -> TestDatasetResponse:
     return _dataset_response(test_datasets.create_test_dataset(session, payload))
+
+
+@router.post("/datasets/from-ftp", response_model=TestDatasetResponse, status_code=201)
+def create_dataset_from_ftp(
+    payload: TestFtpImportCreate,
+    request: Request,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+    settings: Settings = Depends(get_settings),
+) -> TestDatasetResponse:
+    """从 FTP 目录/压缩包异步建测试数据集:占位立即返回,进度轮询列表。"""
+
+    if payload.source == "zip" and not payload.path.lower().endswith(".zip"):
+        raise ValidationError("ftp_import_not_zip", "FTP 建集仅支持 .zip 文件或 YOLO 目录。")
+    placeholder = TestDataset(
+        id=new_id("tds"),
+        name=payload.name,
+        task_type=payload.task_type,
+        source="ftp",
+        purpose_tag=payload.purpose_tag,
+        ftp_dir=payload.ftp_dir,
+        notes=payload.notes,
+        import_state="importing",
+        import_progress=0.0,
+    )
+    session.add(placeholder)
+    session.commit()
+    session.refresh(placeholder)
+    run_async_test_import(
+        request.app.state.database.session_factory,
+        storage,
+        settings,
+        test_dataset_id=placeholder.id,
+        ftp_path=payload.path,
+        ftp_source=payload.source,
+    )
+    return _dataset_response(placeholder)
+
+
+@router.post("/datasets/{test_dataset_id}/import/cancel", response_model=TestDatasetResponse)
+def cancel_dataset_import(test_dataset_id: str, session: Session = Depends(get_session)) -> TestDatasetResponse:
+    dataset = test_datasets.get_test_dataset(session, test_dataset_id)
+    if dataset.import_state != "importing":
+        return _dataset_response(dataset)
+    request_import_cancel(test_dataset_id)
+    dataset.import_state = "stopped"
+    dataset.import_progress = 0.0
+    dataset.import_message = "导入已停止。"
+    session.commit()
+    session.refresh(dataset)
+    return _dataset_response(dataset)
 
 
 @router.get("/datasets/{test_dataset_id}", response_model=TestDatasetResponse)

@@ -74,6 +74,10 @@ class TestDatasetResponse(BaseModel):
     class_count: int
     marked_count: int
     marked_percent: float = 0.0
+    # FTP 异步建集:None=正常,importing/completed/failed/stopped
+    import_state: str | None = None
+    import_progress: float = 0.0
+    import_message: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -143,6 +147,26 @@ class TestUploadResponse(BaseModel):
     imported: int
     duplicates: list[str]
     items: list[TestImageResponse]
+
+
+class TestFtpImportCreate(BaseModel):
+    """从 FTP 目录/压缩包异步建测试数据集。"""
+
+    name: str = Field(min_length=1, max_length=255)
+    task_type: TestTaskType
+    purpose_tag: TestPurposeTag | None = None
+    ftp_dir: str | None = Field(default=None, max_length=1024)
+    notes: str | None = Field(default=None, max_length=4000)
+    path: str = Field(min_length=1, max_length=2048)
+    source: Literal["zip", "dir"] = "zip"
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("name cannot be blank")
+        return cleaned
 
 
 class TestImageNeighborsResponse(BaseModel):

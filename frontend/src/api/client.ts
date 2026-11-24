@@ -405,6 +405,9 @@ export const api = {
   patchTestDataset: (testDatasetId: string, payload: { name?: string; version?: string; purpose_tag?: TestPurposeTag | null; ftp_dir?: string | null; notes?: string | null }) =>
     request<TestDataset>(`/api/algorithm-test/datasets/${testDatasetId}`, json(payload, "PATCH")),
   deleteTestDataset: (testDatasetId: string) => request<void>(`/api/algorithm-test/datasets/${testDatasetId}`, { method: "DELETE" }),
+  createTestDatasetFromFtp: (payload: { name: string; task_type: TestTaskType; purpose_tag?: TestPurposeTag | null; ftp_dir?: string | null; notes?: string | null; path: string; source: "zip" | "dir" }) =>
+    request<TestDataset>("/api/algorithm-test/datasets/from-ftp", json(payload)),
+  cancelTestDatasetImport: (testDatasetId: string) => request<TestDataset>(`/api/algorithm-test/datasets/${testDatasetId}/import/cancel`, json({})),
   listTestClasses: (testDatasetId: string) => request<TestClassLabel[]>(`/api/algorithm-test/datasets/${testDatasetId}/classes`),
   createTestClass: (testDatasetId: string, name: string, color = "#22c55e") =>
     request<TestClassLabel>(`/api/algorithm-test/datasets/${testDatasetId}/classes`, json({ name, color })),

@@ -49,6 +49,9 @@ const dataset = {
 const apiMocks = vi.hoisted(() => ({
   listTestDatasets: vi.fn(),
   createTestDataset: vi.fn(),
+  createTestDatasetFromFtp: vi.fn(),
+  cancelTestDatasetImport: vi.fn(),
+  listFtp: vi.fn(),
   deleteTestDataset: vi.fn(),
   listTestClasses: vi.fn(),
   listTestImagesPage: vi.fn(),
@@ -74,6 +77,11 @@ let root: Root | null = null;
 beforeEach(() => {
   vi.clearAllMocks();
   apiMocks.listTestDatasets.mockResolvedValue([dataset]);
+  apiMocks.listFtp.mockResolvedValue({ path: "/", entries: [
+    { name: "2024Q3", path: "/2024Q3", is_dir: true, size: null, modified: null },
+    { name: "data.zip", path: "/data.zip", is_dir: false, size: 2048, modified: null },
+    { name: "note.txt", path: "/note.txt", is_dir: false, size: 10, modified: null },
+  ] });
   apiMocks.testImageNeighbors.mockResolvedValue({ previous: null, next: null, index: 0, total: 1 });
   apiMocks.listTestClasses.mockResolvedValue([
     { id: "tcls-1", test_dataset_id: "tds-1", class_index: 0, name: "裂缝", color: "#22c55e", created_at: "", updated_at: "" },
@@ -170,5 +178,38 @@ describe("AlgorithmTestView 测试数据集管理", () => {
     await act(async () => {});
     expect(apiMocks.getTestAnnotations).toHaveBeenCalledWith("tds-1", "timg-9");
     expect(container!.textContent).toContain("IMG_0430.jpg");
+  });
+
+  it("FTP 同步:浏览目录选 zip 提交调用 createTestDatasetFromFtp", async () => {
+    apiMocks.createTestDatasetFromFtp.mockResolvedValue({ ...dataset, id: "tds-3", source: "ftp", import_state: "importing" });
+    render();
+    await act(async () => {});
+    clickByText(container!.querySelectorAll("button"), "FTP 同步");
+    await act(async () => {});
+    expect(apiMocks.listFtp).toHaveBeenCalledWith("/");
+    // 弹窗在 body portal:填名称、点选 zip
+    const nameInput = document.body.querySelector("input[placeholder='例如：机舱锈蚀-分类测试集']") as HTMLInputElement | null;
+    expect(nameInput).not.toBeNull();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(nameInput!, "锈蚀FTP集");
+      nameInput!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    clickByText(document.body.querySelectorAll("button"), "data.zip");
+    await act(async () => {});
+    clickByText(document.body.querySelectorAll("button"), "开始同步");
+    await act(async () => {});
+    expect(apiMocks.createTestDatasetFromFtp).toHaveBeenCalledWith(expect.objectContaining({ name: "锈蚀FTP集", task_type: "detect", path: "/data.zip", source: "zip" }));
+  });
+
+  it("导入中的数据集显示进度并可停止", async () => {
+    apiMocks.listTestDatasets.mockResolvedValue([{ ...dataset, import_state: "importing", import_progress: 62.5 }]);
+    apiMocks.cancelTestDatasetImport.mockResolvedValue({ ...dataset, import_state: "stopped" });
+    render();
+    await act(async () => {});
+    expect(container!.textContent).toContain("63%");
+    clickByText(container!.querySelectorAll("button"), "停止导入");
+    await act(async () => {});
+    expect(apiMocks.cancelTestDatasetImport).toHaveBeenCalledWith("tds-1");
   });
 });

@@ -443,6 +443,10 @@ export interface TestDataset {
   class_count: number;
   marked_count: number;
   marked_percent: number;
+  /** FTP 异步建集:null=正常,importing/completed/failed/stopped。 */
+  import_state: string | null;
+  import_progress: number;
+  import_message: string | null;
   created_at: string;
   updated_at: string;
 }

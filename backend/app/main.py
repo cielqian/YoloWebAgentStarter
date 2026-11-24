@@ -19,6 +19,7 @@ from app.models.evaluation import YoloEvaluationRunner
 from app.logs.service import configure_runtime_logging
 from app.auto_annotation.queue import auto_annotation_queue
 from app.dataset.import_runner import recover_interrupted_imports
+from app.algorithm_test.ftp_import import recover_interrupted_test_imports
 from app.video_import.queue import video_import_queue
 from app.agent.service import AgentService
 from app.agent.runtime import AgentRunExecutor
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None, *, run_migrations: bool = True)
         training_queue.recover_orphaned()
         recover_interrupted_dispatches(database.session_factory)
         recover_interrupted_imports(database.session_factory)
+        recover_interrupted_test_imports(database.session_factory)
         auto_annotation_queue.recover_orphaned()
         video_import_queue.recover_orphaned()
         AgentService(database.session_factory, resolved).recover_orphaned()

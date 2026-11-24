@@ -600,6 +600,10 @@ class TestDataset(Base, TimestampMixin):
     image_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     class_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     marked_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # FTP 异步建集状态:None=正常,importing/completed/failed/stopped
+    import_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    import_progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    import_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     classes: Mapped[list["TestClassLabel"]] = relationship(back_populates="test_dataset", cascade="all, delete-orphan")
     images: Mapped[list["TestImage"]] = relationship(back_populates="test_dataset", cascade="all, delete-orphan")

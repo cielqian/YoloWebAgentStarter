@@ -13,6 +13,7 @@ import {
   Space,
   Table,
   Tag as AntdTag,
+  Tooltip,
   Typography,
   Upload,
   type TableProps,
@@ -27,6 +28,7 @@ import { UploadProgressToast } from "../components/UploadProgressToast";
 import type {
   Annotation,
   ClassLabel,
+  FtpEntry,
   ImageItem,
   TestAnnotation,
   TestClassLabel,
@@ -95,6 +97,7 @@ export function AlgorithmTestView({ onDirtyChange }: { onDirtyChange?: (dirty: b
   const [notice, setNotice] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm();
+  const [ftpOpen, setFtpOpen] = useState(false);
   const [uploadTarget, setUploadTarget] = useState<TestDataset>();
   const [uploadProgress, setUploadProgress] = useState<{ progress: UploadProgress } | null>(null);
   // 标注态数据
@@ -126,6 +129,33 @@ export function AlgorithmTestView({ onDirtyChange }: { onDirtyChange?: (dirty: b
     void run(async () => { await refreshDatasets(); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 有测试数据集在 FTP 建集时轮询列表;完成/失败时提示结果。
+  const importStatesRef = useRef<Record<string, string | null | undefined>>({});
+  useEffect(() => {
+    const states: Record<string, string | null | undefined> = {};
+    for (const dataset of datasets) states[dataset.id] = dataset.import_state ?? null;
+    const previous = importStatesRef.current;
+    for (const dataset of datasets) {
+      const before = previous[dataset.id];
+      const now = states[dataset.id];
+      if (before === "importing" && now === "completed") {
+        setNotice(`「${dataset.name}」FTP 建集完成：${dataset.image_count} 张图片。`);
+      } else if (before === "importing" && now === "failed") {
+        setError(`「${dataset.name}」FTP 建集失败：${dataset.import_message ?? "未知错误"}`);
+      }
+    }
+    importStatesRef.current = states;
+  }, [datasets]);
+
+  const hasImportingDataset = mode.kind === "list" && datasets.some((dataset) => dataset.import_state === "importing");
+  useEffect(() => {
+    if (!hasImportingDataset) return;
+    const timer = window.setInterval(() => {
+      api.listTestDatasets().then(setDatasets).catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [hasImportingDataset]);
 
   // 标注态:当前图片变化时刷新邻居。
   useEffect(() => {
@@ -209,6 +239,14 @@ export function AlgorithmTestView({ onDirtyChange }: { onDirtyChange?: (dirty: b
       createForm.resetFields();
       setDatasets((items) => [created, ...items]);
       setNotice(`测试数据集「${created.name}」已创建，可上传图片并标记预期结果`);
+    });
+  };
+
+  const stopImport = async (dataset: TestDataset) => {
+    await run(async () => {
+      await api.cancelTestDatasetImport(dataset.id);
+      await refreshDatasets();
+      setNotice(`「${dataset.name}」已停止导入。`);
     });
   };
 
@@ -366,8 +404,24 @@ export function AlgorithmTestView({ onDirtyChange }: { onDirtyChange?: (dirty: b
     {
       title: "状态",
       key: "status",
-      width: 90,
-      render: (_, item) => (item.status === "locked" ? <AntdTag color="orange">任务锁定</AntdTag> : item.marked_percent >= 100 ? <AntdTag color="green">已就绪</AntdTag> : <AntdTag color="gold">标注中</AntdTag>),
+      width: 110,
+      render: (_, item) =>
+        item.import_state === "importing" ? (
+          <div style={{ width: 150 }}>
+            <Progress percent={Math.round(item.import_progress)} size="small" status="active" />
+            <AntdButton type="link" size="small" danger disabled={busy} onClick={() => void stopImport(item)}>停止导入</AntdButton>
+          </div>
+        ) : item.import_state === "failed" ? (
+          <Tooltip title={item.import_message ?? "未知错误"}><AntdTag color="red">导入失败</AntdTag></Tooltip>
+        ) : item.import_state === "stopped" ? (
+          <AntdTag>已停止</AntdTag>
+        ) : item.status === "locked" ? (
+          <AntdTag color="orange">任务锁定</AntdTag>
+        ) : item.marked_percent >= 100 ? (
+          <AntdTag color="green">已就绪</AntdTag>
+        ) : (
+          <AntdTag color="gold">标注中</AntdTag>
+        ),
     },
     {
       title: "操作",
@@ -375,10 +429,10 @@ export function AlgorithmTestView({ onDirtyChange }: { onDirtyChange?: (dirty: b
       width: 240,
       render: (_, item) => (
         <Space size={4}>
-          <AntdButton type="link" size="small" disabled={busy || !item.image_count} onClick={() => void continueAnnotation(item)}>在线标注</AntdButton>
-          <AntdButton type="link" size="small" disabled={busy} onClick={() => setUploadTarget(item)}>上传图片</AntdButton>
+          <AntdButton type="link" size="small" disabled={busy || item.import_state === "importing" || !item.image_count} onClick={() => void continueAnnotation(item)}>在线标注</AntdButton>
+          <AntdButton type="link" size="small" disabled={busy || item.import_state === "importing"} onClick={() => setUploadTarget(item)}>上传图片</AntdButton>
           <Popconfirm title={`删除测试数据集「${item.name}」？`} description="图片与预期标注会永久删除，不可恢复。" okText="删除" okButtonProps={{ danger: true }} cancelText="取消" onConfirm={() => void deleteDataset(item)}>
-            <AntdButton type="link" size="small" danger>删除</AntdButton>
+            <AntdButton type="link" size="small" danger disabled={busy || item.import_state === "importing"}>删除</AntdButton>
           </Popconfirm>
         </Space>
       ),
@@ -400,7 +454,10 @@ export function AlgorithmTestView({ onDirtyChange }: { onDirtyChange?: (dirty: b
         <Space>
           <Typography.Text type="secondary">共 {datasets.length} 个测试数据集</Typography.Text>
         </Space>
-        <AntdButton type="primary" disabled={busy} onClick={() => setCreateOpen(true)}>新建数据集</AntdButton>
+        <Space>
+          <AntdButton disabled={busy} onClick={() => setFtpOpen(true)}>FTP 同步</AntdButton>
+          <AntdButton type="primary" disabled={busy} onClick={() => setCreateOpen(true)}>新建数据集</AntdButton>
+        </Space>
       </div>
       <Table<TestDataset>
         rowKey="id"
@@ -446,7 +503,136 @@ export function AlgorithmTestView({ onDirtyChange }: { onDirtyChange?: (dirty: b
         onClose={() => setUploadTarget(undefined)}
         onSubmit={(files) => uploadTarget && void uploadFiles(uploadTarget, files)}
       />
+
+      <FtpImportModal
+        open={ftpOpen}
+        busy={busy}
+        onClose={() => setFtpOpen(false)}
+        onSubmit={async (payload) => {
+          await run(async () => {
+            const created = await api.createTestDatasetFromFtp(payload);
+            setFtpOpen(false);
+            setDatasets((items) => [created, ...items]);
+            setNotice(`已开始从 FTP ${payload.source === "dir" ? "目录" : "压缩包"}建集「${created.name}」，进度见列表。`);
+          });
+        }}
+      />
     </main>
+  );
+}
+
+/** 从 FTP 目录/压缩包建测试数据集:表单 + 简易 FTP 浏览(zip 选中或目录进入)。 */
+function FtpImportModal({ open, busy, onClose, onSubmit }: { open: boolean; busy: boolean; onClose: () => void; onSubmit: (payload: { name: string; task_type: TestTaskType; purpose_tag?: TestPurposeTag | null; notes?: string | null; path: string; source: "zip" | "dir" }) => Promise<void> }) {
+  const [form] = Form.useForm();
+  const [ftpPath, setFtpPath] = useState("/");
+  const [entries, setEntries] = useState<FtpEntry[]>([]);
+  const [ftpLoading, setFtpLoading] = useState(false);
+  const [ftpError, setFtpError] = useState("");
+  const [selected, setSelected] = useState<{ path: string; source: "zip" | "dir" }>();
+
+  const browse = useCallback((path: string) => {
+    setFtpLoading(true);
+    setFtpError("");
+    api.listFtp(path).then((result) => {
+      setFtpPath(result.path);
+      setEntries(result.entries);
+    }).catch((reason: unknown) => {
+      setFtpError(reason instanceof Error ? reason.message : "FTP 目录读取失败");
+    }).finally(() => setFtpLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (open && !entries.length) browse("/");
+    if (!open) { setSelected(undefined); setFtpError(""); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const parentOf = (path: string) => {
+    const trimmed = path.replace(/\/+$/, "");
+    const index = trimmed.lastIndexOf("/");
+    return index <= 0 ? "/" : trimmed.slice(0, index);
+  };
+
+  const submit = async () => {
+    if (!selected) return;
+    const values = await form.validateFields();
+    await onSubmit({
+      name: values.name,
+      task_type: values.task_type,
+      purpose_tag: values.purpose_tag ?? null,
+      notes: values.notes ?? null,
+      path: selected.path,
+      source: selected.source,
+    });
+    form.resetFields();
+    setSelected(undefined);
+  };
+
+  return (
+    <Modal
+      title="从 FTP 数据源同步建集"
+      open={open}
+      onCancel={onClose}
+      onOk={() => void submit()}
+      okText="开始同步"
+      okButtonProps={{ disabled: busy || ftpLoading || !selected }}
+      cancelText="取消"
+      width={680}
+      destroyOnHidden
+    >
+      <Alert type="info" showIcon style={{ marginBottom: 12 }} title="复用已配置的 FTP 数据源。支持 YOLO 目录（images/ + labels/，labels 会作为预期标注导入）与 zip 压缩包。" />
+      <Form form={form} layout="vertical" initialValues={{ task_type: "detect", purpose_tag: "regression" }}>
+        <Flex gap={12} vertical={false}>
+          <Form.Item name="name" label="数据集名称" style={{ flex: 1 }} rules={[{ required: true, message: "请输入名称" }]}>
+            <AntdInput placeholder="例如：机舱锈蚀-分类测试集" />
+          </Form.Item>
+          <Form.Item name="task_type" label="任务类型" rules={[{ required: true }]}>
+            <AntdSelect options={TASK_TYPE_OPTIONS} style={{ width: 130 }} />
+          </Form.Item>
+          <Form.Item name="purpose_tag" label="用途标签" initialValue="regression">
+            <AntdSelect options={PURPOSE_OPTIONS} allowClear style={{ width: 130 }} />
+          </Form.Item>
+        </Flex>
+      </Form>
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
+        <Space style={{ marginBottom: 8 }}>
+          <AntdButton size="small" disabled={ftpLoading || ftpPath === "/"} onClick={() => browse(parentOf(ftpPath))}>↑ 上级</AntdButton>
+          <AntdInput size="small" style={{ width: 380 }} value={ftpPath} readOnly />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{ftpLoading ? "读取中…" : `${entries.length} 项`}</Typography.Text>
+        </Space>
+        {ftpError && <Typography.Text type="danger" style={{ fontSize: 12 }}>{ftpError}</Typography.Text>}
+        <div style={{ maxHeight: 240, overflowY: "auto" }}>
+          {entries.map((entry) => (
+            <AntdButton
+              key={entry.path}
+              type="text"
+              block
+              style={{ justifyContent: "flex-start", textAlign: "left" }}
+              className={selected?.path === entry.path ? "ftp-entry-selected" : undefined}
+              onClick={() => {
+                if (entry.is_dir) {
+                  setSelected(undefined);
+                  browse(entry.path);
+                } else if (entry.name.toLowerCase().endsWith(".zip")) {
+                  setSelected({ path: entry.path, source: "zip" });
+                }
+              }}
+            >
+              {entry.is_dir ? "📁" : entry.name.toLowerCase().endsWith(".zip") ? "🗜" : "📄"} {entry.name}
+              {selected?.path === entry.path && <AntdTag color="blue" style={{ marginInlineStart: 8 }}>已选中</AntdTag>}
+            </AntdButton>
+          ))}
+        </div>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {selected
+            ? `已选择：${selected.path}${selected.source === "zip" ? "（压缩包）" : ""}`
+            : "点击目录进入，点击 zip 文件选中；也可以直接选中当前目录"}
+        </Typography.Text>
+        <div style={{ marginTop: 4 }}>
+          <AntdButton size="small" type={selected?.path === ftpPath ? "primary" : "default"} disabled={ftpLoading} onClick={() => setSelected({ path: ftpPath, source: "dir" })}>选用当前目录</AntdButton>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
