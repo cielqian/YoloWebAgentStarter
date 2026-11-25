@@ -922,6 +922,325 @@ class ConvertManager:
 convert_manager = ConvertManager(Path(__file__).resolve().parent / "convert-workspace")
 
 
+# ---------------------------------------------------------------- 算法服务部署
+
+
+def _docker_available() -> bool:
+    return shutil.which("docker") is not None
+
+
+def _extract_zip_safely(archive_path: Path, destination: Path, max_members: int = 20000) -> None:
+    """把部署包解压到 destination;拒绝绝对路径与 .. 穿越(与平台 storage 同口径)。"""
+
+    destination.mkdir(parents=True, exist_ok=True)
+    root = destination.resolve()
+    with zipfile.ZipFile(archive_path) as archive:
+        members = archive.infolist()
+        if len(members) > max_members:
+            raise TaskError(400, f"deploy package has too many members ({len(members)} > {max_members})")
+        for member in members:
+            if member.is_dir():
+                continue
+            target = (root / member.filename).resolve()
+            if root != target and root not in target.parents:
+                raise TaskError(400, f"unsafe member path in deploy package: {member.filename}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(member) as source, target.open("wb") as out:
+                shutil.copyfileobj(source, out)
+
+
+class ServiceManager:
+    """算法服务的 Docker 生命周期:部署包 → docker run → 健康探测 → 启停/日志/删除。
+
+    与 TaskManager 同构的 workspace + service.json 双持久化;docker CLI 全部走
+    subprocess(零依赖哲学)。容器把 workspace/deploy 挂载为 /workspace 并以其为
+    工作目录,部署包内自带启动所需的一切(common_service_onnx 等)。
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.lock = threading.RLock()
+        self.services: dict[str, dict[str, Any]] = {}
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    # --- 基础 ---
+
+    def workspace(self, service_id: str) -> Path:
+        if not _TASK_ID.fullmatch(service_id):
+            raise TaskError(400, "invalid service id")
+        candidate = (self.root / service_id).resolve()
+        if candidate.parent != self.root.resolve():
+            raise TaskError(400, "invalid service id")
+        return candidate
+
+    def _persist(self, service_id: str) -> None:
+        record = self.services[service_id]
+        state = {key: record.get(key) for key in ("spec", "status", "error", "container_id", "created_at", "started_at", "stopped_at")}
+        state["service_id"] = service_id
+        path = self.root / service_id / "service.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+
+    def _get(self, service_id: str) -> dict[str, Any]:
+        with self.lock:
+            record = self.services.get(service_id)
+            if record is None:
+                raise TaskError(404, "service not found")
+            return record
+
+    def load_existing(self) -> None:
+        """重启恢复:按 service.json 重建内存态,容器真实状态以 docker inspect 为准。"""
+
+        if not self.root.is_dir():
+            return
+        for service_json in sorted(self.root.glob("*/service.json")):
+            try:
+                state = json.loads(service_json.read_text(encoding="utf-8"))
+                service_id = str(state.get("service_id") or service_json.parent.name)
+            except (OSError, ValueError):
+                continue
+            if not _TASK_ID.fullmatch(service_id) or service_id in self.services:
+                continue
+            if state.get("status") in ("deploying", "pending"):
+                state["status"] = "failed"
+                state["error"] = "Compute agent was restarted during deployment."
+            self.services[service_id] = state
+            # docker 还在跑的容器以实际状态为准
+            if state.get("container_id"):
+                actual = self._container_state(str(state["container_id"]))
+                if actual == "running" and state.get("status") != "running":
+                    state["status"] = "running"
+                elif actual is None and state.get("status") == "running":
+                    state["status"] = "stopped"
+            self._persist(service_id)
+
+    # --- 生命周期 ---
+
+    def create(self, spec: dict[str, Any]) -> dict[str, Any]:
+        if not _docker_available():
+            raise TaskError(501, "docker is not available on this node")
+        service_id = str(spec.get("service_id") or "")
+        if not _TASK_ID.fullmatch(service_id):
+            raise TaskError(400, "spec.service_id is required (1-64 chars of A-Za-z0-9_.:-)")
+        name = str(spec.get("name") or "").strip()
+        if not _SAFE_FILE_NAME.fullmatch(name):
+            raise TaskError(400, "spec.name must be a valid container name")
+        image = str(spec.get("base_image") or "").strip()
+        if not image or re.search(r"[\s`$;&|]", image):
+            raise TaskError(400, "spec.base_image is required and must not contain whitespace or shell metacharacters")
+        host_port = int(spec.get("host_port") or 0)
+        if not 1 <= host_port <= 65535:
+            raise TaskError(400, "spec.host_port must be 1-65535")
+        container_port = int(spec.get("container_port") or host_port)
+        if not 1 <= container_port <= 65535:
+            raise TaskError(400, "spec.container_port must be 1-65535")
+        start_cmd = str(spec.get("start_cmd") or "").strip()
+        if not start_cmd:
+            raise TaskError(400, "spec.start_cmd is required")
+        gpu_device = spec.get("gpu_device")
+        if gpu_device is not None:
+            gpu_device = str(gpu_device).strip() or None
+            if gpu_device and not re.fullmatch(r"(all|\d+(,\d+)*)", gpu_device):
+                raise TaskError(400, "spec.gpu_device must be 'all', a device index, or comma-separated indices")
+        restart_policy = str(spec.get("restart_policy") or "no")
+        if restart_policy not in ("no", "on-failure", "always", "unless-stopped"):
+            raise TaskError(400, "spec.restart_policy must be one of no/on-failure/always/unless-stopped")
+        env = spec.get("env") or {}
+        if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+            raise TaskError(400, "spec.env must be a map of string to string")
+        with self.lock:
+            if service_id in self.services:
+                raise TaskError(409, "service already exists")
+            for other in self.services.values():
+                if (other.get("spec") or {}).get("name") == name:
+                    raise TaskError(409, f"container name {name} is already used by service {other.get('service_id')}")
+            self.workspace(service_id).mkdir(parents=True, exist_ok=True)
+            self.services[service_id] = {
+                "service_id": service_id,
+                "spec": {
+                    "name": name,
+                    "base_image": image,
+                    "host_port": host_port,
+                    "container_port": container_port,
+                    "start_cmd": start_cmd,
+                    "gpu_device": gpu_device,
+                    "restart_policy": restart_policy,
+                    "env": env,
+                    "health_timeout_s": max(1, int(spec.get("health_timeout_s") or 120)),
+                },
+                "status": "pending",
+                "error": None,
+                "container_id": None,
+                "created_at": time.time(),
+                "started_at": None,
+                "stopped_at": None,
+            }
+            self._persist(service_id)
+            return self.status(service_id)
+
+    def receive_package(self, service_id: str, body: bytes) -> dict[str, Any]:
+        record = self._get(service_id)
+        with self.lock:
+            # ready 允许重复上传(覆盖更新部署包);running 必须先 stop
+            if record["status"] not in ("pending", "failed", "ready"):
+                raise TaskError(409, f"cannot receive package while status is {record['status']}")
+            archive = self.workspace(service_id) / "package.zip"
+            archive.write_bytes(body)
+            deploy_dir = self.workspace(service_id) / "deploy"
+            shutil.rmtree(deploy_dir, ignore_errors=True)
+            try:
+                _extract_zip_safely(archive, deploy_dir)
+            except (zipfile.BadZipFile, TaskError) as exc:
+                shutil.rmtree(deploy_dir, ignore_errors=True)
+                archive.unlink(missing_ok=True)
+                message = str(getattr(exc, "message", exc))
+                record["status"] = "failed"
+                record["error"] = message
+                self._persist(service_id)
+                raise TaskError(400, f"invalid deploy package: {message}") from exc
+            record["status"] = "ready"
+            record["error"] = None
+            self._persist(service_id)
+            return self.status(service_id)
+
+    def start(self, service_id: str) -> dict[str, Any]:
+        record = self._get(service_id)
+        with self.lock:
+            if record["status"] == "running":
+                return self.status(service_id)
+            if record["status"] != "ready":
+                raise TaskError(409, f"service is not ready to start (status={record['status']})")
+            record["status"] = "deploying"
+            record["error"] = None
+            self._persist(service_id)
+        threading.Thread(target=self._deploy, args=(service_id,), daemon=True, name=f"service-deploy-{service_id}").start()
+        return self.status(service_id)
+
+    def _deploy(self, service_id: str) -> None:
+        record = self._get(service_id)
+        spec = record["spec"]
+        deploy_dir = self.workspace(service_id) / "deploy"
+        try:
+            if self._container_state_by_name(spec["name"]) is not None:
+                self._docker(["rm", "-f", spec["name"]])
+            if not self._image_present(spec["base_image"]):
+                pulled = self._docker(["pull", spec["base_image"]], timeout=1800)
+                if pulled.returncode != 0:
+                    raise RuntimeError(f"docker pull failed: {pulled.stderr.strip()[:400]}")
+            command = [
+                "run", "-d",
+                "--name", spec["name"],
+                "--restart", spec["restart_policy"],
+                "-p", f"{spec['host_port']}:{spec['container_port']}",
+                "-v", f"{deploy_dir}:/workspace",
+                "-w", "/workspace",
+            ]
+            if spec.get("gpu_device"):
+                command += ["--gpus", f"device={spec['gpu_device']}" if spec["gpu_device"] != "all" else "all"]
+            for key, value in (spec.get("env") or {}).items():
+                command += ["-e", f"{key}={value}"]
+            command += [spec["base_image"], "sh", "-c", spec["start_cmd"]]
+            result = self._docker(command, timeout=300)
+            if result.returncode != 0:
+                raise RuntimeError(f"docker run failed: {result.stderr.strip()[:400]}")
+            container_id = result.stdout.strip().splitlines()[-1]
+            with self.lock:
+                record["container_id"] = container_id
+                self._persist(service_id)
+            if not self._wait_healthy(spec["host_port"], int(spec.get("health_timeout_s") or 120)):
+                raise RuntimeError(f"service did not become healthy on port {spec['host_port']} within {spec.get('health_timeout_s')}s")
+            with self.lock:
+                record["status"] = "running"
+                record["started_at"] = time.time()
+                self._persist(service_id)
+        except Exception as exc:  # noqa: BLE001 - 失败必须落到状态
+            with self.lock:
+                record["status"] = "failed"
+                record["error"] = str(exc)[:800]
+                self._persist(service_id)
+            # 失败清理:不留半启动容器
+            self._docker(["rm", "-f", spec["name"]])
+
+    def stop(self, service_id: str) -> dict[str, Any]:
+        record = self._get(service_id)
+        with self.lock:
+            if record["status"] not in ("running", "failed"):
+                raise TaskError(409, f"cannot stop service in status {record['status']}")
+        result = self._docker(["stop", record["spec"]["name"]], timeout=60)
+        if result.returncode != 0:
+            raise TaskError(500, f"docker stop failed: {result.stderr.strip()[:400]}")
+        with self.lock:
+            record["status"] = "stopped"
+            record["stopped_at"] = time.time()
+            self._persist(service_id)
+        return self.status(service_id)
+
+    def delete(self, service_id: str) -> None:
+        record = self._get(service_id)
+        self._docker(["rm", "-f", record["spec"]["name"]])
+        with self.lock:
+            self.services.pop(service_id, None)
+        shutil.rmtree(self.workspace(service_id), ignore_errors=True)
+
+    def logs(self, service_id: str, tail: int = 500) -> dict[str, Any]:
+        record = self._get(service_id)
+        container = record.get("container_id") or record["spec"]["name"]
+        result = self._docker(["logs", "--tail", str(max(1, min(tail, 10000))), container], timeout=30)
+        if result.returncode != 0:
+            raise TaskError(500, f"docker logs failed: {result.stderr.strip()[:400]}")
+        return {"service_id": service_id, "logs": result.stdout + result.stderr}
+
+    def status(self, service_id: str) -> dict[str, Any]:
+        record = self._get(service_id)
+        return {
+            "service_id": service_id,
+            "status": record.get("status"),
+            "spec": record.get("spec") or {},
+            "container_id": record.get("container_id"),
+            "error": record.get("error"),
+            "created_at": record.get("created_at"),
+            "started_at": record.get("started_at"),
+            "stopped_at": record.get("stopped_at"),
+        }
+
+    def list(self) -> dict[str, Any]:
+        with self.lock:
+            return {"services": [self.status(service_id) for service_id in sorted(self.services)]}
+
+    # --- docker 辅助 ---
+
+    @staticmethod
+    def _docker(args: list[str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout)
+
+    def _image_present(self, image: str) -> bool:
+        return self._docker(["image", "inspect", image], timeout=30).returncode == 0
+
+    def _container_state(self, container_id: str) -> str | None:
+        result = self._docker(["inspect", "-f", "{{.State.Status}}", container_id], timeout=30)
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    def _container_state_by_name(self, name: str) -> str | None:
+        result = self._docker(["ps", "-a", "--filter", f"name=^{name}$", "--format", "{{.Status}}"], timeout=30)
+        return result.stdout.strip() or None
+
+    @staticmethod
+    def _wait_healthy(port: int, timeout_seconds: int) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=2.0):
+                    return True
+            except OSError:
+                time.sleep(1.0)
+        return False
+
+
+service_manager = ServiceManager(Path(__file__).resolve().parent / "service-workspace")
+
+
 def _running_device_ids() -> set[str]:
     """当前运行中任务声明的设备；auto 无法拆分，单独返回哨兵值。"""
     with task_manager.lock:
@@ -1043,6 +1362,7 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                         "auth_required": bool(token),
                         "training_supported": True,
                         "convert_supported": atc_available(),
+                        "services_supported": _docker_available(),
                         "timestamp": time.time(),
                     },
                 )
@@ -1089,6 +1409,17 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                 if len(segments) == 4 and segments[0] == "convert" and segments[2] == "artifacts":
                     path = convert_manager.artifact_path(segments[1])
                     self._send_bytes(200, path.read_bytes(), "application/octet-stream", path.name)
+                    return
+                if segments == ["services"]:
+                    self._send(200, service_manager.list())
+                    return
+                if len(segments) == 2 and segments[0] == "services":
+                    self._send(200, service_manager.status(segments[1]))
+                    return
+                if len(segments) == 3 and segments[0] == "services" and segments[2] == "logs":
+                    params = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                    tail = int((params.get("tail") or ["500"])[0] or "500")
+                    self._send(200, service_manager.logs(segments[1], tail=tail))
                     return
             except TaskError as exc:
                 self._send(exc.status, {"detail": exc.message})
@@ -1139,6 +1470,24 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                     self._read_body()
                     self._send(200, convert_manager.start(segments[1]))
                     return
+                if segments == ["services"]:
+                    try:
+                        spec = json.loads(self._read_body().decode("utf-8"))
+                    except (ValueError, UnicodeError) as exc:
+                        self._send(400, {"detail": f"request body must be a JSON service spec: {exc}"})
+                        return
+                    if not isinstance(spec, dict):
+                        self._send(400, {"detail": "request body must be a JSON service spec"})
+                        return
+                    self._send(201, service_manager.create(spec))
+                    return
+                if len(segments) == 3 and segments[0] == "services" and segments[2] in ("start", "stop"):
+                    self._read_body()
+                    if segments[2] == "start":
+                        self._send(200, service_manager.start(segments[1]))
+                    else:
+                        self._send(200, service_manager.stop(segments[1]))
+                    return
             except TaskError as exc:
                 self._send(exc.status, {"detail": exc.message})
                 return
@@ -1165,6 +1514,11 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                     self._read_body_to_file(destination)
                     self._send(200, convert_manager.receive_input(segments[1]))
                     return
+                if len(segments) == 3 and segments[0] == "services" and segments[2] == "workspace":
+                    archive = service_manager.workspace(segments[1]) / "package.zip"
+                    self._read_body_to_file(archive)
+                    self._send(200, service_manager.receive_package(segments[1], archive.read_bytes()))
+                    return
             except TaskError as exc:
                 self._send(exc.status, {"detail": exc.message})
                 return
@@ -1185,6 +1539,13 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                 if len(segments) == 2 and segments[0] == "convert":
                     self._read_body()
                     convert_manager.delete(segments[1])
+                    self.send_response(204)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                if len(segments) == 2 and segments[0] == "services":
+                    self._read_body()
+                    service_manager.delete(segments[1])
                     self.send_response(204)
                     self.send_header("Content-Length", "0")
                     self.end_headers()
@@ -1213,6 +1574,7 @@ def main() -> None:
         os.environ["HOME"] = str(Path.home())
 
     task_manager.load_existing()
+    service_manager.load_existing()
     server = ThreadingHTTPServer((args.host, args.port), make_handler(args.token.strip()))
     torch = _torch()
     print(
