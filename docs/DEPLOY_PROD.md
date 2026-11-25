@@ -197,5 +197,5 @@ SFTP 上传同理：`sftp.put(local, "ywa-dist.tar.gz")`（目标在 home）。
 
 ---
 
-最近一次发布：2026-10-29 08:50，生产 = main `5f44050`（全站列表垂直居中统一，仅前端）。
-流程备注：Step 4 的命令经 sudo bash -c 执行时 `~` 展开为 /root，**必须**用绝对路径 `/home/admin/…` 引用上传的包。
+最近一次发布：2026-11-25 14:10，生产 = main `800c464`（训练图像尺寸 1280px 选项 + algorithm_deploy 部署底座 30d9cff，前后端）。迁移头 0039 不变。
+流程备注：Step 4 的命令经 sudo bash -c 执行时 `~` 展开为 /root，**必须**用绝对路径 `/home/admin/…` 引用上传的包。git archive 解包**务必** `--strip-components=1` 并在解包后立即还原增量 Dockerfile（本次曾因直接覆盖 tar 到旧目录导致仓库版 Dockerfile 顶掉增量版，构建误走 apt 全量层）。
